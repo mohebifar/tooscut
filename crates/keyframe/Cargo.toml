@@ -1,0 +1,18 @@
+[package]
+name = "tooscut-keyframe"
+version.workspace = true
+edition.workspace = true
+description = "Keyframe animation evaluation with temporal caching"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+tooscut-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+wasm-bindgen.workspace = true
+serde-wasm-bindgen.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]

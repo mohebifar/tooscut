@@ -1,0 +1,27 @@
+[package]
+name = "tooscut-compositor"
+version.workspace = true
+edition.workspace = true
+description = "GPU-accelerated video compositor using wgpu"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+tooscut-types.workspace = true
+tooscut-keyframe.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+glam.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+js-sys.workspace = true
+web-sys.workspace = true
+serde-wasm-bindgen.workspace = true
+wgpu.workspace = true
+bytemuck.workspace = true
+log.workspace = true
+thiserror.workspace = true
+console_error_panic_hook.workspace = true
+
+[dev-dependencies]

@@ -1,0 +1,84 @@
+[workspace]
+resolver = "2"
+members = [
+    "types",
+    "keyframe",
+    "compositor",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/tooscut/tooscut"
+
+[workspace.dependencies]
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Math
+glam = { version = "0.29", features = ["serde"] }
+
+# WASM
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "console",
+    "Window",
+    "Document",
+    "HtmlCanvasElement",
+    "OffscreenCanvas",
+    "HtmlVideoElement",
+    "ImageBitmap",
+    "WebGl2RenderingContext",
+    "GpuDevice",
+    "GpuAdapter",
+    "GpuQueue",
+    "GpuCanvasContext",
+    "GpuTexture",
+    "GpuTextureView",
+    "GpuBuffer",
+    "GpuBindGroup",
+    "GpuRenderPipeline",
+    "GpuCommandEncoder",
+    "GpuRenderPassEncoder",
+    "Navigator",
+    "Gpu",
+]}
+serde-wasm-bindgen = "0.6"
+
+# GPU
+wgpu = { version = "24", default-features = false, features = ["webgpu", "webgl", "wgsl"] }
+bytemuck = { version = "1.14", features = ["derive"] }
+
+# Text rendering
+glyphon = "0.7"
+cosmic-text = "0.12"
+
+# Async
+futures = "0.3"
+async-trait = "0.1"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging
+log = "0.4"
+console_log = "1"
+console_error_panic_hook = "0.1"
+
+# Internal crates
+tooscut-types = { path = "types" }
+tooscut-keyframe = { path = "keyframe" }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+opt-level = 1

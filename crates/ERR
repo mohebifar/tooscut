@@ -1,0 +1,152 @@
+Building WASM modules...
+Building tooscut-types...
+[INFO]: 🎯  Checking for the Wasm target...
+[INFO]: 🌀  Compiling to Wasm...
+   Compiling unicode-ident v1.0.22
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.44
+   Compiling wasm-bindgen-shared v0.2.108
+   Compiling rustversion v1.0.22
+   Compiling serde_core v1.0.228
+   Compiling zmij v1.0.18
+   Compiling serde v1.0.228
+   Compiling bumpalo v3.19.1
+   Compiling serde_json v1.0.149
+   Compiling cfg-if v1.0.4
+   Compiling itoa v1.0.17
+   Compiling memchr v2.7.6
+   Compiling once_cell v1.21.3
+   Compiling syn v2.0.114
+   Compiling wasm-bindgen v0.2.108
+   Compiling wasm-bindgen-macro-support v0.2.108
+   Compiling serde_derive v1.0.228
+   Compiling wasm-bindgen-macro v0.2.108
+   Compiling glam v0.29.3
+   Compiling tooscut-types v0.1.0 (/Users/mohebifar/dev/other/kareem/tooscut2/tooscut/crates/types)
+    Finished `release` profile [optimized] target(s) in 4.98s
+[INFO]: Optimizing wasm binaries with `wasm-opt`...
+[INFO]: Optional fields missing from Cargo.toml: 'description', 'repository', and 'license'. These are not necessary, but recommended
+[INFO]: ✨   Done in 5.19s
+[INFO]: 📦   Your wasm pkg is ready to publish at /Users/mohebifar/dev/other/kareem/tooscut2/tooscut/public/wasm/types.
+[WARN]: ⚠️   There's a newer version of wasm-pack available, the new version is: 0.14.0, you are using: 0.13.1. To update, navigate to: https://rustwasm.github.io/wasm-pack/installer/
+Building tooscut-keyframe...
+[INFO]: 🎯  Checking for the Wasm target...
+[INFO]: 🌀  Compiling to Wasm...
+   Compiling thiserror v2.0.18
+   Compiling thiserror-impl v2.0.18
+   Compiling js-sys v0.3.85
+   Compiling serde-wasm-bindgen v0.6.5
+   Compiling tooscut-keyframe v0.1.0 (/Users/mohebifar/dev/other/kareem/tooscut2/tooscut/crates/keyframe)
+    Finished `release` profile [optimized] target(s) in 2.14s
+[INFO]: Optimizing wasm binaries with `wasm-opt`...
+[INFO]: Optional fields missing from Cargo.toml: 'repository', 'license'. These are not necessary, but recommended
+[INFO]: ✨   Done in 2.48s
+[INFO]: 📦   Your wasm pkg is ready to publish at /Users/mohebifar/dev/other/kareem/tooscut2/tooscut/public/wasm/keyframe.
+[WARN]: ⚠️   There's a newer version of wasm-pack available, the new version is: 0.14.0, you are using: 0.13.1. To update, navigate to: https://rustwasm.github.io/wasm-pack/installer/
+Building tooscut-compositor...
+[INFO]: 🎯  Checking for the Wasm target...
+[INFO]: 🌀  Compiling to Wasm...
+   Compiling once_cell v1.21.3
+   Compiling cfg_aliases v0.2.1
+   Compiling version_check v0.9.5
+   Compiling parking_lot_core v0.9.12
+   Compiling heck v0.5.0
+   Compiling hashbrown v0.16.1
+   Compiling termcolor v1.4.1
+   Compiling scopeguard v1.2.0
+   Compiling equivalent v1.0.2
+   Compiling log v0.4.29
+   Compiling syn v2.0.114
+   Compiling bitflags v2.10.0
+   Compiling unicode-width v0.1.14
+   Compiling smallvec v1.15.1
+   Compiling bit-vec v0.8.0
+   Compiling hexf-parse v0.2.1
+   Compiling naga v24.0.0
+   Compiling wgpu-hal v24.0.4
+   Compiling lock_api v0.4.14
+   Compiling unicode-xid v0.2.6
+   Compiling bit-set v0.8.0
+   Compiling arrayvec v0.7.6
+   Compiling rustc-hash v1.1.0
+   Compiling codespan-reporting v0.11.1
+   Compiling wgpu-core v24.0.5
+   Compiling raw-window-handle v0.6.2
+   Compiling slotmap v1.1.1
+   Compiling litrs v1.0.0
+   Compiling pin-utils v0.1.0
+   Compiling futures-task v0.3.31
+   Compiling profiling v1.0.17
+   Compiling futures-core v0.3.31
+   Compiling pin-project-lite v0.2.16
+   Compiling slab v0.4.11
+   Compiling wgpu v24.0.5
+   Compiling static_assertions v1.1.0
+   Compiling indexmap v2.13.0
+   Compiling futures-util v0.3.31
+   Compiling document-features v0.2.12
+   Compiling parking_lot v0.12.5
+   Compiling wasm-bindgen-macro-support v0.2.108
+   Compiling thiserror-impl v2.0.18
+   Compiling serde_derive v1.0.228
+   Compiling strum_macros v0.26.4
+   Compiling bytemuck_derive v1.10.2
+   Compiling bytemuck v1.25.0
+   Compiling thiserror v2.0.18
+   Compiling strum v0.26.3
+   Compiling wasm-bindgen-macro v0.2.108
+   Compiling wasm-bindgen v0.2.108
+   Compiling serde v1.0.228
+   Compiling glam v0.29.3
+   Compiling js-sys v0.3.85
+   Compiling console_error_panic_hook v0.1.7
+   Compiling tooscut-types v0.1.0 (/Users/mohebifar/dev/other/kareem/tooscut2/tooscut/crates/types)
+   Compiling web-sys v0.3.85
+   Compiling serde-wasm-bindgen v0.6.5
+   Compiling wasm-bindgen-futures v0.4.58
+   Compiling tooscut-keyframe v0.1.0 (/Users/mohebifar/dev/other/kareem/tooscut2/tooscut/crates/keyframe)
+   Compiling wgpu-types v24.0.0
+   Compiling glow v0.16.0
+   Compiling tooscut-compositor v0.1.0 (/Users/mohebifar/dev/other/kareem/tooscut2/tooscut/crates/compositor)
+warning: methods `is_empty` and `texture_ids` are never used
+   --> compositor/src/texture.rs:157:12
+    |
+83  | impl TextureManager {
+    | ------------------- methods in this implementation
+...
+157 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+...
+162 |     pub fn texture_ids(&self) -> Vec<&str> {
+    |            ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: method `with_transition` is never used
+   --> compositor/src/uniforms.rs:117:12
+    |
+80  | impl LayerUniforms {
+    | ------------------ method in this implementation
+...
+117 |     pub fn with_transition(mut self, transition_type: TransitionType, progress: f32) -> Self {
+    |            ^^^^^^^^^^^^^^^
+
+warning: function `transition_type_to_u32` is never used
+   --> compositor/src/uniforms.rs:125:4
+    |
+125 | fn transition_type_to_u32(t: TransitionType) -> u32 {
+    |    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `tooscut-compositor` (lib) generated 3 warnings
+    Finished `release` profile [optimized] target(s) in 16.78s
+[INFO]: Optimizing wasm binaries with `wasm-opt`...
+[INFO]: Optional fields missing from Cargo.toml: 'repository', 'license'. These are not necessary, but recommended
+[INFO]: ✨   Done in 18.76s
+[INFO]: 📦   Your wasm pkg is ready to publish at /Users/mohebifar/dev/other/kareem/tooscut2/tooscut/public/wasm/compositor.
+[WARN]: ⚠️   There's a newer version of wasm-pack available, the new version is: 0.14.0, you are using: 0.13.1. To update, navigate to: https://rustwasm.github.io/wasm-pack/installer/
+Done! WASM modules built to /Users/mohebifar/dev/other/kareem/tooscut2/tooscut/crates/../public/wasm
+
+Generated TypeScript types can be imported from:
+  - /Users/mohebifar/dev/other/kareem/tooscut2/tooscut/crates/../public/wasm/types/types.d.ts
+  - /Users/mohebifar/dev/other/kareem/tooscut2/tooscut/crates/../public/wasm/keyframe/keyframe.d.ts
+  - /Users/mohebifar/dev/other/kareem/tooscut2/tooscut/crates/../public/wasm/compositor/compositor.d.ts
