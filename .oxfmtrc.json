@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "ignorePatterns": [
+    ".output",
+    ".turbo",
+    ".vinxi",
+    ".nitro",
+    "dist",
+    "**/public/wasm",
+    "*.gen.ts"
+  ]
+}

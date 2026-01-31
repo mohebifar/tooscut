@@ -1,14 +1,33 @@
+# Dependencies
 node_modules
-.DS_Store
+
+# Build outputs
 dist
 dist-ssr
-*.local
-count.txt
-.env
-.nitro
-.tanstack
-.wrangler
 .output
 .vinxi
+.nitro
+
+# Turbo
+.turbo
+
+# TanStack
+.tanstack
+
+# Cloudflare
+.wrangler
+
+# Environment
+.env
+*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+count.txt
 todos.json
+
+# Rust/WASM build artifacts
 crates/**/target
