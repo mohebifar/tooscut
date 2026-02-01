@@ -10,11 +10,33 @@ export default defineConfig({
     browser: {
       enabled: true,
       provider: "playwright",
-      name: "chromium",
+      instances: [
+        {
+          browser: "chromium",
+          launch: {
+            args: [
+              "--enable-unsafe-webgpu",
+              "--enable-features=Vulkan,UseSkiaRenderer",
+              "--use-gl=angle",
+              "--use-angle=swiftshader",
+              "--use-vulkan=swiftshader",
+            ],
+          },
+          context: {
+            // Set viewport large enough for 1920x1080 tests
+            viewport: { width: 1920, height: 1080 },
+          },
+        },
+      ],
       headless: true,
     },
     snapshotDir: "./tests/__snapshots__",
-    include: ["tests/compositor.test.ts"],
+    include: [
+      "tests/compositor.test.ts",
+      "tests/visual-layers.test.ts",
+      "tests/complex-compositions.test.ts",
+      "tests/webgpu-debug.test.ts",
+    ],
     setupFiles: ["./tests/setup.ts"],
   },
 });

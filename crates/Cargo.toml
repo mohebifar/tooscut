@@ -55,7 +55,7 @@ wgpu = { version = "24", default-features = false, features = ["webgpu", "webgl"
 bytemuck = { version = "1.14", features = ["derive"] }
 
 # Text rendering
-glyphon = "0.7"
+glyphon = "0.8"
 cosmic-text = "0.12"
 
 # Async

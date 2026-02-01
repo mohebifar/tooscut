@@ -35,6 +35,9 @@ pub enum CompositorError {
 
     #[error("Canvas error: {0}")]
     Canvas(String),
+
+    #[error("Buffer map error: {0}")]
+    BufferMap(String),
 }
 
 impl From<CompositorError> for JsValue {

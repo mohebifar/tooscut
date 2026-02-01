@@ -6,6 +6,8 @@
 mod compositor;
 mod error;
 mod pipeline;
+mod shape_pipeline;
+mod text;
 mod texture;
 mod uniforms;
 

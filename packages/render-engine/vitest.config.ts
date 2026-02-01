@@ -7,6 +7,10 @@ export default defineConfig({
     // Include test files
     include: ["tests/**/*.test.ts"],
     // Exclude browser tests when running in node (require WebGPU)
-    exclude: ["tests/compositor.test.ts", "tests/visual-layers.test.ts"],
+    exclude: [
+      "tests/compositor.test.ts",
+      "tests/visual-layers.test.ts",
+      "tests/complex-compositions.test.ts",
+    ],
   },
 });

@@ -369,32 +369,56 @@ compositor.clearTexture(id); // Release texture
 
 Text rendering is implemented entirely in Rust, matching the Subformer approach:
 
-- **glyphon** - GPU-accelerated text rendering crate
-- **cosmic-text** - Text layout and shaping (included via glyphon)
+- **glyphon 0.8** - GPU-accelerated text rendering crate (compatible with wgpu 24)
+- **cosmic-text 0.12** - Text layout and shaping (included via glyphon)
 - **rustybuzz** - HarfBuzz-compatible text shaping for complex scripts
-- **wgpu** - GPU rendering via WebGPU
+- **wgpu 24** - GPU rendering via WebGPU
 
 **No Canvas 2D** - All text rasterization happens on the GPU.
+
+### Embedded Fonts
+
+The compositor includes embedded fonts for multilingual support:
+
+| Font             | Size  | Coverage                         |
+| ---------------- | ----- | -------------------------------- |
+| DejaVu Sans      | 757KB | Latin, Cyrillic, Greek (default) |
+| Noto Sans        | 2MB   | Extended Latin, Cyrillic         |
+| Noto Sans Arabic | 142KB | Arabic, Persian, Urdu            |
+| Noto Sans SC     | 298KB | Simplified Chinese               |
+
+**Font Fallback:** DejaVu Sans is set as the default sans-serif family for WASM environments where system fonts are not available.
 
 ### Pipeline
 
 ```
-TextClip (TypeScript)
+TextLayerData (TypeScript)
     ↓
-TextRenderLayer (data structure)
+RenderFrame.text_layers
     ↓
-WasmTextOverlay (WASM interface)
+Compositor.render_frame()
     ↓
 [Rust/WASM]
-├─ cosmic-text Buffer (layout + shaping)
-├─ glyphon TextAtlas (glyph caching)
-├─ glyphon SwashCache (rasterization)
-└─ WGSL Shaders (GPU rendering)
+├─ Main Pass: Text background (rounded rectangles via SDF)
+└─ Text Pass: Glyph rendering (glyphon)
+    ├─ cosmic-text Buffer (layout + shaping)
+    ├─ glyphon TextAtlas (glyph caching)
+    ├─ glyphon SwashCache (rasterization)
+    └─ glyphon TextRenderer (GPU rendering)
 ```
+
+### Render Pass Architecture
+
+Text rendering uses **two render passes**:
+
+1. **Main Pass** (with media, shapes, lines): Renders text background boxes using the shape pipeline
+2. **Text Pass** (LoadOp::Load): Renders glyphs via glyphon, preserving existing content
+
+This separation is required because glyphon manages its own render pass internally.
 
 ### Font Loading
 
-Fonts are loaded from JS and passed to WASM:
+Custom fonts can be loaded from JS:
 
 ```typescript
 // JS side
@@ -408,14 +432,35 @@ pub fn load_font(&mut self, font_family: &str, font_data: Vec<u8>) -> bool {
 }
 ```
 
+### RTL and Complex Script Support
+
+Text shaping uses `Shaping::Advanced` which enables:
+
+- **Bidirectional text** - Correct LTR/RTL mixing (e.g., "Hello سلام World")
+- **Arabic script** - Proper letter joining and contextual forms
+- **Persian script** - Full RTL support with correct glyph shaping
+- **Chinese (CJK)** - Ideographic character support via Noto Sans SC
+
+**Technical details:**
+
+- cosmic-text uses rustybuzz (HarfBuzz-compatible) for text shaping
+- Layout runs have an `rtl` flag for proper positioning
+- Font fallback chain: DejaVu Sans → Noto Sans → Noto Sans Arabic → Noto Sans SC
+
 ### Features
 
 - **Rich text styling** - Per-word colors, weights, backgrounds
 - **Karaoke effects** - Highlight specific words with different styles
-- **RTL/complex scripts** - Arabic, Hebrew, and other scripts via HarfBuzz
+- **RTL/complex scripts** - Arabic, Persian, Hebrew via HarfBuzz
+- **CJK support** - Chinese characters via embedded Noto Sans SC
 - **Background boxes** - Rounded rectangle backgrounds via SDF shaders
 - **Transitions** - Same transition effects as video layers
 - **Keyframe animation** - Position, scale, opacity can be animated
+
+### Limitations
+
+- **Italic fonts** - Italic styling requires loading an italic font variant explicitly
+- **Font embedding size** - ~3.2MB total for embedded fonts (can be reduced with subsets)
 
 ### Data Structures
 
@@ -880,3 +925,8 @@ interface KeyframeTracks {
 | 2024-01-31 | RenderFrame now contains separate arrays: media_layers, text_layers, shape_layers, line_layers           |
 | 2024-01-31 | Visual tests: Comprehensive test suite (56 tests) for all layer types, transitions, z-ordering, opacity  |
 | 2024-01-31 | Test builders: TextLayerBuilder, ShapeLayerBuilder, LineLayerBuilder with fluent API                     |
+| 2025-01-31 | glyphon 0.8 integration for GPU-accelerated text rendering with wgpu 24 compatibility                    |
+| 2025-01-31 | Embedded fonts: DejaVu Sans, Noto Sans, Noto Sans Arabic, Noto Sans SC (~3.2MB total)                    |
+| 2025-01-31 | Multilingual text support: Latin (LTR), Arabic/Persian (RTL), Chinese (CJK), mixed bidirectional         |
+| 2025-01-31 | Text rendering uses two-pass architecture: main pass for backgrounds, separate pass for glyphs           |
+| 2025-01-31 | Visual tests: Added multilingual text tests (English, Persian, Chinese, mixed LTR/RTL)                   |

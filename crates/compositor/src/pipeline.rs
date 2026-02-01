@@ -43,18 +43,25 @@ struct LayerUniforms {
 @group(0) @binding(1) var t_diffuse: texture_2d<f32>;
 @group(0) @binding(2) var s_diffuse: sampler;
 
-// Fullscreen triangle vertices
-var<private> VERTICES: array<vec2<f32>, 3> = array<vec2<f32>, 3>(
-    vec2<f32>(-1.0, -1.0),
-    vec2<f32>(3.0, -1.0),
-    vec2<f32>(-1.0, 3.0),
+// Quad vertices (two triangles) - corners of a unit quad [0,0] to [1,1]
+// Will be scaled by texture dimensions in vertex shader
+var<private> QUAD_VERTICES: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
+    // First triangle
+    vec2<f32>(0.0, 0.0),  // top-left
+    vec2<f32>(1.0, 0.0),  // top-right
+    vec2<f32>(0.0, 1.0),  // bottom-left
+    // Second triangle
+    vec2<f32>(1.0, 0.0),  // top-right
+    vec2<f32>(1.0, 1.0),  // bottom-right
+    vec2<f32>(0.0, 1.0),  // bottom-left
 );
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     var out: VertexOutput;
 
-    let pos = VERTICES[vertex_index];
+    // Get unit quad vertex [0,1] range
+    let unit_pos = QUAD_VERTICES[vertex_index];
 
     // Apply crop to texture coordinates
     let crop_left = uniforms.crop_left;
@@ -62,13 +69,26 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     let crop_top = uniforms.crop_top;
     let crop_bottom = uniforms.crop_bottom;
 
-    // Map position to UV with crop
-    let uv_x = crop_left + (pos.x * 0.5 + 0.5) * (1.0 - crop_left - crop_right);
-    let uv_y = crop_top + (pos.y * 0.5 + 0.5) * (1.0 - crop_top - crop_bottom);
+    // Map unit position to UV with crop
+    let uv_x = crop_left + unit_pos.x * (1.0 - crop_left - crop_right);
+    let uv_y = crop_top + unit_pos.y * (1.0 - crop_top - crop_bottom);
     out.tex_coord = vec2<f32>(uv_x, uv_y);
 
-    // Transform position
-    out.position = uniforms.transform * vec4<f32>(pos, 0.0, 1.0);
+    // DEBUG: Hardcode fullscreen quad in NDC to test if pipeline works
+    // Convert unit_pos [0,1] to NDC [-1,1] with Y flip
+    let ndc_x = unit_pos.x * 2.0 - 1.0;
+    let ndc_y = 1.0 - unit_pos.y * 2.0;  // Flip Y for NDC
+    out.position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
+
+    // Commented out for now - restore after debugging:
+    // // Scale unit quad to layer pixel dimensions
+    // // The transform matrix expects layer-space input (0 to width, 0 to height)
+    // let layer_pos = vec2<f32>(
+    //     unit_pos.x * uniforms.texture_width,
+    //     unit_pos.y * uniforms.texture_height
+    // );
+    // // Transform from layer space to NDC
+    // out.position = uniforms.transform * vec4<f32>(layer_pos, 0.0, 1.0);
 
     return out;
 }

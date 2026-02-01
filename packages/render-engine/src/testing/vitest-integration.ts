@@ -36,8 +36,9 @@
  * ```
  */
 
+import { expect } from "vitest";
 import type { RenderFrame } from "../types.js";
-import type { SnapshotTester, SnapshotOptions } from "./snapshot-tester.js";
+import { SnapshotTester, SnapshotOptions } from "./snapshot-tester.js";
 
 // ============================================================================
 // Vitest Matcher Types
@@ -239,100 +240,98 @@ export function getRenderTestContext(): RenderTestContext {
 /**
  * Set up custom Vitest matchers for render engine testing.
  */
-export function setupRenderEngineMatchers(): void {
+export function setupRenderEngineMatchers() {
   // Dynamic import to avoid bundling vitest in production
-  void import("vitest").then(({ expect }) => {
-    expect.extend({
-      async toMatchRenderSnapshot(
-        received: SnapshotTester,
-        frame: RenderFrame,
-        snapshotName: string,
-        options: SnapshotOptions = {},
-      ): Promise<RenderSnapshotMatcherResult> {
-        const ctx = getRenderTestContext();
-        const tester = received;
+  expect.extend({
+    async toMatchRenderSnapshot(
+      received: SnapshotTester,
+      frame: RenderFrame,
+      snapshotName: string,
+      options: SnapshotOptions = {},
+    ): Promise<RenderSnapshotMatcherResult> {
+      const ctx = getRenderTestContext();
+      const tester = received;
 
-        // Render the frame
-        const actual = await tester.render(frame);
+      // Render the frame
+      const actual = await tester.render(frame);
 
-        // Try to load the expected snapshot
-        const expected = await ctx.storage.load(snapshotName);
+      // Try to load the expected snapshot
+      const expected = await ctx.storage.load(snapshotName);
 
-        if (!expected) {
-          if (ctx.updateSnapshots) {
-            // Save the new snapshot
-            await ctx.storage.save(snapshotName, actual);
-            return {
-              pass: true,
-              message: () => `Snapshot "${snapshotName}" created`,
-            };
-          } else {
-            return {
-              pass: false,
-              message: () =>
-                `Snapshot "${snapshotName}" not found at ${ctx.storage.getPath(snapshotName)}. ` +
-                `Run with --update-snapshots to create it.`,
-            };
-          }
-        }
-
-        // Compare
-        const result = tester.compareImages(actual, expected, options);
-
-        if (!result.passed) {
-          if (ctx.updateSnapshots) {
-            // Update the snapshot
-            await ctx.storage.save(snapshotName, actual);
-            return {
-              pass: true,
-              message: () => `Snapshot "${snapshotName}" updated`,
-            };
-          }
-
+      if (!expected) {
+        if (ctx.updateSnapshots) {
+          // Save the new snapshot
+          await ctx.storage.save(snapshotName, actual);
+          return {
+            pass: true,
+            message: () => `Snapshot "${snapshotName}" created`,
+          };
+        } else {
           return {
             pass: false,
             message: () =>
-              `Snapshot "${snapshotName}" doesn't match.\n` +
-              `  Diff: ${result.diffPercentage.toFixed(2)}% (${result.diffPixelCount}/${result.totalPixels} pixels)\n` +
-              `  Threshold: ${options.diffThreshold ?? 0}%`,
-            actual: result.actualDataUrl,
-            expected: result.expectedDataUrl,
+              `Snapshot "${snapshotName}" not found at ${ctx.storage.getPath(snapshotName)}. ` +
+              `Run with --update-snapshots to create it.`,
+          };
+        }
+      }
+
+      // Compare
+      const result = tester.compareImages(actual, expected, options);
+
+      if (!result.passed) {
+        if (ctx.updateSnapshots) {
+          // Update the snapshot
+          await ctx.storage.save(snapshotName, actual);
+          return {
+            pass: true,
+            message: () => `Snapshot "${snapshotName}" updated`,
           };
         }
 
         return {
-          pass: true,
-          message: () => `Snapshot "${snapshotName}" matches`,
+          pass: false,
+          message: () =>
+            `Snapshot "${snapshotName}" doesn't match.\n` +
+            `  Diff: ${result.diffPercentage.toFixed(2)}% (${result.diffPixelCount}/${result.totalPixels} pixels)\n` +
+            `  Threshold: ${options.diffThreshold ?? 0}%`,
+          actual: result.actualDataUrl,
+          expected: result.expectedDataUrl,
         };
-      },
+      }
 
-      async toMatchImageData(
-        received: SnapshotTester,
-        frame: RenderFrame,
-        expected: ImageData,
-        options: SnapshotOptions = {},
-      ): Promise<RenderSnapshotMatcherResult> {
-        const tester = received;
-        const result = await tester.renderAndCompare(frame, expected, options);
+      return {
+        pass: true,
+        message: () => `Snapshot "${snapshotName}" matches`,
+      };
+    },
 
-        if (!result.passed) {
-          return {
-            pass: false,
-            message: () =>
-              `Rendered image doesn't match expected.\n` +
-              `  Diff: ${result.diffPercentage.toFixed(2)}% (${result.diffPixelCount}/${result.totalPixels} pixels)\n` +
-              `  Threshold: ${options.diffThreshold ?? 0}%`,
-            actual: result.actualDataUrl,
-            expected: result.expectedDataUrl,
-          };
-        }
+    async toMatchImageData(
+      received: SnapshotTester,
+      frame: RenderFrame,
+      expected: ImageData,
+      options: SnapshotOptions = {},
+    ): Promise<RenderSnapshotMatcherResult> {
+      const tester = received;
+      const result = await tester.renderAndCompare(frame, expected, options);
 
+      if (!result.passed) {
         return {
-          pass: true,
-          message: () => `Rendered image matches expected`,
+          pass: false,
+          message: () =>
+            `Rendered image doesn't match expected.\n` +
+            `  Diff: ${result.diffPercentage.toFixed(2)}% (${result.diffPixelCount}/${result.totalPixels} pixels)\n` +
+            `  Threshold: ${options.diffThreshold ?? 0}%`,
+          actual: result.actualDataUrl,
+          expected: result.expectedDataUrl,
         };
-      },
-    });
+      }
+
+      return {
+        pass: true,
+        message: () => `Rendered image matches expected`,
+      };
+    },
   });
 }
 
@@ -355,7 +354,6 @@ export function createRenderTestSuite(config: {
 
   return {
     async setup(): Promise<SnapshotTester> {
-      const { SnapshotTester } = await import("./snapshot-tester.js");
       tester = await SnapshotTester.create(width, height, wasmUrl);
       return tester;
     },
