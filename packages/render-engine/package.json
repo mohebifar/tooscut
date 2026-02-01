@@ -1,0 +1,50 @@
+{
+  "name": "@tooscut/render-engine",
+  "version": "0.1.0",
+  "files": [
+    "dist",
+    "wasm"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/snapshot-tester.d.ts",
+      "import": "./dist/testing/snapshot-tester.js"
+    },
+    "./testing/renderer": {
+      "types": "./dist/testing/test-renderer.d.ts",
+      "import": "./dist/testing/test-renderer.js"
+    },
+    "./testing/vitest": {
+      "types": "./dist/testing/vitest-integration.d.ts",
+      "import": "./dist/testing/vitest-integration.js"
+    },
+    "./wasm/compositor": {
+      "types": "./wasm/compositor/compositor.d.ts",
+      "import": "./wasm/compositor/compositor.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:wasm": "cd ../../crates && ./build.sh",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:browser": "vitest run --config vitest.browser.config.ts",
+    "test:browser:watch": "vitest --config vitest.browser.config.ts",
+    "test:ui": "vitest --ui"
+  },
+  "devDependencies": {
+    "@vitest/browser": "^3.0.0",
+    "playwright": "^1.50.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0"
+  }
+}

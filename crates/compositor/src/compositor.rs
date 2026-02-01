@@ -15,7 +15,7 @@ use crate::error::{CompositorError, Result};
 use crate::pipeline::{create_bind_group_layout, create_pipeline};
 use crate::texture::{TextureInfo, TextureManager};
 use crate::uniforms::LayerUniforms;
-use tooscut_types::{Effects, LayerData, RenderFrame};
+use tooscut_types::{Effects, MediaLayerData, RenderFrame};
 
 #[cfg(target_arch = "wasm32")]
 use web_sys::{HtmlCanvasElement, HtmlVideoElement, ImageBitmap, OffscreenCanvas};
@@ -156,11 +156,11 @@ impl Compositor {
         self.textures.clear();
     }
 
-    /// Render layers from JSON data.
+    /// Render layers from a RenderFrame object.
     #[wasm_bindgen]
-    pub fn render_layers(&mut self, layers_json: &str) -> std::result::Result<(), JsValue> {
+    pub fn render_layers(&mut self, frame: JsValue) -> std::result::Result<(), JsValue> {
         let frame: RenderFrame =
-            serde_json::from_str(layers_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+            serde_wasm_bindgen::from_value(frame).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
         self.render_frame(&frame).map_err(Into::into)
     }
@@ -172,10 +172,13 @@ impl Compositor {
         texture_id: &str,
         opacity: f32,
     ) -> std::result::Result<(), JsValue> {
-        let layer = LayerData::new(texture_id).with_effects(Effects::with_opacity(opacity));
+        let layer = MediaLayerData::new(texture_id).with_effects(Effects::with_opacity(opacity));
 
         let frame = RenderFrame {
-            layers: vec![layer],
+            media_layers: vec![layer],
+            text_layers: vec![],
+            shape_layers: vec![],
+            line_layers: vec![],
             timeline_time: 0.0,
             width: self.width,
             height: self.height,
@@ -354,12 +357,16 @@ impl Compositor {
 
             render_pass.set_pipeline(&self.pipeline);
 
-            // Render each layer
-            for layer in &frame.layers {
+            // Render each media layer
+            for layer in &frame.media_layers {
                 if let Some(texture_info) = self.textures.get(&layer.texture_id) {
                     self.render_layer(&mut render_pass, layer, texture_info, frame.timeline_time);
                 }
             }
+
+            // TODO: Render text layers
+            // TODO: Render shape layers
+            // TODO: Render line layers
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -368,11 +375,11 @@ impl Compositor {
         Ok(())
     }
 
-    /// Render a single layer.
+    /// Render a single media layer.
     fn render_layer<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,
-        layer: &LayerData,
+        layer: &MediaLayerData,
         texture_info: &'a TextureInfo,
         _timeline_time: f64,
     ) {

@@ -11,6 +11,7 @@ serde.workspace = true
 serde_json.workspace = true
 glam.workspace = true
 wasm-bindgen.workspace = true
+tsify-next.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

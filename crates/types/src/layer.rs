@@ -2,42 +2,57 @@
 //!
 //! A layer represents a single renderable element (video, image, text, shape)
 //! with its transform, effects, and animation state.
+//!
+//! Note: Keyframe evaluation happens in JS before sending to the compositor.
+//! The compositor receives pre-evaluated transform/effects values for stateless
+//! parallel rendering across workers.
 
 use serde::{Deserialize, Serialize};
+use tsify_next::Tsify;
 
-use crate::{Crop, CrossTransition, Effects, KeyframeTracks, Transform, Transition};
+use crate::{
+    Crop, CrossTransition, Effects, LineLayerData, ShapeLayerData, TextLayerData, Transform,
+    Transition,
+};
 
 /// Data for rendering a video/image layer.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LayerData {
+///
+/// All transform and effects values are pre-evaluated (keyframes resolved in JS).
+/// This allows stateless, parallel rendering across web workers.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+pub struct MediaLayerData {
     /// Unique texture ID for this layer's content.
     pub texture_id: String,
-    /// Transform (position, scale, rotation).
+    /// Transform (position, scale, rotation) - pre-evaluated.
     pub transform: Transform,
-    /// Visual effects.
+    /// Visual effects - pre-evaluated.
     pub effects: Effects,
     /// Stacking order (higher = on top).
     pub z_index: i32,
     /// Crop region.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
     pub crop: Option<Crop>,
     /// Transition in effect.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
     pub transition_in: Option<ActiveTransition>,
     /// Transition out effect.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
     pub transition_out: Option<ActiveTransition>,
     /// Cross-transition with adjacent clip (only one can be active).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
     pub cross_transition: Option<ActiveCrossTransition>,
-    /// Keyframe animations.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub keyframes: Option<KeyframeTracks>,
-    /// Clip start time on timeline (for keyframe evaluation).
-    pub clip_start_time: f64,
 }
 
-impl LayerData {
+/// Legacy type alias for MediaLayerData.
+#[deprecated(note = "Use MediaLayerData instead")]
+pub type LayerData = MediaLayerData;
+
+impl MediaLayerData {
     /// Create a new layer with default settings.
     pub fn new(texture_id: impl Into<String>) -> Self {
         Self {
@@ -49,8 +64,6 @@ impl LayerData {
             transition_in: None,
             transition_out: None,
             cross_transition: None,
-            keyframes: None,
-            clip_start_time: 0.0,
         }
     }
 
@@ -80,7 +93,8 @@ impl LayerData {
 }
 
 /// An active transition with its current progress.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
 pub struct ActiveTransition {
     /// The transition configuration.
     pub transition: Transition,
@@ -101,7 +115,8 @@ impl ActiveTransition {
 }
 
 /// An active cross-transition between two clips.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
 pub struct ActiveCrossTransition {
     /// The cross-transition configuration.
     pub cross_transition: CrossTransition,
@@ -128,38 +143,66 @@ impl ActiveCrossTransition {
     }
 }
 
-/// Render frame request containing all layers.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Render frame request containing all layer types.
+///
+/// All layer types share the same transition system (transition_in, transition_out).
+/// The compositor applies transitions uniformly regardless of layer type.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
 pub struct RenderFrame {
-    /// Video/image layers.
-    pub layers: Vec<LayerData>,
+    /// Media layers (video/image clips).
+    pub media_layers: Vec<MediaLayerData>,
+    /// Text layers.
+    pub text_layers: Vec<TextLayerData>,
+    /// Shape layers (rectangle, ellipse, polygon).
+    pub shape_layers: Vec<ShapeLayerData>,
+    /// Line layers.
+    pub line_layers: Vec<LineLayerData>,
     /// Current timeline time in seconds.
     pub timeline_time: f64,
-    /// Canvas width.
+    /// Canvas width in pixels.
     pub width: u32,
-    /// Canvas height.
+    /// Canvas height in pixels.
     pub height: u32,
 }
 
 impl RenderFrame {
-    /// Create a new render frame.
+    /// Create a new empty render frame.
     pub fn new(width: u32, height: u32, timeline_time: f64) -> Self {
         Self {
-            layers: Vec::new(),
+            media_layers: Vec::new(),
+            text_layers: Vec::new(),
+            shape_layers: Vec::new(),
+            line_layers: Vec::new(),
             timeline_time,
             width,
             height,
         }
     }
 
-    /// Add a layer to the frame.
-    pub fn add_layer(&mut self, layer: LayerData) {
-        self.layers.push(layer);
+    /// Add a media layer to the frame.
+    pub fn add_media_layer(&mut self, layer: MediaLayerData) {
+        self.media_layers.push(layer);
     }
 
-    /// Sort layers by z-index for proper rendering order.
-    pub fn sort_by_z_index(&mut self) {
-        self.layers.sort_by_key(|l| l.z_index);
+    /// Add a text layer to the frame.
+    pub fn add_text_layer(&mut self, layer: TextLayerData) {
+        self.text_layers.push(layer);
+    }
+
+    /// Add a shape layer to the frame.
+    pub fn add_shape_layer(&mut self, layer: ShapeLayerData) {
+        self.shape_layers.push(layer);
+    }
+
+    /// Add a line layer to the frame.
+    pub fn add_line_layer(&mut self, layer: LineLayerData) {
+        self.line_layers.push(layer);
+    }
+
+    /// Sort media layers by z-index for proper rendering order.
+    pub fn sort_media_by_z_index(&mut self) {
+        self.media_layers.sort_by_key(|l| l.z_index);
     }
 }
 
@@ -169,7 +212,7 @@ mod tests {
 
     #[test]
     fn layer_builder_pattern() {
-        let layer = LayerData::new("video-1")
+        let layer = MediaLayerData::new("video-1")
             .with_transform(Transform::at(100.0, 200.0))
             .with_effects(Effects::with_opacity(0.8))
             .with_z_index(5);
@@ -183,14 +226,14 @@ mod tests {
     #[test]
     fn render_frame_sorting() {
         let mut frame = RenderFrame::new(1920, 1080, 0.0);
-        frame.add_layer(LayerData::new("a").with_z_index(10));
-        frame.add_layer(LayerData::new("b").with_z_index(1));
-        frame.add_layer(LayerData::new("c").with_z_index(5));
+        frame.add_media_layer(MediaLayerData::new("a").with_z_index(10));
+        frame.add_media_layer(MediaLayerData::new("b").with_z_index(1));
+        frame.add_media_layer(MediaLayerData::new("c").with_z_index(5));
 
-        frame.sort_by_z_index();
+        frame.sort_media_by_z_index();
 
-        assert_eq!(frame.layers[0].texture_id, "b");
-        assert_eq!(frame.layers[1].texture_id, "c");
-        assert_eq!(frame.layers[2].texture_id, "a");
+        assert_eq!(frame.media_layers[0].texture_id, "b");
+        assert_eq!(frame.media_layers[1].texture_id, "c");
+        assert_eq!(frame.media_layers[2].texture_id, "a");
     }
 }

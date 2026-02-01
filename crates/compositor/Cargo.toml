@@ -9,7 +9,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 tooscut-types.workspace = true
-tooscut-keyframe.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 glam.workspace = true

@@ -13,7 +13,6 @@ pub use compositor::Compositor;
 pub use error::CompositorError;
 
 // Re-export types for convenience
-pub use tooscut_keyframe::KeyframeEvaluator;
 pub use tooscut_types::*;
 
 use wasm_bindgen::prelude::*;

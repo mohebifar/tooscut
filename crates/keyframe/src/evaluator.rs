@@ -23,11 +23,11 @@ pub struct KeyframeEvaluator {
 
 #[wasm_bindgen]
 impl KeyframeEvaluator {
-    /// Create a new evaluator from JSON.
+    /// Create a new evaluator from a KeyframeTracks object.
     #[wasm_bindgen(constructor)]
-    pub fn new(tracks_json: &str) -> Result<KeyframeEvaluator, JsValue> {
+    pub fn new(tracks: JsValue) -> Result<KeyframeEvaluator, JsValue> {
         let tracks: KeyframeTracks =
-            serde_json::from_str(tracks_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+            serde_wasm_bindgen::from_value(tracks).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
         Ok(Self::from_tracks(tracks))
     }
@@ -54,11 +54,11 @@ impl KeyframeEvaluator {
         self.cache.clear();
     }
 
-    /// Get all animated property names as JSON array.
+    /// Get all animated property names.
     #[wasm_bindgen]
-    pub fn properties(&self) -> String {
+    pub fn properties(&self) -> Result<JsValue, JsValue> {
         let props: Vec<&str> = self.tracks.properties();
-        serde_json::to_string(&props).unwrap_or_else(|_| "[]".to_string())
+        serde_wasm_bindgen::to_value(&props).map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }
 

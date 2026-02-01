@@ -1,9 +1,10 @@
 //! Text overlay types.
 
 use serde::{Deserialize, Serialize};
+use tsify_next::Tsify;
 use wasm_bindgen::prelude::*;
 
-use crate::{Color, KeyframeTracks};
+use crate::ActiveTransition;
 
 /// Text alignment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -26,41 +27,58 @@ pub enum VerticalAlign {
 }
 
 /// Text style configuration.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
 pub struct TextStyle {
+    /// Font family name (must be loaded).
+    pub font_family: String,
     /// Font size in pixels.
     pub font_size: f32,
-    /// Text color.
-    pub color: Color,
-    /// Font family name (must be loaded).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub font_family: Option<String>,
     /// Font weight (100-900, where 400=normal, 700=bold).
-    pub weight: u16,
+    pub font_weight: u16,
     /// Whether text is italic.
     pub italic: bool,
+    /// Text color (RGBA 0-1).
+    pub color: [f32; 4],
+    /// Horizontal alignment.
+    #[tsify(type = "TextAlign")]
+    pub text_align: TextAlign,
+    /// Vertical alignment within the box.
+    #[tsify(type = "VerticalAlign")]
+    pub vertical_align: VerticalAlign,
     /// Line height multiplier (1.0 = normal).
     pub line_height: f32,
     /// Letter spacing in pixels.
     pub letter_spacing: f32,
-    /// Horizontal alignment.
-    pub align: TextAlign,
-    /// Vertical alignment within the box.
-    pub vertical_align: VerticalAlign,
+    /// Background color (RGBA 0-1).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
+    pub background_color: Option<[f32; 4]>,
+    /// Background padding in pixels.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
+    pub background_padding: Option<f32>,
+    /// Background border radius in pixels.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
+    pub background_border_radius: Option<f32>,
 }
 
 impl Default for TextStyle {
     fn default() -> Self {
         Self {
+            font_family: "Inter".to_string(),
             font_size: 48.0,
-            color: Color::WHITE,
-            font_family: None,
-            weight: 400,
+            font_weight: 400,
             italic: false,
+            color: [1.0, 1.0, 1.0, 1.0], // White
+            text_align: TextAlign::Center,
+            vertical_align: VerticalAlign::Middle,
             line_height: 1.2,
             letter_spacing: 0.0,
-            align: TextAlign::Center,
-            vertical_align: VerticalAlign::Middle,
+            background_color: None,
+            background_padding: None,
+            background_border_radius: None,
         }
     }
 }
@@ -75,20 +93,20 @@ impl TextStyle {
     }
 
     /// Set the color.
-    pub fn with_color(mut self, color: Color) -> Self {
+    pub fn with_color(mut self, color: [f32; 4]) -> Self {
         self.color = color;
         self
     }
 
     /// Set the font family.
     pub fn with_font(mut self, font_family: impl Into<String>) -> Self {
-        self.font_family = Some(font_family.into());
+        self.font_family = font_family.into();
         self
     }
 
     /// Set bold weight.
     pub fn bold(mut self) -> Self {
-        self.weight = 700;
+        self.font_weight = 700;
         self
     }
 
@@ -99,132 +117,140 @@ impl TextStyle {
     }
 }
 
-/// Background styling for text.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TextBackground {
-    /// Background color.
-    pub color: Color,
-    /// Padding around text in pixels.
-    pub padding: f32,
-    /// Corner radius in pixels.
-    pub border_radius: f32,
+/// Text bounding box (position and size as percentages 0-100 of canvas).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+pub struct TextBox {
+    /// X position (percentage of canvas width).
+    pub x: f32,
+    /// Y position (percentage of canvas height).
+    pub y: f32,
+    /// Width (percentage of canvas width).
+    pub width: f32,
+    /// Height (percentage of canvas height).
+    pub height: f32,
 }
 
-impl Default for TextBackground {
+impl Default for TextBox {
     fn default() -> Self {
         Self {
-            color: Color::new(0.0, 0.0, 0.0, 0.5),
-            padding: 8.0,
-            border_radius: 4.0,
+            x: 50.0,
+            y: 50.0,
+            width: 80.0,
+            height: 20.0,
         }
     }
 }
 
 /// Karaoke-style word highlight configuration.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
 pub struct HighlightStyle {
-    /// Override text color for highlighted words.
+    /// Override text color for highlighted words (RGBA 0-1).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub color: Option<Color>,
-    /// Override background color for highlighted words.
+    #[tsify(optional)]
+    pub color: Option<[f32; 4]>,
+    /// Override background color for highlighted words (RGBA 0-1).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub background_color: Option<Color>,
+    #[tsify(optional)]
+    pub background_color: Option<[f32; 4]>,
     /// Override background padding.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
     pub background_padding: Option<f32>,
     /// Override border radius.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub border_radius: Option<f32>,
+    #[tsify(optional)]
+    pub background_border_radius: Option<f32>,
     /// Override font weight.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub weight: Option<u16>,
+    #[tsify(optional)]
+    pub font_weight: Option<u16>,
     /// Scale factor for highlighted words.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
     pub scale: Option<f32>,
 }
 
 impl Default for HighlightStyle {
     fn default() -> Self {
         Self {
-            color: Some(Color::new(1.0, 0.8, 0.0, 1.0)), // Yellow
+            color: Some([1.0, 0.8, 0.0, 1.0]), // Yellow
             background_color: None,
             background_padding: None,
-            border_radius: None,
-            weight: None,
+            background_border_radius: None,
+            font_weight: None,
             scale: None,
         }
     }
 }
 
-/// A text overlay layer.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TextOverlay {
+/// Text layer data for rendering.
+///
+/// All values are pre-evaluated (keyframes resolved before sending to compositor).
+/// This allows stateless, parallel rendering across web workers.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+pub struct TextLayerData {
     /// Unique identifier.
     pub id: String,
     /// The text content to render.
     pub text: String,
-    /// Bounding box X position (percentage 0-100 of canvas width).
-    pub box_x: f32,
-    /// Bounding box Y position (percentage 0-100 of canvas height).
-    pub box_y: f32,
-    /// Bounding box width (percentage 0-100 of canvas width).
-    pub box_width: f32,
-    /// Bounding box height (percentage 0-100 of canvas height).
-    pub box_height: f32,
+    /// Bounding box (position and size as percentages).
+    #[serde(rename = "box")]
+    pub text_box: TextBox,
     /// Text styling.
     pub style: TextStyle,
-    /// Background (optional).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub background: Option<TextBackground>,
+    /// Stacking order (higher = on top).
+    pub z_index: i32,
     /// Overall opacity (0.0-1.0).
     pub opacity: f32,
-    /// Stacking order.
-    pub z_index: i32,
     /// Highlight style for karaoke effect.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
     pub highlight_style: Option<HighlightStyle>,
     /// Word indices that are currently highlighted (0-based).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
     pub highlighted_word_indices: Option<Vec<usize>>,
-    /// Keyframe animations.
+    /// Transition in effect.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub keyframes: Option<KeyframeTracks>,
-    /// Clip start time for keyframe evaluation.
-    pub clip_start_time: f64,
+    #[tsify(optional)]
+    pub transition_in: Option<ActiveTransition>,
+    /// Transition out effect.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
+    pub transition_out: Option<ActiveTransition>,
 }
 
-impl TextOverlay {
-    /// Create a new text overlay.
+impl TextLayerData {
+    /// Create a new text layer.
     pub fn new(id: impl Into<String>, text: impl Into<String>) -> Self {
         Self {
             id: id.into(),
             text: text.into(),
-            box_x: 50.0,
-            box_y: 50.0,
-            box_width: 80.0,
-            box_height: 20.0,
+            text_box: TextBox::default(),
             style: TextStyle::default(),
-            background: None,
-            opacity: 1.0,
             z_index: 100,
+            opacity: 1.0,
             highlight_style: None,
             highlighted_word_indices: None,
-            keyframes: None,
-            clip_start_time: 0.0,
+            transition_in: None,
+            transition_out: None,
         }
     }
 
     /// Set the position (percentage of canvas).
     pub fn at(mut self, x: f32, y: f32) -> Self {
-        self.box_x = x;
-        self.box_y = y;
+        self.text_box.x = x;
+        self.text_box.y = y;
         self
     }
 
     /// Set the box size (percentage of canvas).
     pub fn with_size(mut self, width: f32, height: f32) -> Self {
-        self.box_width = width;
-        self.box_height = height;
+        self.text_box.width = width;
+        self.text_box.height = height;
         self
     }
 
@@ -234,15 +260,15 @@ impl TextOverlay {
         self
     }
 
-    /// Add a background.
-    pub fn with_background(mut self, background: TextBackground) -> Self {
-        self.background = Some(background);
-        self
-    }
-
     /// Set the opacity.
     pub fn with_opacity(mut self, opacity: f32) -> Self {
         self.opacity = opacity;
+        self
+    }
+
+    /// Set the z-index.
+    pub fn with_z_index(mut self, z_index: i32) -> Self {
+        self.z_index = z_index;
         self
     }
 }
@@ -252,16 +278,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn text_overlay_builder() {
-        let overlay = TextOverlay::new("text-1", "Hello, World!")
+    fn text_layer_builder() {
+        let layer = TextLayerData::new("text-1", "Hello, World!")
             .at(50.0, 50.0)
             .with_size(80.0, 20.0)
             .with_style(TextStyle::with_size(64.0).bold())
             .with_opacity(0.9);
 
-        assert_eq!(overlay.text, "Hello, World!");
-        assert_eq!(overlay.style.font_size, 64.0);
-        assert_eq!(overlay.style.weight, 700);
-        assert_eq!(overlay.opacity, 0.9);
+        assert_eq!(layer.text, "Hello, World!");
+        assert_eq!(layer.style.font_size, 64.0);
+        assert_eq!(layer.style.font_weight, 700);
+        assert_eq!(layer.opacity, 0.9);
+    }
+
+    #[test]
+    fn text_style_defaults() {
+        let style = TextStyle::default();
+        assert_eq!(style.font_family, "Inter");
+        assert_eq!(style.font_size, 48.0);
+        assert_eq!(style.font_weight, 400);
+        assert!(!style.italic);
+        assert_eq!(style.color, [1.0, 1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn text_style_builder() {
+        let style = TextStyle::with_size(32.0)
+            .with_font("Roboto")
+            .with_color([1.0, 0.0, 0.0, 1.0])
+            .bold()
+            .italic();
+
+        assert_eq!(style.font_family, "Roboto");
+        assert_eq!(style.font_size, 32.0);
+        assert_eq!(style.font_weight, 700);
+        assert!(style.italic);
+        assert_eq!(style.color, [1.0, 0.0, 0.0, 1.0]);
     }
 }

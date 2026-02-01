@@ -21,9 +21,9 @@ use wasm_bindgen::prelude::*;
 /// For repeated evaluations, use `KeyframeEvaluator` which caches
 /// the last index for better performance.
 #[wasm_bindgen]
-pub fn evaluate_track(track_json: &str, time: f64) -> Result<f32, JsValue> {
+pub fn evaluate_track(track: JsValue, time: f64) -> Result<f32, JsValue> {
     let track: KeyframeTrack =
-        serde_json::from_str(track_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        serde_wasm_bindgen::from_value(track).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     Ok(evaluate_keyframes(&track.keyframes, time))
 }

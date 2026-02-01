@@ -4,28 +4,14 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUT_DIR="${SCRIPT_DIR}/../public/wasm"
+OUT_DIR="${SCRIPT_DIR}/../packages/render-engine/wasm"
 
 echo "Building WASM modules..."
 
 # Create output directory
 mkdir -p "$OUT_DIR"
 
-# Build types crate (for TypeScript definitions)
-echo "Building tooscut-types..."
-wasm-pack build types \
-    --target web \
-    --out-dir "$OUT_DIR/types" \
-    --out-name types
-
-# Build keyframe crate
-echo "Building tooscut-keyframe..."
-wasm-pack build keyframe \
-    --target web \
-    --out-dir "$OUT_DIR/keyframe" \
-    --out-name keyframe
-
-# Build compositor crate
+# Build compositor crate (the only WASM module needed)
 echo "Building tooscut-compositor..."
 wasm-pack build compositor \
     --target web \
@@ -34,7 +20,7 @@ wasm-pack build compositor \
 
 echo "Done! WASM modules built to $OUT_DIR"
 echo ""
-echo "Generated TypeScript types can be imported from:"
-echo "  - $OUT_DIR/types/types.d.ts"
-echo "  - $OUT_DIR/keyframe/keyframe.d.ts"
-echo "  - $OUT_DIR/compositor/compositor.d.ts"
+echo "Compositor can be imported from:"
+echo "  - @tooscut/render-engine/wasm/compositor"
+echo ""
+echo "Note: Keyframe evaluation is now pure TypeScript (no WASM)"

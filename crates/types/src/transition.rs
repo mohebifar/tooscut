@@ -1,6 +1,7 @@
 //! Transition effects for clip in/out animations.
 
 use serde::{Deserialize, Serialize};
+use tsify_next::Tsify;
 use wasm_bindgen::prelude::*;
 
 use crate::Easing;
@@ -55,10 +56,12 @@ impl TransitionType {
 }
 
 /// A transition effect applied to a clip's in or out point.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
 pub struct Transition {
     /// The type of transition effect.
     #[serde(rename = "type")]
+    #[tsify(type = "TransitionType")]
     pub transition_type: TransitionType,
     /// Duration of the transition in seconds.
     pub duration: f64,
@@ -229,18 +232,16 @@ impl Default for TransitionEffect {
     }
 }
 
-/// A cross-transition between two clips on the same track.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A cross-transition configuration (type, duration, easing).
+///
+/// The clip references (IDs) are stored separately in the editor layer.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
 pub struct CrossTransition {
-    /// Unique identifier.
-    pub id: String,
     /// Type of cross-transition.
     #[serde(rename = "type")]
+    #[tsify(type = "CrossTransitionType")]
     pub transition_type: CrossTransitionType,
-    /// ID of the outgoing (ending) clip.
-    pub outgoing_clip_id: String,
-    /// ID of the incoming (starting) clip.
-    pub incoming_clip_id: String,
     /// Duration of the overlap in seconds.
     pub duration: f64,
     /// Easing curve for the transition.

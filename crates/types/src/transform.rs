@@ -2,14 +2,14 @@
 
 use glam::{Mat4, Vec3};
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::prelude::*;
+use tsify_next::Tsify;
 
 /// 2D transform for positioning layers on the canvas.
 ///
 /// Coordinates are in pixels relative to canvas origin (top-left).
 /// Anchor point (0.0-1.0) determines the center of rotation/scale.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[wasm_bindgen(getter_with_clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
 pub struct Transform {
     /// X position in pixels.
     pub x: f32,
@@ -27,9 +27,8 @@ pub struct Transform {
     pub anchor_y: f32,
 }
 
-#[wasm_bindgen]
 impl Transform {
-    #[wasm_bindgen(constructor)]
+    /// Create a new Transform instance.
     pub fn new(x: f32, y: f32, scale_x: f32, scale_y: f32, rotation: f32, anchor_x: f32, anchor_y: f32) -> Self {
         Self { x, y, scale_x, scale_y, rotation, anchor_x, anchor_y }
     }
@@ -123,8 +122,8 @@ impl Default for Transform {
 /// Crop region in normalized coordinates (0.0-1.0).
 ///
 /// Each field represents how much to remove from that edge.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[wasm_bindgen(getter_with_clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
 pub struct Crop {
     /// Amount to crop from top (0.0-1.0).
     pub top: f32,
@@ -136,9 +135,8 @@ pub struct Crop {
     pub left: f32,
 }
 
-#[wasm_bindgen]
 impl Crop {
-    #[wasm_bindgen(constructor)]
+    /// Create a new Crop instance.
     pub fn new(top: f32, right: f32, bottom: f32, left: f32) -> Self {
         Self { top, right, bottom, left }
     }

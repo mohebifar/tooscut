@@ -16,3 +16,4 @@ serde-wasm-bindgen.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+wasm-bindgen-test = "0.3"

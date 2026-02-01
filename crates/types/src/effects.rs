@@ -1,13 +1,14 @@
 //! Visual effects applied to layers.
 
 use serde::{Deserialize, Serialize};
+use tsify_next::Tsify;
 use wasm_bindgen::prelude::*;
 
 /// Visual effects that can be applied to any layer.
 ///
 /// All values use intuitive ranges where 1.0 is the default/neutral.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[wasm_bindgen(getter_with_clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
 pub struct Effects {
     /// Opacity (0.0 = transparent, 1.0 = opaque).
     pub opacity: f32,
@@ -23,9 +24,8 @@ pub struct Effects {
     pub blur: f32,
 }
 
-#[wasm_bindgen]
 impl Effects {
-    #[wasm_bindgen(constructor)]
+    /// Create a new Effects instance.
     pub fn new(opacity: f32, brightness: f32, contrast: f32, saturation: f32, hue_rotate: f32, blur: f32) -> Self {
         Self { opacity, brightness, contrast, saturation, hue_rotate, blur }
     }

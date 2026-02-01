@@ -1,6 +1,7 @@
 //! Easing functions and cubic bezier curves.
 
 use serde::{Deserialize, Serialize};
+use tsify_next::Tsify;
 use wasm_bindgen::prelude::*;
 
 /// Cubic bezier control points [x1, y1, x2, y2].
@@ -131,10 +132,12 @@ impl EasingPreset {
 }
 
 /// Combined easing configuration.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
 pub struct Easing {
     pub preset: EasingPreset,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
     pub custom_bezier: Option<CubicBezier>,
 }
 
