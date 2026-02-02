@@ -416,27 +416,45 @@ Text rendering uses **two render passes**:
 
 This separation is required because glyphon manages its own render pass internally.
 
-### Font Loading
+### Custom Font Loading
 
-Custom fonts can be loaded from JS:
+Custom fonts can be loaded dynamically from TTF/OTF files:
 
 ```typescript
-// JS side
-const fontData = await fetch('/fonts/Roboto-Bold.ttf').then(r => r.arrayBuffer());
-compositor.loadFont('Roboto Bold', new Uint8Array(fontData));
+// Load a custom font
+const fontData = await fetch("/fonts/Roboto-Bold.ttf").then((r) => r.arrayBuffer());
+compositor.loadFont("Roboto", new Uint8Array(fontData));
 
-// Rust side
-pub fn load_font(&mut self, font_family: &str, font_data: Vec<u8>) -> bool {
-    self.font_system.db_mut().load_font_data(font_data);
-    // Track loaded variants
+// Check if font is loaded
+if (compositor.isFontLoaded("Roboto")) {
+  console.log("Roboto font ready");
 }
+
+// Use in text layer
+const textLayer: TextLayerData = {
+  style: {
+    fontFamily: "Roboto", // Must match the font's internal family name
+    fontWeight: 700,
+    fontSize: 48,
+    // ...
+  },
+  // ...
+};
 ```
+
+**Important:** The `fontFamily` parameter must match the font's internal family name (stored in the font file metadata). When the font is loaded, the actual family name is logged to help identify it.
+
+**Font Resolution:**
+
+1. If `fontFamily` matches a loaded custom font, that font is used
+2. If not found, cosmic-text falls back through the embedded font chain
+3. DejaVu Sans is the ultimate fallback (default sans-serif)
 
 ### RTL and Complex Script Support
 
 Text shaping uses `Shaping::Advanced` which enables:
 
-- **Bidirectional text** - Correct LTR/RTL mixing (e.g., "Hello سلام World")
+- **Bidirectional text** - Correct LTR/RTL mixing (e.g., "Hello درود World")
 - **Arabic script** - Proper letter joining and contextual forms
 - **Persian script** - Full RTL support with correct glyph shaping
 - **Chinese (CJK)** - Ideographic character support via Noto Sans SC
@@ -930,3 +948,5 @@ interface KeyframeTracks {
 | 2025-01-31 | Multilingual text support: Latin (LTR), Arabic/Persian (RTL), Chinese (CJK), mixed bidirectional         |
 | 2025-01-31 | Text rendering uses two-pass architecture: main pass for backgrounds, separate pass for glyphs           |
 | 2025-01-31 | Visual tests: Added multilingual text tests (English, Persian, Chinese, mixed LTR/RTL)                   |
+| 2025-02-01 | Custom font loading: Added loadFont(fontFamily, fontData) and isFontLoaded(fontFamily) APIs              |
+| 2025-02-01 | Font family resolution: cosmic-text handles fallback when requested font is not found                    |

@@ -112,6 +112,30 @@ export class Compositor {
   }
 
   /**
+   * Load a custom font from TTF/OTF data.
+   *
+   * The fontFamily should be the font's internal family name (e.g., "Roboto", "Open Sans").
+   * Use this same name in text layer `fontFamily` to render text with this font.
+   *
+   * @param fontFamily - The font family name (must match the font's internal name)
+   * @param fontData - The font file data as Uint8Array
+   * @returns true if font was loaded successfully, false if already loaded
+   */
+  loadFont(fontFamily: string, fontData: Uint8Array): boolean {
+    return this.wasmCompositor.load_font(fontFamily, fontData);
+  }
+
+  /**
+   * Check if a font family has been loaded.
+   *
+   * @param fontFamily - The font family name to check
+   * @returns true if the font family is loaded
+   */
+  isFontLoaded(fontFamily: string): boolean {
+    return this.wasmCompositor.is_font_loaded(fontFamily);
+  }
+
+  /**
    * Render a frame with multiple layers.
    *
    * All transform/effects values must be pre-evaluated (no keyframes).

@@ -46,5 +46,8 @@
     "playwright": "^1.50.0",
     "typescript": "^5.8.0",
     "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "mediabunny": "^1.31.0"
   }
 }

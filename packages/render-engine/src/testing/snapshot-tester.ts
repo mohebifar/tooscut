@@ -305,6 +305,24 @@ export class SnapshotTester {
   }
 
   /**
+   * Load a custom font from TTF/OTF data.
+   *
+   * @param fontFamily - The font family name (must match the font's internal name)
+   * @param fontData - The font file data as Uint8Array
+   * @returns true if font was loaded successfully, false if already loaded
+   */
+  loadFont(fontFamily: string, fontData: Uint8Array): boolean {
+    return this.compositor.loadFont(fontFamily, fontData);
+  }
+
+  /**
+   * Check if a font family has been loaded.
+   */
+  isFontLoaded(fontFamily: string): boolean {
+    return this.compositor.isFontLoaded(fontFamily);
+  }
+
+  /**
    * Render a frame and return the result as ImageData.
    * Uses GPU buffer readback for reliable results in headless environments.
    * Also draws to a visible canvas in the DOM for vitest screenshot capture.

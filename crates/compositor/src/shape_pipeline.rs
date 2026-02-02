@@ -198,15 +198,13 @@ impl ShapeUniforms {
         let y2 = line.line_box.y2 * ch / 100.0;
 
         // Calculate bounding box with padding for line heads
-        let padding = line.style.stroke_width * 2.0 +
-            line.style.start_head.size.max(line.style.end_head.size);
+        // Use actual pixel values for padding (no scaling)
+        let head_size = line.style.start_head.size.max(line.style.end_head.size);
+        let padding = line.style.stroke_width * 2.0 + head_size * 2.0;
         let min_x = x1.min(x2) - padding;
         let min_y = y1.min(y2) - padding;
         let max_x = x1.max(x2) + padding;
         let max_y = y1.max(y2) + padding;
-
-        // Scale factor for resolution independence
-        let scale_factor = ch / 1080.0;
 
         let stroke_style = match line.style.stroke_style {
             LineStrokeStyle::Solid => STROKE_SOLID,
@@ -230,6 +228,8 @@ impl ShapeUniforms {
             LineHeadType::Diamond => HEAD_DIAMOND,
         };
 
+        // Line properties use actual pixel values (no resolution scaling)
+        // This gives designers direct control over visual appearance
         Self {
             bbox: [min_x, min_y, max_x - min_x, max_y - min_y],
             canvas: [cw, ch, 1.0 / cw, 1.0 / ch],
@@ -238,7 +238,7 @@ impl ShapeUniforms {
             shape_type: SHAPE_LINE,
             sides: 0,
             corner_radius: 0.0,
-            stroke_width: line.style.stroke_width * scale_factor,
+            stroke_width: line.style.stroke_width,
             opacity: line.opacity,
             has_stroke: 0,
             stroke_style,
@@ -246,9 +246,9 @@ impl ShapeUniforms {
             line_start: [x1, y1],
             line_end: [x2, y2],
             start_head_type,
-            start_head_size: line.style.start_head.size * scale_factor,
+            start_head_size: line.style.start_head.size,
             end_head_type,
-            end_head_size: line.style.end_head.size * scale_factor,
+            end_head_size: line.style.end_head.size,
             transition_type: 0,
             transition_progress: 0.0,
             offset_x: 0.0,
@@ -282,6 +282,19 @@ struct ShapeUniforms {
 };
 
 @group(0) @binding(0) var<uniform> uniforms: ShapeUniforms;
+
+// Shape type constants
+const SHAPE_RECTANGLE: u32 = 0u;
+const SHAPE_ELLIPSE: u32 = 1u;
+const SHAPE_POLYGON: u32 = 2u;
+const SHAPE_LINE: u32 = 3u;
+
+// Line head type constants
+const HEAD_NONE: u32 = 0u;
+const HEAD_ARROW: u32 = 1u;
+const HEAD_CIRCLE: u32 = 2u;
+const HEAD_SQUARE: u32 = 3u;
+const HEAD_DIAMOND: u32 = 4u;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -331,16 +344,105 @@ fn sdf_ellipse(p: vec2<f32>, ab: vec2<f32>) -> f32 {
     return d * min(ab.x, ab.y);
 }
 
+// SDF for a line segment (capsule shape)
+fn sdf_line_segment(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>, thickness: f32) -> f32 {
+    let pa = p - a;
+    let ba = b - a;
+    let h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba * h) - thickness * 0.5;
+}
+
+// SDF for circle
+fn sdf_circle(p: vec2<f32>, radius: f32) -> f32 {
+    return length(p) - radius;
+}
+
+// SDF for a triangle (arrow head)
+fn sdf_triangle(p: vec2<f32>, p0: vec2<f32>, p1: vec2<f32>, p2: vec2<f32>) -> f32 {
+    let e0 = p1 - p0;
+    let e1 = p2 - p1;
+    let e2 = p0 - p2;
+    let v0 = p - p0;
+    let v1 = p - p1;
+    let v2 = p - p2;
+
+    let pq0 = v0 - e0 * clamp(dot(v0, e0) / dot(e0, e0), 0.0, 1.0);
+    let pq1 = v1 - e1 * clamp(dot(v1, e1) / dot(e1, e1), 0.0, 1.0);
+    let pq2 = v2 - e2 * clamp(dot(v2, e2) / dot(e2, e2), 0.0, 1.0);
+
+    let s = sign(e0.x * e2.y - e0.y * e2.x);
+    let d = min(min(
+        vec2<f32>(dot(pq0, pq0), s * (v0.x * e0.y - v0.y * e0.x)),
+        vec2<f32>(dot(pq1, pq1), s * (v1.x * e1.y - v1.y * e1.x))),
+        vec2<f32>(dot(pq2, pq2), s * (v2.x * e2.y - v2.y * e2.x)));
+
+    return -sqrt(d.x) * sign(d.y);
+}
+
+// SDF for a square (rotated box)
+fn sdf_square(p: vec2<f32>, size: f32) -> f32 {
+    let q = abs(p);
+    return max(q.x, q.y) - size * 0.5;
+}
+
+// SDF for a diamond (rotated square)
+fn sdf_diamond(p: vec2<f32>, size: f32) -> f32 {
+    let q = abs(p);
+    return (q.x + q.y) * 0.7071 - size * 0.5;  // 0.7071 = 1/sqrt(2)
+}
+
+// Calculate arrow head SDF
+fn sdf_arrow_head(p: vec2<f32>, tip: vec2<f32>, dir: vec2<f32>, size: f32) -> f32 {
+    // Arrow points in 'dir' direction, tip is at 'tip'
+    let perp = vec2<f32>(-dir.y, dir.x);
+    let base = tip - dir * size;
+    let left = base + perp * size * 0.5;
+    let right = base - perp * size * 0.5;
+    return sdf_triangle(p, tip, left, right);
+}
+
+// Calculate head SDF based on type
+fn sdf_head(p: vec2<f32>, center: vec2<f32>, dir: vec2<f32>, head_type: u32, size: f32) -> f32 {
+    let local_p = p - center;
+
+    if head_type == HEAD_ARROW {
+        return sdf_arrow_head(p, center, dir, size);
+    } else if head_type == HEAD_CIRCLE {
+        return sdf_circle(local_p, size * 0.5);
+    } else if head_type == HEAD_SQUARE {
+        // Rotate to align with line direction
+        let angle = atan2(dir.y, dir.x);
+        let c = cos(-angle);
+        let s = sin(-angle);
+        let rotated = vec2<f32>(local_p.x * c - local_p.y * s, local_p.x * s + local_p.y * c);
+        return sdf_square(rotated, size);
+    } else if head_type == HEAD_DIAMOND {
+        return sdf_diamond(local_p, size);
+    }
+    return 1e10;  // HEAD_NONE
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let bbox = uniforms.data[0];
     let fill_color = uniforms.data[2];
     let params = uniforms.data[4];  // (shape_type, sides, corner_radius, stroke_width)
     let params2 = uniforms.data[5]; // (opacity, has_stroke, stroke_style, _pad)
+    let line_endpoints = uniforms.data[6];  // (line_start.xy, line_end.xy)
+    let head_params = uniforms.data[7];  // (start_head_type, start_head_size, end_head_type, end_head_size)
 
     let shape_type = bitcast<u32>(params.x);
+    let sides = bitcast<u32>(params.y);
     let corner_radius = params.z;
+    let stroke_width = params.w;
     let opacity = params2.x;
+
+    let line_start = line_endpoints.xy;
+    let line_end = line_endpoints.zw;
+    let start_head_type = bitcast<u32>(head_params.x);
+    let start_head_size = head_params.y;
+    let end_head_type = bitcast<u32>(head_params.z);
+    let end_head_size = head_params.w;
 
     let half_size = bbox.zw * 0.5;
     let center = bbox.xy + half_size;
@@ -350,12 +452,57 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let aa = 1.0;  // Anti-aliasing width
 
     // Calculate SDF based on shape type
-    if shape_type == 0u {
-        // Rectangle
+    if shape_type == SHAPE_RECTANGLE {
         d = sdf_rounded_rect(p, half_size, corner_radius);
-    } else if shape_type == 1u {
-        // Ellipse
+    } else if shape_type == SHAPE_ELLIPSE {
         d = sdf_ellipse(p, half_size);
+    } else if shape_type == SHAPE_POLYGON {
+        // Simple polygon using regular polygon SDF
+        let n = max(sides, 3u);
+        let an = 3.14159265 / f32(n);
+        let angle = atan2(p.y, p.x);
+        let r = length(p);
+        let sector = floor((angle + an) / (2.0 * an));
+        let theta = angle - sector * 2.0 * an;
+        let q = r * vec2<f32>(cos(theta), abs(sin(theta)));
+        let radius = min(half_size.x, half_size.y);
+        d = q.x - radius * cos(an);
+    } else if shape_type == SHAPE_LINE {
+        // Line with optional heads
+        let pixel_pos = in.pixel_pos;
+
+        // Line direction
+        let line_vec = line_end - line_start;
+        let line_len = length(line_vec);
+        var line_dir = vec2<f32>(1.0, 0.0);
+        if line_len > 0.001 {
+            line_dir = line_vec / line_len;
+        }
+
+        // Adjust line endpoints for head sizes (line stops at head base)
+        var adjusted_start = line_start;
+        var adjusted_end = line_end;
+        if start_head_type != HEAD_NONE && start_head_size > 0.0 {
+            adjusted_start = line_start + line_dir * start_head_size * 0.3;
+        }
+        if end_head_type != HEAD_NONE && end_head_size > 0.0 {
+            adjusted_end = line_end - line_dir * end_head_size * 0.3;
+        }
+
+        // Line segment SDF
+        d = sdf_line_segment(pixel_pos, adjusted_start, adjusted_end, stroke_width);
+
+        // Start head
+        if start_head_type != HEAD_NONE && start_head_size > 0.0 {
+            let head_d = sdf_head(pixel_pos, line_start, -line_dir, start_head_type, start_head_size);
+            d = min(d, head_d);
+        }
+
+        // End head
+        if end_head_type != HEAD_NONE && end_head_size > 0.0 {
+            let head_d = sdf_head(pixel_pos, line_end, line_dir, end_head_type, end_head_size);
+            d = min(d, head_d);
+        }
     } else {
         // Default to rectangle for unknown types
         d = sdf_rounded_rect(p, half_size, corner_radius);

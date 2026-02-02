@@ -7,6 +7,9 @@ use wgpu::{
     TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor,
 };
 
+#[cfg(target_arch = "wasm32")]
+use web_sys::ImageBitmap;
+
 use crate::error::{CompositorError, Result};
 
 /// Information about a stored texture.
@@ -25,6 +28,10 @@ impl TextureInfo {
             return Err(CompositorError::InvalidTextureDimensions { width, height });
         }
 
+        // Use Rgba8Unorm (not Srgb) to avoid double gamma correction.
+        // When using copyExternalImageToTexture, the source is already in sRGB
+        // and the API handles the conversion. Using Rgba8UnormSrgb would apply
+        // gamma correction twice, resulting in washed-out images.
         let texture = device.create_texture(&TextureDescriptor {
             label: Some(label),
             size: Extent3d {
@@ -35,7 +42,7 @@ impl TextureInfo {
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8UnormSrgb,
+            format: TextureFormat::Rgba8Unorm,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -161,6 +168,63 @@ impl TextureManager {
     /// List all texture IDs.
     pub fn texture_ids(&self) -> Vec<&str> {
         self.textures.keys().map(|s| s.as_str()).collect()
+    }
+
+    /// Upload a texture from an ImageBitmap using zero-copy GPU transfer.
+    ///
+    /// This uses `copy_external_image_to_texture` for efficient GPU upload
+    /// without copying pixel data through JavaScript.
+    #[cfg(target_arch = "wasm32")]
+    pub fn upload_bitmap(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        texture_id: &str,
+        bitmap: &ImageBitmap,
+    ) -> Result<()> {
+        let width = bitmap.width();
+        let height = bitmap.height();
+
+        if width == 0 || height == 0 {
+            return Err(CompositorError::InvalidTextureDimensions { width, height });
+        }
+
+        // Create or reuse texture
+        let needs_create = match self.textures.get(texture_id) {
+            Some(existing) => existing.width != width || existing.height != height,
+            None => true,
+        };
+
+        if needs_create {
+            let info = TextureInfo::new(device, width, height, texture_id)?;
+            self.textures.insert(texture_id.to_string(), info);
+        }
+
+        let texture_info = self.textures.get(texture_id).unwrap();
+
+        // Copy ImageBitmap directly to GPU texture (zero-copy)
+        queue.copy_external_image_to_texture(
+            &wgpu::CopyExternalImageSourceInfo {
+                source: wgpu::ExternalImageSource::ImageBitmap(bitmap.clone()),
+                origin: wgpu::Origin2d::ZERO,
+                flip_y: false,
+            },
+            wgpu::CopyExternalImageDestInfo {
+                texture: &texture_info.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+                color_space: wgpu::PredefinedColorSpace::Srgb,
+                premultiplied_alpha: false,
+            },
+            Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        Ok(())
     }
 }
 

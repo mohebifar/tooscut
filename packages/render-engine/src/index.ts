@@ -126,3 +126,11 @@ export {
   type MoveClipOptions,
   type TrimClipOptions,
 } from "./clip-operations.js";
+
+// Video frame loading (MediaBunny)
+export {
+  VideoFrameLoader,
+  VideoFrameLoaderManager,
+  type VideoAssetInfo,
+  type FrameResult,
+} from "./video-frame-loader.js";

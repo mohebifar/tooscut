@@ -2,7 +2,16 @@
 //!
 //! Uses glyphon for text rendering with cosmic-text for text shaping.
 //! cosmic-text uses rustybuzz (HarfBuzz-compatible) for proper complex script support
-//! including RTL scripts (Arabic, Persian, Hebrew), CJK, and ligatures.
+//! including RTL scripts (Arabic, Persian, Hebrew) and ligatures.
+//!
+//! ## Embedded Fonts
+//! - DejaVu Sans (~750KB) - Latin, Cyrillic, Greek
+//! - Noto Sans (~570KB) - Extended Latin coverage
+//! - Noto Sans Arabic (~240KB) - Arabic, Persian, Urdu (RTL)
+//!
+//! ## CJK Support
+//! Chinese/Japanese/Korean fonts are NOT embedded due to size (~15-20MB).
+//! To render CJK text, load a CJK font dynamically via `load_font()`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -14,11 +23,10 @@ use wgpu::{Device, MultisampleState, Queue, TextureFormat, TextureView};
 
 use tooscut_types::{TextAlign, TextLayerData, VerticalAlign};
 
-// Embedded fonts
+// Embedded fonts (total ~1.5MB)
 const DEJAVU_SANS: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
 const NOTO_SANS: &[u8] = include_bytes!("../fonts/NotoSans-Regular.ttf");
 const NOTO_SANS_ARABIC: &[u8] = include_bytes!("../fonts/NotoSansArabic-Regular.ttf");
-const NOTO_SANS_SC: &[u8] = include_bytes!("../fonts/NotoSansSC-Regular.otf");
 
 /// GPU-accelerated text renderer using glyphon.
 pub struct TextRenderer {
@@ -60,10 +68,9 @@ impl TextRenderer {
         font_system.db_mut().load_font_data(DEJAVU_SANS.to_vec());
         // Noto Sans for extended Latin/Cyrillic
         font_system.db_mut().load_font_data(NOTO_SANS.to_vec());
-        // Noto Sans Arabic for RTL scripts
+        // Noto Sans Arabic for RTL scripts (Persian, Arabic, Urdu)
         font_system.db_mut().load_font_data(NOTO_SANS_ARABIC.to_vec());
-        // Noto Sans SC for Chinese
-        font_system.db_mut().load_font_data(NOTO_SANS_SC.to_vec());
+        // Note: CJK fonts not embedded due to size - load via load_font() if needed
 
         // Set DejaVu Sans as the default sans-serif font
         // This is required for WASM where there are no system fonts
@@ -118,9 +125,14 @@ impl TextRenderer {
     }
 
     /// Load a custom font from TTF/OTF data.
+    ///
+    /// The `font_family` parameter should match how you'll reference this font
+    /// in text layers. When a text layer uses this font_family, cosmic-text
+    /// will look up the font by its internal family name.
+    ///
     /// Returns true if the font was loaded, false if already loaded.
-    pub fn load_font(&mut self, font_id: &str, font_data: Vec<u8>) -> bool {
-        if self.loaded_fonts.contains(font_id) {
+    pub fn load_font(&mut self, font_family: &str, font_data: Vec<u8>) -> bool {
+        if self.loaded_fonts.contains(font_family) {
             return false;
         }
 
@@ -130,10 +142,10 @@ impl TextRenderer {
         // Load the font
         self.font_system.db_mut().load_font_data(font_data);
 
-        // Find the newly added face
+        // Find the newly added face and log info
         for face in self.font_system.db().faces() {
             if !faces_before.contains(&face.id) {
-                let family_name = face
+                let internal_family_name = face
                     .families
                     .first()
                     .map(|(n, _)| n.to_string())
@@ -144,10 +156,19 @@ impl TextRenderer {
                     glyphon::fontdb::Style::Italic | glyphon::fontdb::Style::Oblique
                 );
 
+                // Log the mapping so users can see the actual font family name
+                log::info!(
+                    "Loaded font: requested='{}' -> internal family='{}', weight={}, italic={}",
+                    font_family,
+                    internal_family_name,
+                    face.weight.0,
+                    is_italic
+                );
+
                 self.font_info.insert(
-                    font_id.to_string(),
+                    font_family.to_string(),
                     LoadedFontInfo {
-                        family: family_name,
+                        family: internal_family_name,
                         weight: face.weight.0,
                         is_italic,
                     },
@@ -156,13 +177,13 @@ impl TextRenderer {
             }
         }
 
-        self.loaded_fonts.insert(font_id.to_string());
+        self.loaded_fonts.insert(font_family.to_string());
         true
     }
 
-    /// Check if a font is loaded.
-    pub fn is_font_loaded(&self, font_id: &str) -> bool {
-        self.loaded_fonts.contains(font_id)
+    /// Check if a font family has been loaded.
+    pub fn is_font_loaded(&self, font_family: &str) -> bool {
+        self.loaded_fonts.contains(font_family)
     }
 
     /// Calculate text metrics: (width, is_rtl).
@@ -344,14 +365,15 @@ impl TextRenderer {
             );
 
             // Create base attributes
-            // Use SansSerif as fallback since custom fonts may not be loaded
+            // Use the specified font family, cosmic-text will fallback gracefully
             let mut base_attrs = Attrs::new().color(base_color);
-            // Only use the named font if it's loaded, otherwise fall back to SansSerif
-            // This prevents panics when the requested font is not available
-            if self.loaded_fonts.contains(&layer.style.font_family) {
-                base_attrs = base_attrs.family(Family::Name(&layer.style.font_family));
-            } else {
+            if layer.style.font_family.is_empty()
+                || layer.style.font_family.eq_ignore_ascii_case("sans-serif")
+            {
                 base_attrs = base_attrs.family(Family::SansSerif);
+            } else {
+                // Use the named font - cosmic-text will fallback to sans-serif if not found
+                base_attrs = base_attrs.family(Family::Name(&layer.style.font_family));
             }
             base_attrs = base_attrs.weight(Weight(layer.style.font_weight));
 
@@ -385,10 +407,12 @@ impl TextRenderer {
 
                 // Create highlight attributes with same font fallback logic
                 let mut highlight_attrs = Attrs::new().color(highlight_color);
-                if self.loaded_fonts.contains(&layer.style.font_family) {
-                    highlight_attrs = highlight_attrs.family(Family::Name(&layer.style.font_family));
-                } else {
+                if layer.style.font_family.is_empty()
+                    || layer.style.font_family.eq_ignore_ascii_case("sans-serif")
+                {
                     highlight_attrs = highlight_attrs.family(Family::SansSerif);
+                } else {
+                    highlight_attrs = highlight_attrs.family(Family::Name(&layer.style.font_family));
                 }
                 let highlight_weight = highlight_style.font_weight.unwrap_or(layer.style.font_weight);
                 highlight_attrs = highlight_attrs.weight(Weight(highlight_weight));

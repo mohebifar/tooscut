@@ -5,7 +5,7 @@ use std::sync::Arc;
 use bytemuck::cast_slice;
 use wasm_bindgen::prelude::*;
 use wgpu::{
-    BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, Buffer,
+    util::DeviceExt, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, Buffer,
     BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Device, LoadOp, Operations, Queue,
     RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline, StoreOp, Surface,
     SurfaceConfiguration, TextureViewDescriptor,
@@ -114,26 +114,19 @@ impl Compositor {
         }
     }
 
-    /// Upload texture from an ImageBitmap.
+    /// Upload texture from an ImageBitmap using zero-copy GPU transfer.
+    ///
+    /// This uses `copy_external_image_to_texture` for efficient GPU upload
+    /// without copying pixel data through JavaScript.
     #[wasm_bindgen]
-    pub fn upload_bitmap(&mut self, bitmap: &ImageBitmap, texture_id: &str) {
-        let width = bitmap.width();
-        let height = bitmap.height();
-
-        if width == 0 || height == 0 {
-            return;
-        }
-
-        if self.textures.get(texture_id).is_none() {
-            let _ = self.textures.upload(
-                &self.device,
-                &self.queue,
-                texture_id,
-                width,
-                height,
-                &vec![255u8; (width * height * 4) as usize],
-            );
-        }
+    pub fn upload_bitmap(
+        &mut self,
+        bitmap: &ImageBitmap,
+        texture_id: &str,
+    ) -> std::result::Result<(), JsValue> {
+        self.textures
+            .upload_bitmap(&self.device, &self.queue, texture_id, bitmap)
+            .map_err(Into::into)
     }
 }
 
@@ -172,22 +165,25 @@ impl Compositor {
 
     /// Load a custom font from TTF/OTF data.
     ///
+    /// The `font_family` should be the font's internal family name (e.g., "Roboto", "Open Sans").
+    /// Use this same name in text layer `fontFamily` to use this font.
+    ///
     /// Returns true if the font was loaded, false if already loaded.
     #[wasm_bindgen]
-    pub fn load_font(&mut self, font_id: &str, font_data: &[u8]) -> bool {
+    pub fn load_font(&mut self, font_family: &str, font_data: &[u8]) -> bool {
         self.ensure_text_renderer();
         if let Some(ref mut text_renderer) = self.text_renderer {
-            text_renderer.load_font(font_id, font_data.to_vec())
+            text_renderer.load_font(font_family, font_data.to_vec())
         } else {
             false
         }
     }
 
-    /// Check if a font is loaded.
+    /// Check if a font family has been loaded.
     #[wasm_bindgen]
-    pub fn is_font_loaded(&self, font_id: &str) -> bool {
+    pub fn is_font_loaded(&self, font_family: &str) -> bool {
         if let Some(ref text_renderer) = self.text_renderer {
-            text_renderer.is_font_loaded(font_id)
+            text_renderer.is_font_loaded(font_family)
         } else {
             false
         }
@@ -801,15 +797,21 @@ impl Compositor {
         render_pass.set_pipeline(&self.shape_pipeline);
 
         let uniforms = ShapeUniforms::from_shape(shape, self.width, self.height);
-        self.queue
-            .write_buffer(&self.shape_uniform_buffer, 0, cast_slice(&[uniforms]));
+
+        // Create a new buffer with the uniform data immediately available
+        // (using create_buffer_init ensures data is ready for this draw call)
+        let uniform_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("shape_uniform_buffer"),
+            contents: cast_slice(&[uniforms]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
 
         let bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("shape_bind_group"),
             layout: &self.shape_bind_group_layout,
             entries: &[BindGroupEntry {
                 binding: 0,
-                resource: self.shape_uniform_buffer.as_entire_binding(),
+                resource: uniform_buffer.as_entire_binding(),
             }],
         });
 
@@ -823,15 +825,19 @@ impl Compositor {
 
         let uniforms = ShapeUniforms::from_line(line, self.width, self.height);
 
-        self.queue
-            .write_buffer(&self.shape_uniform_buffer, 0, cast_slice(&[uniforms]));
+        // Create a new buffer with the uniform data immediately available
+        let uniform_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("line_uniform_buffer"),
+            contents: cast_slice(&[uniforms]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
 
         let bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("line_bind_group"),
             layout: &self.shape_bind_group_layout,
             entries: &[BindGroupEntry {
                 binding: 0,
-                resource: self.shape_uniform_buffer.as_entire_binding(),
+                resource: uniform_buffer.as_entire_binding(),
             }],
         });
 
@@ -893,23 +899,24 @@ impl Compositor {
                 _pad2: [0.0; 3],
             };
 
-            self.queue
-                .write_buffer(&self.shape_uniform_buffer, 0, cast_slice(&[uniforms]));
+            // Create a new buffer with the uniform data immediately available
+            let uniform_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("text_bg_uniform_buffer"),
+                contents: cast_slice(&[uniforms]),
+                usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            });
 
             let bind_group = self.device.create_bind_group(&BindGroupDescriptor {
                 label: Some("text_bg_bind_group"),
                 layout: &self.shape_bind_group_layout,
                 entries: &[BindGroupEntry {
                     binding: 0,
-                    resource: self.shape_uniform_buffer.as_entire_binding(),
+                    resource: uniform_buffer.as_entire_binding(),
                 }],
             });
 
             render_pass.set_bind_group(0, &bind_group, &[]);
             render_pass.draw(0..4, 0..1); // Triangle strip
         }
-
-        // TODO: Add glyphon text rendering here
-        // For now, text content is not rendered, only the background box
     }
 }
