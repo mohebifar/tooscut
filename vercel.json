@@ -1,0 +1,5 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "bash scripts/vercel-install.sh",
+  "buildCommand": ". \"$HOME/.cargo/env\" && pnpm build:wasm && pnpm build"
+}
