@@ -22,6 +22,13 @@ export const Route = createRootRoute({
         href: appCss,
       },
     ],
+    scripts: [
+      {
+        defer: true,
+        src: "https://cloud.umami.is/script.js",
+        "data-website-id": "7776ab6b-d097-4eb4-ad02-a4e6e4adbd3d",
+      },
+    ],
   }),
 
   component: RootComponent,
