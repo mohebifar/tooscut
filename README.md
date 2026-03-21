@@ -18,7 +18,7 @@ pnpm install
 pnpm dev
 ```
 
-The UI runs on [http://localhost:3000](http://localhost:3000).
+The UI runs on [http://localhost:4200](http://localhost:4200).
 
 ## Commands
 
