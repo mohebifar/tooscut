@@ -16,6 +16,7 @@ This document captures all architectural and design decisions made for the `@too
 - [Text Rendering](#text-rendering)
 - [Unified Transitions](#unified-transitions)
 - [Shape Rendering](#shape-rendering)
+- [Audio Engine (WASM)](#audio-engine-wasm)
 - [Performance Optimizations](#performance-optimizations)
 - [Testing Strategy](#testing-strategy)
 
@@ -671,6 +672,116 @@ This ensures proper layering regardless of layer type.
 
 ---
 
+## Audio Engine (WASM)
+
+### Architecture
+
+Audio mixing runs entirely in a WASM `AudioEngine` inside an `AudioWorkletProcessor`. This keeps audio rendering off the main thread and provides sample-accurate playback.
+
+```
+BrowserAudioEngine (main thread)
+    │
+    │  postMessage (streaming chunks)
+    ▼
+AudioWorkletProcessor (audio thread)
+    │
+    │  calls into WASM
+    ▼
+AudioEngine (Rust/WASM)
+    ├── AudioMixer
+    │   ├── sources: HashMap<String, AudioClipSource>
+    │   ├── clips: Vec<AudioClip>
+    │   ├── tracks: Vec<AudioTrack>
+    │   └── cross_transitions: Vec<CrossTransition>
+    └── render() → interleaved stereo f32
+```
+
+The worklet calls `engine.render(output, numFrames)` every ~128 samples. The mixer iterates active clips, reads from their sources with linear interpolation, applies per-clip gain/fades, cross-transition crossfades, track volume/pan/mute/solo, and master volume.
+
+### Streaming Audio Decode
+
+Audio is decoded **incrementally** using MediaBunny's `AudioSampleSink` iterator, rather than decoding the entire file upfront with `decodeAudioData()`.
+
+**Rationale:**
+
+- `decodeAudioData()` blocks until the entire file is decoded — for a 1-hour video this can take ~10 seconds before any audio plays
+- Streaming decode sends PCM chunks to WASM as they're decoded, so audio is playable within the first ~200ms
+- The WASM source returns silence for regions not yet received, which is transparent to the user during sequential playback
+
+**Flow:**
+
+```
+1. BrowserAudioEngine.streamAudioFromUrl(sourceId, url)
+2. Open file with MediaBunny (BlobSource for blob: URLs, UrlSource for remote)
+3. Get primary audio track, create AudioSampleSink
+4. Send "create-streaming-source" to worklet (sample rate, channels, estimated duration)
+5. for await (sample of sink.samples()):
+   a. Extract f32 PCM via sample.copyTo()
+   b. Interleave channels (L,R,L,R,...)
+   c. Transfer ArrayBuffer to worklet via "append-audio-chunk"
+6. Send "finalize-audio" to worklet
+```
+
+**Rust side:**
+
+```rust
+// AudioClipSource supports two construction modes:
+AudioClipSource::new(id, pcm_data, sample_rate, channels)        // Bulk (is_complete = true)
+AudioClipSource::new_streaming(id, sample_rate, channels, hint)   // Streaming (is_complete = false)
+
+// Streaming methods:
+source.append_chunk(&[f32])   // Extends pcm_data, recalculates duration
+source.finalize()             // Sets is_complete = true, shrink_to_fit()
+```
+
+`get_sample()` returns `(0.0, 0.0)` for times beyond the current `duration`, so partially-loaded sources produce silence in unloaded regions without any special handling.
+
+**Pre-allocation:** `new_streaming()` accepts an optional duration hint and calls `Vec::with_capacity()` to avoid repeated reallocations during append.
+
+### URL Source Selection
+
+Local files in the editor use `blob:` URLs (from File System Access API). These don't support HTTP Range requests, so MediaBunny's `UrlSource` cannot be used directly.
+
+| URL scheme | MediaBunny source           | Reason                                          |
+| ---------- | --------------------------- | ----------------------------------------------- |
+| `blob:`    | `BlobSource` (fetch → Blob) | No Range request support                        |
+| `http(s):` | `UrlSource`                 | Supports Range requests for efficient streaming |
+
+### Fallback Path
+
+If MediaBunny fails (unsupported format, no audio track, etc.), the engine falls back to `decodeAudioData()` and uploads audio in bulk via the existing `upload-audio` message. This ensures compatibility with any format the browser's built-in decoder supports.
+
+### Worklet Message Protocol
+
+| Message                   | Direction | Purpose                                      |
+| ------------------------- | --------- | -------------------------------------------- |
+| `init`                    | → worklet | Send WASM binary, initialize engine          |
+| `upload-audio`            | → worklet | Bulk upload (fallback path)                  |
+| `create-streaming-source` | → worklet | Create empty source with pre-allocation hint |
+| `append-audio-chunk`      | → worklet | Append interleaved PCM chunk (Transferable)  |
+| `finalize-audio`          | → worklet | Mark source complete, release excess memory  |
+| `remove-audio`            | → worklet | Delete source                                |
+| `set-timeline`            | → worklet | Update clips/tracks/transitions (JSON)       |
+| `set-playing`             | → worklet | Start/stop playback                          |
+| `seek`                    | → worklet | Seek to time                                 |
+| `set-master-volume`       | → worklet | Set master volume                            |
+| `time-update`             | ← worklet | Current playback time (~10Hz)                |
+| `ready`                   | ← worklet | WASM initialized                             |
+
+Thread safety is guaranteed: the worklet processes messages between `process()` calls on the same thread.
+
+### Key Files
+
+| File                                  | Role                                                      |
+| ------------------------------------- | --------------------------------------------------------- |
+| `crates/audio-engine/src/source.rs`   | `AudioClipSource` — PCM storage, interpolation, streaming |
+| `crates/audio-engine/src/mixer.rs`    | `AudioMixer` — multi-track mixing, gain, transitions      |
+| `crates/audio-engine/src/lib.rs`      | `AudioEngine` — WASM bindings (`#[wasm_bindgen]`)         |
+| `src/worklet/audio-engine.worklet.ts` | `AudioWorkletProcessor` — message dispatch, render loop   |
+| `src/audio-engine.ts`                 | `BrowserAudioEngine` — browser API, MediaBunny streaming  |
+
+---
+
 ## Performance Optimizations
 
 ### 1. Binary Search for Visibility
@@ -950,3 +1061,8 @@ interface KeyframeTracks {
 | 2025-01-31 | Visual tests: Added multilingual text tests (English, Persian, Chinese, mixed LTR/RTL)                   |
 | 2025-02-01 | Custom font loading: Added loadFont(fontFamily, fontData) and isFontLoaded(fontFamily) APIs              |
 | 2025-02-01 | Font family resolution: cosmic-text handles fallback when requested font is not found                    |
+| 2025-02-04 | Streaming audio decode: Replace bulk decodeAudioData() with incremental MediaBunny decode                |
+| 2025-02-04 | AudioClipSource: Added new_streaming(), append_chunk(), finalize() for incremental PCM upload            |
+| 2025-02-04 | AudioEngine WASM: Exported create_streaming_source, append_audio_chunk, finalize_audio bindings          |
+| 2025-02-04 | BrowserAudioEngine: streamAudioFromUrl() with BlobSource/UrlSource selection and bulk fallback           |
+| 2025-02-04 | Removed HTMLAudioElement fallback from use-audio-engine hook — WASM-only playback                        |

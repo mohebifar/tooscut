@@ -14,7 +14,6 @@ import type {
   CubicBezier,
   EasingPreset,
 } from "./types.js";
-import { DEFAULT_TRANSFORM, DEFAULT_EFFECTS } from "./types.js";
 
 // ============================================================================
 // Cubic Bezier Evaluation
@@ -303,30 +302,34 @@ export class KeyframeEvaluator {
   }
 
   /**
-   * Evaluate all transform properties at the given time.
+   * Evaluate only keyframed transform properties at the given time.
+   * Returns a partial transform containing only the properties that have keyframes.
    */
-  evaluateTransform(time: number): Transform {
+  evaluateTransform(time: number): Partial<Transform> {
+    const result: Partial<Transform> = {};
+
     const x = this.evaluate("x", time);
     const y = this.evaluate("y", time);
     const scaleX = this.evaluate("scaleX", time);
     const scaleY = this.evaluate("scaleY", time);
     const rotation = this.evaluate("rotation", time);
 
-    return {
-      x: Number.isNaN(x) ? DEFAULT_TRANSFORM.x : x,
-      y: Number.isNaN(y) ? DEFAULT_TRANSFORM.y : y,
-      scale_x: Number.isNaN(scaleX) ? DEFAULT_TRANSFORM.scale_x : scaleX,
-      scale_y: Number.isNaN(scaleY) ? DEFAULT_TRANSFORM.scale_y : scaleY,
-      rotation: Number.isNaN(rotation) ? DEFAULT_TRANSFORM.rotation : rotation,
-      anchor_x: DEFAULT_TRANSFORM.anchor_x,
-      anchor_y: DEFAULT_TRANSFORM.anchor_y,
-    };
+    if (!Number.isNaN(x)) result.x = x;
+    if (!Number.isNaN(y)) result.y = y;
+    if (!Number.isNaN(scaleX)) result.scale_x = scaleX;
+    if (!Number.isNaN(scaleY)) result.scale_y = scaleY;
+    if (!Number.isNaN(rotation)) result.rotation = rotation;
+
+    return result;
   }
 
   /**
-   * Evaluate all effect properties at the given time.
+   * Evaluate only keyframed effect properties at the given time.
+   * Returns a partial effects object containing only the properties that have keyframes.
    */
-  evaluateEffects(time: number): Effects {
+  evaluateEffects(time: number): Partial<Effects> {
+    const result: Partial<Effects> = {};
+
     const opacity = this.evaluate("opacity", time);
     const brightness = this.evaluate("brightness", time);
     const contrast = this.evaluate("contrast", time);
@@ -334,14 +337,14 @@ export class KeyframeEvaluator {
     const hueRotate = this.evaluate("hueRotate", time);
     const blur = this.evaluate("blur", time);
 
-    return {
-      opacity: Number.isNaN(opacity) ? DEFAULT_EFFECTS.opacity : opacity,
-      brightness: Number.isNaN(brightness) ? DEFAULT_EFFECTS.brightness : brightness,
-      contrast: Number.isNaN(contrast) ? DEFAULT_EFFECTS.contrast : contrast,
-      saturation: Number.isNaN(saturation) ? DEFAULT_EFFECTS.saturation : saturation,
-      hue_rotate: Number.isNaN(hueRotate) ? DEFAULT_EFFECTS.hue_rotate : hueRotate,
-      blur: Number.isNaN(blur) ? DEFAULT_EFFECTS.blur : blur,
-    };
+    if (!Number.isNaN(opacity)) result.opacity = opacity;
+    if (!Number.isNaN(brightness)) result.brightness = brightness;
+    if (!Number.isNaN(contrast)) result.contrast = contrast;
+    if (!Number.isNaN(saturation)) result.saturation = saturation;
+    if (!Number.isNaN(hueRotate)) result.hue_rotate = hueRotate;
+    if (!Number.isNaN(blur)) result.blur = blur;
+
+    return result;
   }
 
   /**

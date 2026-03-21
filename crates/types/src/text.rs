@@ -273,6 +273,12 @@ impl TextLayerData {
     }
 }
 
+impl AsRef<TextLayerData> for TextLayerData {
+    fn as_ref(&self) -> &TextLayerData {
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

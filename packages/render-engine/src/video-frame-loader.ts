@@ -1,16 +1,25 @@
 /**
- * Video frame loader using MediaBunny.
+ * Video frame loader with adapter-based architecture.
  *
- * This provides frame-accurate video decoding without using HTMLVideoElement.
- * Key benefits:
- * - Microsecond-precision seeking via getSample(timestamp)
- * - No video element pool management
- * - No drift correction needed
- * - Direct access to decoded frames
+ * Supports two backends:
+ * - HTMLVideoElement: Browser-optimized for real-time preview playback
+ * - MediaBunny: Frame-accurate decoding for export rendering
  *
- * Trade-offs:
- * - Must manually manage sample lifecycle (call close())
- * - No browser-optimized buffering (we control it ourselves)
+ * Usage:
+ * ```ts
+ * // For real-time preview (uses HTMLVideoElement)
+ * const loader = await VideoFrameLoader.fromBlob(blob, { mode: 'preview' });
+ *
+ * // For export (uses MediaBunny for frame accuracy)
+ * const loader = await VideoFrameLoader.fromBlob(blob, { mode: 'export' });
+ *
+ * // Get frame
+ * const bitmap = await loader.getImageBitmap(5.0);
+ * // ... use bitmap
+ * bitmap.close();
+ *
+ * loader.dispose();
+ * ```
  */
 
 import {
@@ -26,6 +35,10 @@ import {
   type InputAudioTrack,
 } from "mediabunny";
 
+// ============================================================================
+// Types
+// ============================================================================
+
 export interface VideoAssetInfo {
   duration: number;
   width: number;
@@ -39,26 +52,211 @@ export interface FrameResult {
   duration: number;
 }
 
+export type VideoFrameMode = "preview" | "export";
+
+export interface VideoFrameLoaderOptions {
+  /** 'preview' uses HTMLVideoElement, 'export' uses MediaBunny */
+  mode?: VideoFrameMode;
+}
+
 /**
- * Loads and decodes video frames from a video file.
- *
- * Usage:
- * ```ts
- * const loader = await VideoFrameLoader.fromBlob(videoBlob);
- *
- * // Get frame at specific time
- * const frame = await loader.getFrame(5.0); // 5 seconds
- * frame.sample.draw(ctx, 0, 0);
- * frame.sample.close(); // MUST close to release VRAM
- *
- * // Get video info
- * console.log(loader.info.duration, loader.info.width, loader.info.height);
- *
- * // Cleanup
- * loader.dispose();
- * ```
+ * Common interface for video frame sources.
  */
-export class VideoFrameLoader {
+interface VideoFrameSourceAdapter {
+  readonly info: VideoAssetInfo;
+  readonly disposed: boolean;
+
+  /** Get an ImageBitmap at the specified timestamp (seconds) */
+  getImageBitmap(timestamp: number): Promise<ImageBitmap>;
+
+  /** Get the underlying video element (preview mode only) */
+  getVideoElement?(): HTMLVideoElement | null;
+
+  /** Start playback at the given time (preview mode only) */
+  play?(startTime: number): void;
+
+  /** Pause playback (preview mode only) */
+  pause?(): void;
+
+  /** Check if currently playing (preview mode only) */
+  isPlaying?(): boolean;
+
+  /** Dispose and release resources */
+  dispose(): void;
+}
+
+// ============================================================================
+// HTMLVideoElement Adapter (Preview Mode)
+// ============================================================================
+
+class HTMLVideoElementAdapter implements VideoFrameSourceAdapter {
+  private video: HTMLVideoElement;
+  private _info: VideoAssetInfo;
+  private _disposed = false;
+  private objectUrl: string | null = null;
+  private seekPromise: Promise<void> | null = null;
+  private seekResolve: (() => void) | null = null;
+
+  private constructor(video: HTMLVideoElement, info: VideoAssetInfo, objectUrl: string | null) {
+    this.video = video;
+    this._info = info;
+    this.objectUrl = objectUrl;
+
+    // Listen for seeked events
+    this.video.addEventListener("seeked", this.onSeeked);
+  }
+
+  private onSeeked = () => {
+    if (this.seekResolve) {
+      this.seekResolve();
+      this.seekResolve = null;
+      this.seekPromise = null;
+    }
+  };
+
+  static async fromBlob(blob: Blob): Promise<HTMLVideoElementAdapter> {
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+
+    const objectUrl = URL.createObjectURL(blob);
+    video.src = objectUrl;
+
+    // Wait for metadata to load
+    await new Promise<void>((resolve, reject) => {
+      video.onloadedmetadata = () => resolve();
+      video.onerror = () => reject(new Error("Failed to load video"));
+    });
+
+    const info: VideoAssetInfo = {
+      duration: video.duration,
+      width: video.videoWidth,
+      height: video.videoHeight,
+      hasAudio: true, // Assume true, we can't easily check
+    };
+
+    return new HTMLVideoElementAdapter(video, info, objectUrl);
+  }
+
+  static async fromUrl(url: string): Promise<HTMLVideoElementAdapter> {
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    video.crossOrigin = "anonymous";
+    video.src = url;
+
+    // Wait for metadata to load
+    await new Promise<void>((resolve, reject) => {
+      video.onloadedmetadata = () => resolve();
+      video.onerror = () => reject(new Error("Failed to load video"));
+    });
+
+    const info: VideoAssetInfo = {
+      duration: video.duration,
+      width: video.videoWidth,
+      height: video.videoHeight,
+      hasAudio: true,
+    };
+
+    return new HTMLVideoElementAdapter(video, info, null);
+  }
+
+  get info(): VideoAssetInfo {
+    return this._info;
+  }
+
+  get disposed(): boolean {
+    return this._disposed;
+  }
+
+  getVideoElement(): HTMLVideoElement {
+    return this.video;
+  }
+
+  async getImageBitmap(timestamp: number): Promise<ImageBitmap> {
+    if (this._disposed) {
+      throw new Error("VideoFrameLoader has been disposed");
+    }
+
+    const clampedTime = Math.max(0, Math.min(timestamp, this._info.duration));
+
+    // Seek if needed
+    if (Math.abs(this.video.currentTime - clampedTime) > 0.01) {
+      await this.seekTo(clampedTime);
+    }
+
+    // Wait for video to have data
+    if (this.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      await new Promise<void>((resolve) => {
+        const onCanPlay = () => {
+          this.video.removeEventListener("canplay", onCanPlay);
+          resolve();
+        };
+        this.video.addEventListener("canplay", onCanPlay);
+      });
+    }
+
+    return createImageBitmap(this.video);
+  }
+
+  private async seekTo(time: number): Promise<void> {
+    // If already seeking, wait for it to complete first
+    if (this.seekPromise) {
+      await this.seekPromise;
+    }
+
+    // Create new seek promise
+    this.seekPromise = new Promise<void>((resolve) => {
+      this.seekResolve = resolve;
+    });
+
+    this.video.currentTime = time;
+
+    // Wait for seek to complete (with timeout)
+    await Promise.race([
+      this.seekPromise,
+      new Promise<void>((resolve) => setTimeout(resolve, 5000)), // 5s timeout for long/4K videos
+    ]);
+  }
+
+  play(startTime: number): void {
+    if (this._disposed) return;
+    this.video.currentTime = startTime;
+    this.video.play().catch(() => {});
+  }
+
+  pause(): void {
+    if (this._disposed) return;
+    this.video.pause();
+  }
+
+  isPlaying(): boolean {
+    return !this.video.paused;
+  }
+
+  dispose(): void {
+    if (this._disposed) return;
+    this._disposed = true;
+
+    this.video.removeEventListener("seeked", this.onSeeked);
+    this.video.pause();
+    this.video.src = "";
+    this.video.load();
+
+    if (this.objectUrl) {
+      URL.revokeObjectURL(this.objectUrl);
+      this.objectUrl = null;
+    }
+  }
+}
+
+// ============================================================================
+// MediaBunny Adapter (Export Mode)
+// ============================================================================
+
+class MediaBunnyAdapter implements VideoFrameSourceAdapter {
   private input: Input;
   private videoTrack: InputVideoTrack;
   private videoSink: VideoSampleSink;
@@ -83,53 +281,24 @@ export class VideoFrameLoader {
     this._info = info;
   }
 
-  /**
-   * Create a loader from a Blob or File.
-   *
-   * For local files, this reads from disk on-demand without loading
-   * the entire file into memory.
-   */
-  static async fromBlob(blob: Blob): Promise<VideoFrameLoader> {
-    return VideoFrameLoader.fromSource(new BlobSource(blob));
+  static async fromBlob(blob: Blob): Promise<MediaBunnyAdapter> {
+    return MediaBunnyAdapter.fromSource(new BlobSource(blob));
   }
 
-  /**
-   * Create a loader from a URL with streaming support.
-   *
-   * This uses HTTP range requests to stream the video without downloading
-   * the entire file into memory. Ideal for large remote files.
-   *
-   * @param url - URL to the video file
-   * @param options - Optional fetch request options (headers, credentials, etc.)
-   */
-  static async fromUrl(
-    url: string,
-    options?: RequestInit,
-  ): Promise<VideoFrameLoader> {
-    // Use UrlSource for streaming - only downloads bytes as needed
+  static async fromUrl(url: string, options?: RequestInit): Promise<MediaBunnyAdapter> {
     const request = options ? new Request(url, options) : url;
     const source = new UrlSource(request);
-    return VideoFrameLoader.fromSource(source);
+    return MediaBunnyAdapter.fromSource(source);
   }
 
-  /**
-   * Create a loader from any MediaBunny source.
-   *
-   * Supported sources:
-   * - `BlobSource` - Local File or Blob
-   * - `UrlSource` - Remote URL with streaming
-   * - `BufferSource` - ArrayBuffer (entire file in memory)
-   * - `StreamSource` - Custom streaming implementation
-   */
   static async fromSource(
     source: ConstructorParameters<typeof Input>[0]["source"],
-  ): Promise<VideoFrameLoader> {
+  ): Promise<MediaBunnyAdapter> {
     const input = new Input({
       formats: ALL_FORMATS,
       source,
     });
 
-    // Get video track
     const videoTrack = await input.getPrimaryVideoTrack();
     if (!videoTrack) {
       throw new Error("No video track found in file");
@@ -142,7 +311,6 @@ export class VideoFrameLoader {
 
     const videoSink = new VideoSampleSink(videoTrack);
 
-    // Get audio track (optional)
     let audioTrack: InputAudioTrack | null = null;
     let audioSink: AudioSampleSink | null = null;
     try {
@@ -154,10 +322,9 @@ export class VideoFrameLoader {
         }
       }
     } catch {
-      // No audio track, that's fine
+      // No audio track
     }
 
-    // Get video info - duration must be computed async
     const duration = await input.computeDuration();
 
     const info: VideoAssetInfo = {
@@ -167,41 +334,50 @@ export class VideoFrameLoader {
       hasAudio: audioTrack !== null,
     };
 
-    return new VideoFrameLoader(
-      input,
-      videoTrack,
-      videoSink,
-      audioTrack,
-      audioSink,
-      info,
-    );
+    return new MediaBunnyAdapter(input, videoTrack, videoSink, audioTrack, audioSink, info);
   }
 
-  /**
-   * Get video asset information.
-   */
   get info(): VideoAssetInfo {
     return this._info;
   }
 
-  /**
-   * Get a video frame at a specific timestamp.
-   *
-   * @param timestamp - Time in seconds
-   * @returns Frame result with sample, timestamp, and duration
-   *
-   * IMPORTANT: You MUST call sample.close() after using the frame
-   * to release GPU/VRAM resources.
-   */
-  async getFrame(timestamp: number): Promise<FrameResult> {
+  get disposed(): boolean {
+    return this._disposed;
+  }
+
+  async getImageBitmap(timestamp: number): Promise<ImageBitmap> {
     if (this._disposed) {
       throw new Error("VideoFrameLoader has been disposed");
     }
 
-    // Clamp to valid range
     const clampedTime = Math.max(0, Math.min(timestamp, this._info.duration));
-
     const sample = await this.videoSink.getSample(clampedTime);
+
+    if (!sample) {
+      throw new Error(`No frame found at timestamp ${clampedTime}`);
+    }
+
+    const videoFrame = sample.toVideoFrame();
+    sample.close();
+
+    const bitmap = await createImageBitmap(videoFrame);
+    videoFrame.close();
+
+    return bitmap;
+  }
+
+  /**
+   * Get raw VideoSample for advanced use cases.
+   * Caller is responsible for calling sample.close().
+   */
+  async getSample(timestamp: number): Promise<FrameResult> {
+    if (this._disposed) {
+      throw new Error("VideoFrameLoader has been disposed");
+    }
+
+    const clampedTime = Math.max(0, Math.min(timestamp, this._info.duration));
+    const sample = await this.videoSink.getSample(clampedTime);
+
     if (!sample) {
       throw new Error(`No frame found at timestamp ${clampedTime}`);
     }
@@ -214,67 +390,21 @@ export class VideoFrameLoader {
   }
 
   /**
-   * Get a VideoFrame (WebCodecs) at a specific timestamp.
-   * This can be used with copy_external_image_to_texture.
-   *
-   * @param timestamp - Time in seconds
-   * @returns WebCodecs VideoFrame
-   *
-   * IMPORTANT: You MUST call frame.close() after using.
+   * Get audio sample at a specific timestamp.
    */
-  async getVideoFrame(timestamp: number): Promise<VideoFrame> {
-    const result = await this.getFrame(timestamp);
-    const videoFrame = result.sample.toVideoFrame();
-    result.sample.close();
-    return videoFrame;
-  }
+  async getAudioSample(timestamp: number): Promise<AudioSample | null> {
+    if (!this.audioSink) {
+      return null;
+    }
 
-  /**
-   * Get raw RGBA pixel data at a specific timestamp.
-   * This is useful when VideoFrame/ImageBitmap APIs aren't available.
-   *
-   * @param timestamp - Time in seconds
-   * @returns Object with width, height, and RGBA data
-   */
-  async getRgbaData(timestamp: number): Promise<{
-    width: number;
-    height: number;
-    data: Uint8Array;
-    timestamp: number;
-  }> {
-    const result = await this.getFrame(timestamp);
-    const sample = result.sample;
-
-    const width = sample.displayWidth;
-    const height = sample.displayHeight;
-
-    // Allocate buffer for RGBA data
-    const buffer = new ArrayBuffer(width * height * 4);
-    await sample.copyTo(buffer, { format: "RGBX" });
-
-    sample.close();
-
-    return {
-      width,
-      height,
-      data: new Uint8Array(buffer),
-      timestamp: result.timestamp,
-    };
+    const clampedTime = Math.max(0, Math.min(timestamp, this._info.duration));
+    return this.audioSink.getSample(clampedTime);
   }
 
   /**
    * Iterate over frames in a time range.
-   * Useful for thumbnail generation or frame-by-frame processing.
-   *
-   * @param startTime - Start time in seconds
-   * @param endTime - End time in seconds
-   *
-   * IMPORTANT: You MUST call sample.close() on each yielded sample.
    */
-  async *frames(
-    startTime: number,
-    endTime: number,
-  ): AsyncGenerator<FrameResult> {
+  async *frames(startTime: number, endTime: number): AsyncGenerator<FrameResult> {
     if (this._disposed) {
       throw new Error("VideoFrameLoader has been disposed");
     }
@@ -288,40 +418,167 @@ export class VideoFrameLoader {
     }
   }
 
-  /**
-   * Get audio sample at a specific timestamp.
-   * Returns null if no audio track exists.
-   *
-   * IMPORTANT: You MUST call sample.close() after using.
-   */
-  async getAudioSample(timestamp: number): Promise<AudioSample | null> {
-    if (!this.audioSink) {
-      return null;
-    }
+  dispose(): void {
+    if (this._disposed) return;
+    this._disposed = true;
+    // MediaBunny cleanup is handled by GC
+  }
+}
 
-    const clampedTime = Math.max(0, Math.min(timestamp, this._info.duration));
-    return this.audioSink.getSample(clampedTime);
+// ============================================================================
+// VideoFrameLoader (Unified API)
+// ============================================================================
+
+/**
+ * Unified video frame loader with pluggable backends.
+ *
+ * - `preview` mode: Uses HTMLVideoElement, optimized for real-time playback
+ * - `export` mode: Uses MediaBunny, frame-accurate for rendering
+ */
+export class VideoFrameLoader {
+  private adapter: VideoFrameSourceAdapter;
+  private _mode: VideoFrameMode;
+
+  private constructor(adapter: VideoFrameSourceAdapter, mode: VideoFrameMode) {
+    this.adapter = adapter;
+    this._mode = mode;
+  }
+
+  /**
+   * Create a loader from a Blob or File.
+   */
+  static async fromBlob(
+    blob: Blob,
+    options: VideoFrameLoaderOptions = {},
+  ): Promise<VideoFrameLoader> {
+    const mode = options.mode ?? "preview";
+
+    const adapter =
+      mode === "preview"
+        ? await HTMLVideoElementAdapter.fromBlob(blob)
+        : await MediaBunnyAdapter.fromBlob(blob);
+
+    return new VideoFrameLoader(adapter, mode);
+  }
+
+  /**
+   * Create a loader from a URL.
+   */
+  static async fromUrl(
+    url: string,
+    options: VideoFrameLoaderOptions & { fetchOptions?: RequestInit } = {},
+  ): Promise<VideoFrameLoader> {
+    const mode = options.mode ?? "preview";
+
+    const adapter =
+      mode === "preview"
+        ? await HTMLVideoElementAdapter.fromUrl(url)
+        : await MediaBunnyAdapter.fromUrl(url, options.fetchOptions);
+
+    return new VideoFrameLoader(adapter, mode);
+  }
+
+  /**
+   * Get the loader mode.
+   */
+  get mode(): VideoFrameMode {
+    return this._mode;
+  }
+
+  /**
+   * Get video asset information.
+   */
+  get info(): VideoAssetInfo {
+    return this.adapter.info;
   }
 
   /**
    * Check if the loader has been disposed.
    */
   get disposed(): boolean {
-    return this._disposed;
+    return this.adapter.disposed;
   }
 
   /**
-   * Dispose of the loader and release all resources.
+   * Get an ImageBitmap at the specified timestamp.
+   *
+   * @param timestamp - Time in seconds
+   * @returns ImageBitmap that must be closed after use
+   */
+  async getImageBitmap(timestamp: number): Promise<ImageBitmap> {
+    return this.adapter.getImageBitmap(timestamp);
+  }
+
+  /**
+   * Get the underlying video element (preview mode only).
+   */
+  getVideoElement(): HTMLVideoElement | null {
+    return this.adapter.getVideoElement?.() ?? null;
+  }
+
+  /**
+   * Start playback (preview mode only).
+   */
+  play(startTime: number): void {
+    this.adapter.play?.(startTime);
+  }
+
+  /**
+   * Pause playback (preview mode only).
+   */
+  pause(): void {
+    this.adapter.pause?.();
+  }
+
+  /**
+   * Check if currently playing (preview mode only).
+   */
+  isPlaying(): boolean {
+    return this.adapter.isPlaying?.() ?? false;
+  }
+
+  /**
+   * Get raw VideoSample (export mode only).
+   * Caller is responsible for calling sample.close().
+   */
+  async getSample(timestamp: number): Promise<FrameResult> {
+    if (this._mode !== "export") {
+      throw new Error("getSample is only available in export mode");
+    }
+    return (this.adapter as MediaBunnyAdapter).getSample(timestamp);
+  }
+
+  /**
+   * Get audio sample (export mode only).
+   */
+  async getAudioSample(timestamp: number): Promise<AudioSample | null> {
+    if (this._mode !== "export") {
+      throw new Error("getAudioSample is only available in export mode");
+    }
+    return (this.adapter as MediaBunnyAdapter).getAudioSample(timestamp);
+  }
+
+  /**
+   * Iterate over frames (export mode only).
+   */
+  async *frames(startTime: number, endTime: number): AsyncGenerator<FrameResult> {
+    if (this._mode !== "export") {
+      throw new Error("frames is only available in export mode");
+    }
+    yield* (this.adapter as MediaBunnyAdapter).frames(startTime, endTime);
+  }
+
+  /**
+   * Dispose and release resources.
    */
   dispose(): void {
-    if (this._disposed) return;
-    this._disposed = true;
-
-    // MediaBunny cleanup
-    // Note: Input/Sink don't have explicit dispose methods,
-    // they're garbage collected
+    this.adapter.dispose();
   }
 }
+
+// ============================================================================
+// VideoFrameLoaderManager
+// ============================================================================
 
 /**
  * Manager for multiple video frame loaders.
@@ -330,21 +587,32 @@ export class VideoFrameLoader {
 export class VideoFrameLoaderManager {
   private loaders = new Map<string, VideoFrameLoader>();
   private loadingPromises = new Map<string, Promise<VideoFrameLoader>>();
+  private defaultMode: VideoFrameMode;
+
+  constructor(options: { mode?: VideoFrameMode } = {}) {
+    this.defaultMode = options.mode ?? "preview";
+  }
 
   /**
    * Get or create a loader for an asset.
-   *
-   * @param assetId - Unique identifier for the asset
-   * @param blobOrUrl - Blob, File, or URL to load from
    */
   async getLoader(
     assetId: string,
     blobOrUrl: Blob | string,
+    options?: VideoFrameLoaderOptions,
   ): Promise<VideoFrameLoader> {
-    // Return cached loader
+    const mode = options?.mode ?? this.defaultMode;
+
+    // Check if we need to recreate due to mode change
     const existing = this.loaders.get(assetId);
-    if (existing && !existing.disposed) {
+    if (existing && !existing.disposed && existing.mode === mode) {
       return existing;
+    }
+
+    // Dispose existing if mode changed
+    if (existing && existing.mode !== mode) {
+      existing.dispose();
+      this.loaders.delete(assetId);
     }
 
     // Return in-progress load
@@ -357,8 +625,8 @@ export class VideoFrameLoaderManager {
     const promise = (async () => {
       const loader =
         typeof blobOrUrl === "string"
-          ? await VideoFrameLoader.fromUrl(blobOrUrl)
-          : await VideoFrameLoader.fromBlob(blobOrUrl);
+          ? await VideoFrameLoader.fromUrl(blobOrUrl, { mode })
+          : await VideoFrameLoader.fromBlob(blobOrUrl, { mode });
 
       this.loaders.set(assetId, loader);
       this.loadingPromises.delete(assetId);
@@ -378,16 +646,11 @@ export class VideoFrameLoaderManager {
   }
 
   /**
-   * Get a frame from an asset.
-   * Convenience method that combines getLoader and getFrame.
+   * Get a loader if it exists (no loading).
    */
-  async getFrame(
-    assetId: string,
-    blobOrUrl: Blob | string,
-    timestamp: number,
-  ): Promise<FrameResult> {
-    const loader = await this.getLoader(assetId, blobOrUrl);
-    return loader.getFrame(timestamp);
+  getExistingLoader(assetId: string): VideoFrameLoader | null {
+    const loader = this.loaders.get(assetId);
+    return loader && !loader.disposed ? loader : null;
   }
 
   /**

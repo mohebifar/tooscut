@@ -26,8 +26,22 @@ pub struct Effects {
 
 impl Effects {
     /// Create a new Effects instance.
-    pub fn new(opacity: f32, brightness: f32, contrast: f32, saturation: f32, hue_rotate: f32, blur: f32) -> Self {
-        Self { opacity, brightness, contrast, saturation, hue_rotate, blur }
+    pub fn new(
+        opacity: f32,
+        brightness: f32,
+        contrast: f32,
+        saturation: f32,
+        hue_rotate: f32,
+        blur: f32,
+    ) -> Self {
+        Self {
+            opacity,
+            brightness,
+            contrast,
+            saturation,
+            hue_rotate,
+            blur,
+        }
     }
 }
 
@@ -44,7 +58,10 @@ impl Effects {
 
     /// Create effects with only opacity set.
     pub const fn with_opacity(opacity: f32) -> Self {
-        Self { opacity, ..Self::NONE }
+        Self {
+            opacity,
+            ..Self::NONE
+        }
     }
 
     /// Check if any effects are applied (not default).

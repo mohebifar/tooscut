@@ -9,11 +9,8 @@
  * 5. Performance characteristics
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import {
-  VideoFrameLoader,
-  VideoFrameLoaderManager,
-} from "../src/video-frame-loader.js";
+import { beforeAll, describe, expect, it } from "vitest";
+import { VideoFrameLoader, VideoFrameLoaderManager } from "../src/video-frame-loader.js";
 
 describe("VideoFrameLoader", () => {
   let testVideoBlob: Blob;
@@ -391,7 +388,9 @@ describe("VideoFrameLoader", () => {
       const avgTime = times.reduce((a, b) => a + b) / times.length;
       const maxTime = Math.max(...times);
 
-      console.log(`Sequential frame access: avg=${avgTime.toFixed(2)}ms, max=${maxTime.toFixed(2)}ms`);
+      console.log(
+        `Sequential frame access: avg=${avgTime.toFixed(2)}ms, max=${maxTime.toFixed(2)}ms`,
+      );
 
       // For 60fps, we need <16ms per frame
       // This is informational, not a hard requirement
@@ -511,12 +510,7 @@ describe("VideoFrameLoader + Compositor integration", () => {
     const rgbaData = await loader.getRgbaData(0.5);
 
     // Upload to compositor
-    compositor.uploadRgba(
-      "video-frame",
-      rgbaData.width,
-      rgbaData.height,
-      rgbaData.data,
-    );
+    compositor.uploadRgba("video-frame", rgbaData.width, rgbaData.height, rgbaData.data);
 
     // Render
     compositor.renderFrame({

@@ -385,6 +385,12 @@ export const ANIMATABLE_PROPERTIES = {
   cornerRadius: "cornerRadius",
   width: "width",
   height: "height",
+  eqLowGain: "eqLowGain",
+  eqMidGain: "eqMidGain",
+  eqHighGain: "eqHighGain",
+  compressorThreshold: "compressorThreshold",
+  noiseGateThreshold: "noiseGateThreshold",
+  reverbDryWet: "reverbDryWet",
 } as const;
 
 export type AnimatableProperty = keyof typeof ANIMATABLE_PROPERTIES;

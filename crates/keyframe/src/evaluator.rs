@@ -26,8 +26,8 @@ impl KeyframeEvaluator {
     /// Create a new evaluator from a KeyframeTracks object.
     #[wasm_bindgen(constructor)]
     pub fn new(tracks: JsValue) -> Result<KeyframeEvaluator, JsValue> {
-        let tracks: KeyframeTracks =
-            serde_wasm_bindgen::from_value(tracks).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let tracks: KeyframeTracks = serde_wasm_bindgen::from_value(tracks)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
         Ok(Self::from_tracks(tracks))
     }
@@ -146,7 +146,9 @@ impl KeyframeEvaluator {
     fn binary_search_index(&self, keyframes: &[Keyframe], time: f64) -> usize {
         // Find the rightmost keyframe with time <= given time
         let result = keyframes.binary_search_by(|k| {
-            k.time.partial_cmp(&time).unwrap_or(std::cmp::Ordering::Equal)
+            k.time
+                .partial_cmp(&time)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         match result {
@@ -214,11 +216,10 @@ mod tests {
 
     #[test]
     fn evaluator_linear_interpolation() {
-        let tracks = KeyframeTracks::from_tracks(vec![make_linear_track("x", vec![
-            (0.0, 0.0),
-            (1.0, 100.0),
-            (2.0, 50.0),
-        ])]);
+        let tracks = KeyframeTracks::from_tracks(vec![make_linear_track(
+            "x",
+            vec![(0.0, 0.0), (1.0, 100.0), (2.0, 50.0)],
+        )]);
 
         let mut eval = KeyframeEvaluator::from_tracks(tracks);
 

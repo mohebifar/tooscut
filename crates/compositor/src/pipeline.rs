@@ -74,21 +74,14 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     let uv_y = crop_top + unit_pos.y * (1.0 - crop_top - crop_bottom);
     out.tex_coord = vec2<f32>(uv_x, uv_y);
 
-    // DEBUG: Hardcode fullscreen quad in NDC to test if pipeline works
-    // Convert unit_pos [0,1] to NDC [-1,1] with Y flip
-    let ndc_x = unit_pos.x * 2.0 - 1.0;
-    let ndc_y = 1.0 - unit_pos.y * 2.0;  // Flip Y for NDC
-    out.position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
-
-    // Commented out for now - restore after debugging:
-    // // Scale unit quad to layer pixel dimensions
-    // // The transform matrix expects layer-space input (0 to width, 0 to height)
-    // let layer_pos = vec2<f32>(
-    //     unit_pos.x * uniforms.texture_width,
-    //     unit_pos.y * uniforms.texture_height
-    // );
-    // // Transform from layer space to NDC
-    // out.position = uniforms.transform * vec4<f32>(layer_pos, 0.0, 1.0);
+    // Scale unit quad to layer pixel dimensions
+    // The transform matrix expects layer-space input (0 to width, 0 to height)
+    let layer_pos = vec2<f32>(
+        unit_pos.x * uniforms.texture_width,
+        unit_pos.y * uniforms.texture_height
+    );
+    // Transform from layer space to NDC
+    out.position = uniforms.transform * vec4<f32>(layer_pos, 0.0, 1.0);
 
     return out;
 }
@@ -150,8 +143,33 @@ fn hsl_to_rgb(hsl: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Sample texture
-    var color = textureSample(t_diffuse, s_diffuse, in.tex_coord);
+    var color: vec4<f32>;
+
+    // Apply Gaussian blur if needed
+    if (uniforms.blur > 0.01) {
+        let texel = vec2<f32>(1.0 / uniforms.texture_width, 1.0 / uniforms.texture_height);
+        let sigma = uniforms.blur;
+        // Scale step size so our 13x13 grid covers ~3 sigma
+        let step_scale = max(sigma / 6.0, 1.0);
+
+        var total = vec4<f32>(0.0);
+        var weight_sum = 0.0;
+
+        for (var dy = -6; dy <= 6; dy++) {
+            for (var dx = -6; dx <= 6; dx++) {
+                let offset = vec2<f32>(f32(dx), f32(dy)) * step_scale;
+                let d2 = dot(offset, offset);
+                let w = exp(-d2 / (2.0 * sigma * sigma));
+                let uv = in.tex_coord + offset * texel;
+                total += textureSampleLevel(t_diffuse, s_diffuse, uv, 0.0) * w;
+                weight_sum += w;
+            }
+        }
+
+        color = total / weight_sum;
+    } else {
+        color = textureSample(t_diffuse, s_diffuse, in.tex_coord);
+    }
 
     // Early discard for fully transparent pixels
     if (color.a < 0.001) {
@@ -173,6 +191,37 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         var hsl = rgb_to_hsl(color.rgb);
         hsl.x = fract(hsl.x + uniforms.hue_rotate / 6.28318530718); // Divide by 2π
         color = vec4<f32>(hsl_to_rgb(hsl), color.a);
+    }
+
+    // Apply wipe transition masking (for cross-transition wipes)
+    // Wipe types: 3=WipeLeft, 4=WipeRight, 5=WipeUp, 6=WipeDown
+    if (uniforms.transition_type >= 3u && uniforms.transition_type <= 6u) {
+        let p = uniforms.transition_progress;
+        let soft = 0.005; // Soft edge width in UV space
+        var wipe_alpha = 1.0;
+
+        if (uniforms.transition_type == 3u) {
+            // WipeLeft: reveals incoming from the right side
+            let edge = 1.0 - p;
+            wipe_alpha = smoothstep(edge - soft, edge + soft, in.tex_coord.x);
+        } else if (uniforms.transition_type == 4u) {
+            // WipeRight: reveals incoming from the left side
+            let edge = p;
+            wipe_alpha = 1.0 - smoothstep(edge - soft, edge + soft, in.tex_coord.x);
+        } else if (uniforms.transition_type == 5u) {
+            // WipeUp: reveals incoming from the bottom
+            let edge = 1.0 - p;
+            wipe_alpha = smoothstep(edge - soft, edge + soft, in.tex_coord.y);
+        } else if (uniforms.transition_type == 6u) {
+            // WipeDown: reveals incoming from the top
+            let edge = p;
+            wipe_alpha = 1.0 - smoothstep(edge - soft, edge + soft, in.tex_coord.y);
+        }
+
+        if (wipe_alpha < 0.001) {
+            discard;
+        }
+        color = vec4<f32>(color.rgb, color.a * wipe_alpha);
     }
 
     // Apply opacity

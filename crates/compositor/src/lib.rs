@@ -21,8 +21,10 @@ use wasm_bindgen::prelude::*;
 
 /// Initialize the compositor module.
 ///
-/// This sets up panic hooks for better error messages in WASM.
+/// This sets up panic hooks and logging for better debugging in WASM.
 #[wasm_bindgen(start)]
 pub fn init() {
     console_error_panic_hook::set_once();
+    // Initialize console_log for WASM - logs will appear in browser console
+    console_log::init_with_level(log::Level::Info).ok();
 }

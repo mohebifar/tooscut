@@ -69,7 +69,9 @@ impl TextRenderer {
         // Noto Sans for extended Latin/Cyrillic
         font_system.db_mut().load_font_data(NOTO_SANS.to_vec());
         // Noto Sans Arabic for RTL scripts (Persian, Arabic, Urdu)
-        font_system.db_mut().load_font_data(NOTO_SANS_ARABIC.to_vec());
+        font_system
+            .db_mut()
+            .load_font_data(NOTO_SANS_ARABIC.to_vec());
         // Note: CJK fonts not embedded due to size - load via load_font() if needed
 
         // Set DejaVu Sans as the default sans-serif font
@@ -84,13 +86,7 @@ impl TextRenderer {
 
         // Create viewport
         let mut viewport = Viewport::new(device, &cache);
-        viewport.update(
-            queue,
-            Resolution {
-                width,
-                height,
-            },
-        );
+        viewport.update(queue, Resolution { width, height });
 
         // Create texture atlas for glyphs
         let mut atlas = TextAtlas::new(device, queue, &cache, format);
@@ -130,21 +126,27 @@ impl TextRenderer {
     /// in text layers. When a text layer uses this font_family, cosmic-text
     /// will look up the font by its internal family name.
     ///
-    /// Returns true if the font was loaded, false if already loaded.
+    /// Multiple font files can be loaded for the same family (e.g., different
+    /// subsets like latin, arabic, etc.). fontdb will merge them and use the
+    /// appropriate glyphs for each character.
+    ///
+    /// Returns true if the font was loaded successfully.
     pub fn load_font(&mut self, font_family: &str, font_data: Vec<u8>) -> bool {
-        if self.loaded_fonts.contains(font_family) {
-            return false;
-        }
+        // Check if we already have this family loaded (subsequent subsets will merge)
+        let already_loaded = self.loaded_fonts.contains(font_family);
 
         // Count faces before loading
         let faces_before: Vec<_> = self.font_system.db().faces().map(|f| f.id).collect();
 
-        // Load the font
+        // Load the font - fontdb handles duplicates gracefully
         self.font_system.db_mut().load_font_data(font_data);
 
-        // Find the newly added face and log info
+        // Find the newly added face(s)
+        let mut new_face_created = false;
         for face in self.font_system.db().faces() {
             if !faces_before.contains(&face.id) {
+                new_face_created = true;
+
                 let internal_family_name = face
                     .families
                     .first()
@@ -165,20 +167,23 @@ impl TextRenderer {
                     is_italic
                 );
 
-                self.font_info.insert(
-                    font_family.to_string(),
-                    LoadedFontInfo {
+                // Store the font info (only update if not already present, to preserve first mapping)
+                self.font_info
+                    .entry(font_family.to_string())
+                    .or_insert(LoadedFontInfo {
                         family: internal_family_name,
                         weight: face.weight.0,
                         is_italic,
-                    },
-                );
-                break;
+                    });
             }
         }
 
         self.loaded_fonts.insert(font_family.to_string());
-        true
+
+        // Return true if:
+        // 1. A new face was created (first subset for this variant), OR
+        // 2. The family was already loaded (subsequent subsets merge into existing face)
+        new_face_created || already_loaded
     }
 
     /// Check if a font family has been loaded.
@@ -253,10 +258,7 @@ impl TextRenderer {
     }
 
     /// Calculate word bounds from buffer layout.
-    fn calculate_word_bounds(
-        buffer: &Buffer,
-        text: &str,
-    ) -> HashMap<usize, (f32, f32, f32, f32)> {
+    fn calculate_word_bounds(buffer: &Buffer, text: &str) -> HashMap<usize, (f32, f32, f32, f32)> {
         let mut word_bounds: HashMap<usize, (f32, f32, f32, f32)> = HashMap::new();
 
         // Build byte offset -> word index map
@@ -277,7 +279,7 @@ impl TextRenderer {
                     || text[next_offset..]
                         .chars()
                         .next()
-                        .map_or(true, |c| c.is_whitespace())
+                        .is_none_or(|c| c.is_whitespace())
                 {
                     word_index += 1;
                 }
@@ -317,13 +319,13 @@ impl TextRenderer {
     ///
     /// This should be called after the main render pass ends.
     /// The text pass uses LoadOp::Load to preserve existing content.
-    pub fn render_layers(
+    pub fn render_layers<T: AsRef<TextLayerData>>(
         &mut self,
         device: &Device,
         queue: &Queue,
         encoder: &mut wgpu::CommandEncoder,
         view: &TextureView,
-        layers: &[TextLayerData],
+        layers: &[T],
     ) -> Result<(), String> {
         if layers.is_empty() {
             return Ok(());
@@ -333,7 +335,8 @@ impl TextRenderer {
         self.buffers.clear();
 
         // First pass: create text buffers
-        for layer in layers {
+        for layer_ref in layers {
+            let layer = layer_ref.as_ref();
             if layer.text.is_empty() || layer.opacity <= 0.0 {
                 continue;
             }
@@ -349,11 +352,7 @@ impl TextRenderer {
             let metrics = Metrics::new(scaled_font_size, line_height);
             let mut buffer = Buffer::new(&mut self.font_system, metrics);
 
-            buffer.set_size(
-                &mut self.font_system,
-                Some(box_width),
-                Some(box_height),
-            );
+            buffer.set_size(&mut self.font_system, Some(box_width), Some(box_height));
 
             // Create base color
             let alpha_u8 = (layer.style.color[3] * layer.opacity * 255.0) as u8;
@@ -367,12 +366,24 @@ impl TextRenderer {
             // Create base attributes
             // Use the specified font family, cosmic-text will fallback gracefully
             let mut base_attrs = Attrs::new().color(base_color);
+
+            // Look up the internal family name from our font_info map.
+            // cosmic-text's fontdb indexes fonts by their internal TTF family name,
+            // which may differ from the name we requested (e.g., Fontsource API name).
+            let internal_family = self
+                .font_info
+                .get(&layer.style.font_family)
+                .map(|info| info.family.clone());
+
             if layer.style.font_family.is_empty()
                 || layer.style.font_family.eq_ignore_ascii_case("sans-serif")
             {
                 base_attrs = base_attrs.family(Family::SansSerif);
+            } else if let Some(ref family) = internal_family {
+                // Use the internal family name from the loaded font
+                base_attrs = base_attrs.family(Family::Name(family));
             } else {
-                // Use the named font - cosmic-text will fallback to sans-serif if not found
+                // Fallback to the requested name (might work for system fonts or embedded fonts)
                 base_attrs = base_attrs.family(Family::Name(&layer.style.font_family));
             }
             base_attrs = base_attrs.weight(Weight(layer.style.font_weight));
@@ -386,7 +397,7 @@ impl TextRenderer {
                 && layer
                     .highlighted_word_indices
                     .as_ref()
-                    .map_or(false, |indices| !indices.is_empty());
+                    .is_some_and(|indices| !indices.is_empty());
 
             if has_highlighting {
                 let highlight_style = layer.highlight_style.as_ref().unwrap();
@@ -412,9 +423,12 @@ impl TextRenderer {
                 {
                     highlight_attrs = highlight_attrs.family(Family::SansSerif);
                 } else {
-                    highlight_attrs = highlight_attrs.family(Family::Name(&layer.style.font_family));
+                    highlight_attrs =
+                        highlight_attrs.family(Family::Name(&layer.style.font_family));
                 }
-                let highlight_weight = highlight_style.font_weight.unwrap_or(layer.style.font_weight);
+                let highlight_weight = highlight_style
+                    .font_weight
+                    .unwrap_or(layer.style.font_weight);
                 highlight_attrs = highlight_attrs.weight(Weight(highlight_weight));
                 // Note: Italic not applied to highlights either (same reason as base)
 
@@ -461,7 +475,8 @@ impl TextRenderer {
         let mut text_areas: Vec<TextArea> = Vec::new();
         let mut buffer_idx = 0;
 
-        for layer in layers {
+        for layer_ref in layers {
+            let layer = layer_ref.as_ref();
             if layer.text.is_empty() || layer.opacity <= 0.0 {
                 continue;
             }

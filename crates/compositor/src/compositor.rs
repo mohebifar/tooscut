@@ -19,6 +19,7 @@ use crate::texture::{TextureInfo, TextureManager};
 use crate::uniforms::LayerUniforms;
 use tooscut_types::{
     Effects, LineLayerData, MediaLayerData, RenderFrame, ShapeLayerData, TextLayerData,
+    TransitionEffect,
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -54,11 +55,9 @@ pub struct Compositor {
     // Media layer rendering
     pipeline: RenderPipeline,
     bind_group_layout: BindGroupLayout,
-    uniform_buffer: Buffer,
     // Shape/line rendering
     shape_pipeline: RenderPipeline,
     shape_bind_group_layout: BindGroupLayout,
-    shape_uniform_buffer: Buffer,
     // Textures
     textures: TextureManager,
     width: u32,
@@ -384,24 +383,10 @@ impl Compositor {
         let pipeline = create_pipeline(&device, &bind_group_layout, surface_format)?;
         let textures = TextureManager::new(&device);
 
-        let uniform_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("layer_uniform_buffer"),
-            size: std::mem::size_of::<LayerUniforms>() as u64,
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
         // Shape/line pipeline
         let shape_bind_group_layout = create_shape_bind_group_layout(&device);
         let shape_pipeline =
             create_shape_pipeline(&device, &shape_bind_group_layout, surface_format);
-
-        let shape_uniform_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("shape_uniform_buffer"),
-            size: std::mem::size_of::<ShapeUniforms>() as u64,
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
 
         Ok(Self {
             device,
@@ -410,10 +395,8 @@ impl Compositor {
             surface_config,
             pipeline,
             bind_group_layout,
-            uniform_buffer,
             shape_pipeline,
             shape_bind_group_layout,
-            shape_uniform_buffer,
             textures,
             width: width.max(1),
             height: height.max(1),
@@ -470,7 +453,193 @@ impl Compositor {
         }
     }
 
-    /// Render a complete frame.
+    /// Render a frame to the given view.
+    /// This is the core rendering logic shared by both surface and offscreen rendering.
+    fn render_to_view(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        frame: &RenderFrame,
+        clear_color: wgpu::Color,
+    ) {
+        // Collect and sort all renderable items by z-index
+        let mut items: Vec<RenderItem> = Vec::new();
+        for layer in &frame.media_layers {
+            items.push(RenderItem::Media(layer));
+        }
+        for shape in &frame.shape_layers {
+            items.push(RenderItem::Shape(shape));
+        }
+        for line in &frame.line_layers {
+            items.push(RenderItem::Line(line));
+        }
+        for text in &frame.text_layers {
+            items.push(RenderItem::Text(text));
+        }
+        items.sort_by_key(|item| item.z_index());
+
+        // Collect unique z-indices in sorted order
+        let mut z_indices: Vec<i32> = items.iter().map(|i| i.z_index()).collect();
+        z_indices.sort();
+        z_indices.dedup();
+
+        let mut is_first_pass = true;
+
+        for z in z_indices {
+            // Collect non-text items at this z-index
+            let non_text_items: Vec<&RenderItem> = items
+                .iter()
+                .filter(|item| item.z_index() == z && !matches!(item, RenderItem::Text(_)))
+                .collect();
+
+            // Collect text items at this z-index, applying transition opacity
+            let text_items: Vec<TextLayerData> = items
+                .iter()
+                .filter_map(|item| {
+                    if item.z_index() == z {
+                        if let RenderItem::Text(t) = item {
+                            let cw = self.width as f32;
+                            let ch = self.height as f32;
+                            let t_opacity = ShapeUniforms::transition_opacity(
+                                &t.transition_in,
+                                &t.transition_out,
+                                cw,
+                                ch,
+                            );
+                            if t_opacity < 1.0 {
+                                let mut modified = (*t).clone();
+                                modified.opacity *= t_opacity;
+                                return Some(modified);
+                            }
+                            return Some((*t).clone());
+                        }
+                    }
+                    None
+                })
+                .collect();
+
+            // Render non-text items in a main render pass
+            if !non_text_items.is_empty() {
+                let load_op = if is_first_pass {
+                    is_first_pass = false;
+                    LoadOp::Clear(clear_color)
+                } else {
+                    LoadOp::Load
+                };
+
+                let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                    label: Some("compositor_render_pass"),
+                    color_attachments: &[Some(RenderPassColorAttachment {
+                        view,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: load_op,
+                            store: StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+
+                for item in &non_text_items {
+                    match item {
+                        RenderItem::Media(layer) => {
+                            if let Some(texture_info) = self.textures.get(&layer.texture_id) {
+                                self.render_media_layer(&mut render_pass, layer, texture_info);
+                            }
+                        }
+                        RenderItem::Shape(shape) => {
+                            self.render_shape(&mut render_pass, shape);
+                        }
+                        RenderItem::Line(line) => {
+                            self.render_line(&mut render_pass, line);
+                        }
+                        RenderItem::Text(text) => {
+                            self.render_text(&mut render_pass, text);
+                        }
+                    }
+                }
+            }
+
+            // Render text items at this z-index
+            if !text_items.is_empty() {
+                // If this is the first pass (no non-text items rendered yet), clear first
+                if is_first_pass {
+                    is_first_pass = false;
+                    let _clear_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                        label: Some("clear_pass"),
+                        color_attachments: &[Some(RenderPassColorAttachment {
+                            view,
+                            resolve_target: None,
+                            ops: Operations {
+                                load: LoadOp::Clear(clear_color),
+                                store: StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
+                }
+
+                // Render text backgrounds first
+                {
+                    let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                        label: Some("text_background_pass"),
+                        color_attachments: &[Some(RenderPassColorAttachment {
+                            view,
+                            resolve_target: None,
+                            ops: Operations {
+                                load: LoadOp::Load,
+                                store: StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
+
+                    for text in &text_items {
+                        self.render_text(&mut render_pass, text);
+                    }
+                }
+
+                // Render text glyphs
+                if let Some(ref mut text_renderer) = self.text_renderer {
+                    if let Err(e) = text_renderer.render_layers(
+                        &self.device,
+                        &self.queue,
+                        encoder,
+                        view,
+                        &text_items,
+                    ) {
+                        log::error!("Text rendering failed: {}", e);
+                    }
+                }
+            }
+        }
+
+        // Handle case where there are no items at all
+        if is_first_pass {
+            let _clear_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("clear_pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(clear_color),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+        }
+    }
+
+    /// Render a complete frame to the surface.
     pub fn render_frame(&mut self, frame: &RenderFrame) -> Result<()> {
         let output = self
             .surface
@@ -487,76 +656,12 @@ impl Compositor {
                 label: Some("render_encoder"),
             });
 
-        // Main render pass for media, shapes, lines, and text backgrounds
-        {
-            let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: Some("compositor_render_pass"),
-                color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &surface_view,
-                    resolve_target: None,
-                    ops: Operations {
-                        load: LoadOp::Clear(wgpu::Color::BLACK),
-                        store: StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-
-            // Collect and sort all renderable items by z-index
-            let mut items: Vec<RenderItem> = Vec::new();
-            for layer in &frame.media_layers {
-                items.push(RenderItem::Media(layer));
-            }
-            for shape in &frame.shape_layers {
-                items.push(RenderItem::Shape(shape));
-            }
-            for line in &frame.line_layers {
-                items.push(RenderItem::Line(line));
-            }
-            for text in &frame.text_layers {
-                items.push(RenderItem::Text(text));
-            }
-            items.sort_by_key(|item| item.z_index());
-
-            // Render each item (text backgrounds only, glyphs rendered in separate pass)
-            for item in &items {
-                match item {
-                    RenderItem::Media(layer) => {
-                        if let Some(texture_info) = self.textures.get(&layer.texture_id) {
-                            self.render_media_layer(&mut render_pass, layer, texture_info);
-                        }
-                    }
-                    RenderItem::Shape(shape) => {
-                        self.render_shape(&mut render_pass, shape);
-                    }
-                    RenderItem::Line(line) => {
-                        self.render_line(&mut render_pass, line);
-                    }
-                    RenderItem::Text(text) => {
-                        // Render text background only; glyphs are rendered via glyphon below
-                        self.render_text(&mut render_pass, text);
-                    }
-                }
-            }
-        }
-
-        // Text glyph rendering pass (uses glyphon, separate from main pass)
+        // Ensure text renderer is ready if we have text
         if !frame.text_layers.is_empty() {
             self.ensure_text_renderer();
-            if let Some(ref mut text_renderer) = self.text_renderer {
-                if let Err(e) = text_renderer.render_layers(
-                    &self.device,
-                    &self.queue,
-                    &mut encoder,
-                    &surface_view,
-                    &frame.text_layers,
-                ) {
-                    log::error!("Text rendering failed: {}", e);
-                }
-            }
         }
+
+        self.render_to_view(&mut encoder, &surface_view, frame, wgpu::Color::BLACK);
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
@@ -565,7 +670,7 @@ impl Compositor {
     }
 
     /// Render a frame to an internal texture and return the pixel data.
-    /// This is used for testing where Surface presentation doesn't work.
+    /// This is used for testing and export where Surface presentation doesn't work.
     pub async fn render_frame_to_pixels(&mut self, frame: &RenderFrame) -> Result<Vec<u8>> {
         let width = self.width;
         let height = self.height;
@@ -574,7 +679,7 @@ impl Compositor {
         self.ensure_render_texture();
 
         // Ensure readback buffer exists
-        let bytes_per_row = ((width * 4 + 255) / 256) * 256;
+        let bytes_per_row = (width * 4).div_ceil(256) * 256;
         if self.readback_buffer.is_none() {
             self.readback_buffer = Some(self.device.create_buffer(&BufferDescriptor {
                 label: Some("readback_buffer"),
@@ -589,91 +694,29 @@ impl Compositor {
             self.ensure_text_renderer();
         }
 
-        let render_texture = self.render_texture.as_ref().unwrap();
-        let view = render_texture.create_view(&TextureViewDescriptor::default());
-
         let mut encoder = self
             .device
             .create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("offscreen_render_encoder"),
             });
 
-        // Main render pass for media, shapes, lines, and text backgrounds
+        // Use transparent clear color for offscreen rendering (for proper compositing)
+        let clear_color = wgpu::Color {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 0.0,
+        };
+
+        // Render to view in a separate scope to release borrows
         {
-            let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: Some("offscreen_render_pass"),
-                color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: Operations {
-                        // Clear to transparent black for proper compositing
-                        load: LoadOp::Clear(wgpu::Color {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 0.0,
-                        }),
-                        store: StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-
-            // Render all items
-            let mut items: Vec<RenderItem> = Vec::new();
-            for layer in &frame.media_layers {
-                items.push(RenderItem::Media(layer));
-            }
-            for shape in &frame.shape_layers {
-                items.push(RenderItem::Shape(shape));
-            }
-            for line in &frame.line_layers {
-                items.push(RenderItem::Line(line));
-            }
-            for text in &frame.text_layers {
-                items.push(RenderItem::Text(text));
-            }
-            items.sort_by_key(|item| item.z_index());
-
-            for item in &items {
-                match item {
-                    RenderItem::Media(layer) => {
-                        if let Some(texture_info) = self.textures.get(&layer.texture_id) {
-                            self.render_media_layer(&mut render_pass, layer, texture_info);
-                        }
-                    }
-                    RenderItem::Shape(shape) => {
-                        self.render_shape(&mut render_pass, shape);
-                    }
-                    RenderItem::Line(line) => {
-                        self.render_line(&mut render_pass, line);
-                    }
-                    RenderItem::Text(text) => {
-                        // Render text background only; glyphs are rendered via glyphon below
-                        self.render_text(&mut render_pass, text);
-                    }
-                }
-            }
+            let render_texture = self.render_texture.as_ref().unwrap();
+            let view = render_texture.create_view(&TextureViewDescriptor::default());
+            self.render_to_view(&mut encoder, &view, frame, clear_color);
         }
 
-        // Text glyph rendering pass (uses glyphon, separate from main pass)
-        // Note: ensure_text_renderer was already called above before creating the view
-        if !frame.text_layers.is_empty() {
-            if let Some(ref mut text_renderer) = self.text_renderer {
-                if let Err(e) = text_renderer.render_layers(
-                    &self.device,
-                    &self.queue,
-                    &mut encoder,
-                    &view,
-                    &frame.text_layers,
-                ) {
-                    log::error!("Text rendering failed: {}", e);
-                }
-            }
-        }
-
+        // Re-borrow for copy operation
+        let render_texture = self.render_texture.as_ref().unwrap();
         let readback_buffer = self.readback_buffer.as_ref().unwrap();
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
@@ -708,11 +751,18 @@ impl Compositor {
             let _ = tx.send(result);
         });
 
-        // Yield multiple times to ensure GPU work completes
-        for _ in 0..3 {
+        // Yield to event loop multiple times to let GPU work complete.
+        // wgpu's on_submitted_work_done isn't implemented for WebGPU backend,
+        // so we use setTimeout to yield to the browser's event loop.
+        // Uses js_sys::global() instead of web_sys::window() to work in Web Workers.
+        for _ in 0..10 {
             let promise = js_sys::Promise::new(&mut |resolve, _| {
-                let window = web_sys::window().unwrap();
-                let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, 10);
+                let global = js_sys::global();
+                let set_timeout = js_sys::Reflect::get(&global, &"setTimeout".into())
+                    .expect("setTimeout not found")
+                    .dyn_into::<js_sys::Function>()
+                    .expect("setTimeout is not a function");
+                let _ = set_timeout.call2(&global, &resolve, &1.into());
             });
             let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
             self.device.poll(wgpu::Maintain::Poll);
@@ -738,6 +788,71 @@ impl Compositor {
         Ok(result)
     }
 
+    /// Calculate the combined transition effect for a media layer.
+    ///
+    /// Combines transition_in, transition_out, and cross_transition effects.
+    /// Returns the merged TransitionEffect (opacity multiplier, offsets, scale, rotation).
+    fn calculate_transition_effect(layer: &MediaLayerData, canvas_width: f32, canvas_height: f32) -> TransitionEffect {
+        let mut effect = TransitionEffect::NONE;
+
+        // Apply transition in (direction = 1.0 for "in")
+        if let Some(ref t_in) = layer.transition_in {
+            let e = TransitionEffect::calculate(
+                t_in.transition.transition_type,
+                t_in.eased_progress(),
+                canvas_width,
+                canvas_height,
+                1.0,
+            );
+            // Skip opacity for wipe transitions — shader handles wipe masking
+            if !t_in.transition.transition_type.is_wipe() {
+                effect.opacity *= e.opacity;
+            }
+            effect.x_offset += e.x_offset;
+            effect.y_offset += e.y_offset;
+            effect.scale_x *= e.scale_x;
+            effect.scale_y *= e.scale_y;
+            effect.rotation += e.rotation;
+        }
+
+        // Apply transition out: invert progress so 0→1 means disappearing.
+        // TransitionEffect::calculate is designed for "in" (0=invisible, 1=visible),
+        // so we pass (1 - progress) to reverse the effect direction.
+        if let Some(ref t_out) = layer.transition_out {
+            let e = TransitionEffect::calculate(
+                t_out.transition.transition_type,
+                1.0 - t_out.eased_progress(),
+                canvas_width,
+                canvas_height,
+                -1.0,
+            );
+            // Skip opacity for wipe transitions — shader handles wipe masking
+            if !t_out.transition.transition_type.is_wipe() {
+                effect.opacity *= e.opacity;
+            }
+            effect.x_offset += e.x_offset;
+            effect.y_offset += e.y_offset;
+            effect.scale_x *= e.scale_x;
+            effect.scale_y *= e.scale_y;
+            effect.rotation += e.rotation;
+        }
+
+        // Apply cross-transition
+        if let Some(ref ct) = layer.cross_transition {
+            if ct.cross_transition.transition_type.is_wipe() {
+                // Wipe transitions use shader-based masking on the incoming clip.
+                // The outgoing clip stays fully visible underneath; the incoming
+                // clip renders on top with a wipe mask that progressively covers it.
+                // No opacity modification needed here.
+            } else {
+                // Dissolve/Fade: opacity-based blending
+                effect.opacity *= ct.opacity();
+            }
+        }
+
+        effect
+    }
+
     /// Render a media layer.
     fn render_media_layer<'a>(
         &'a self,
@@ -747,26 +862,80 @@ impl Compositor {
     ) {
         render_pass.set_pipeline(&self.pipeline);
 
-        // Calculate transform matrix
-        let matrix = layer.transform.to_matrix(
+        let cw = self.width as f32;
+        let ch = self.height as f32;
+
+        // Calculate transition effect (modifies transform + opacity)
+        let t_effect = Self::calculate_transition_effect(layer, cw, ch);
+
+        // Apply transition to a copy of the transform
+        let mut transform = layer.transform;
+        transform.x += t_effect.x_offset;
+        transform.y += t_effect.y_offset;
+        transform.scale_x *= t_effect.scale_x;
+        transform.scale_y *= t_effect.scale_y;
+        transform.rotation += t_effect.rotation;
+
+        // Calculate transform matrix with transition-modified transform
+        let matrix = transform.to_matrix(
             self.width,
             self.height,
             texture_info.width as f32,
             texture_info.height as f32,
         );
 
+        // Apply transition opacity to effects
+        let mut effects = layer.effects;
+        effects.opacity *= t_effect.opacity;
+
         // Build uniforms
         let mut uniforms = LayerUniforms::from_matrix(matrix)
-            .with_effects(&layer.effects)
+            .with_effects(&effects)
             .with_texture_size(texture_info.width, texture_info.height);
 
         if let Some(crop) = &layer.crop {
             uniforms = uniforms.with_crop(crop);
         }
 
-        // Upload uniforms
-        self.queue
-            .write_buffer(&self.uniform_buffer, 0, cast_slice(&[uniforms]));
+        // Set wipe transition uniforms for shader-based wipe masking.
+        // Priority: cross-transition wipe > clip transition-in wipe > clip transition-out wipe
+        if let Some(ref ct) = layer.cross_transition {
+            if ct.cross_transition.transition_type.is_wipe() && !ct.is_outgoing {
+                uniforms = uniforms.with_transition(
+                    ct.cross_transition.transition_type.to_transition_type(),
+                    ct.eased_progress(),
+                );
+            }
+        } else if let Some(ref t_in) = layer.transition_in {
+            if t_in.transition.transition_type.is_wipe() {
+                // For transition-in: progress 0→1 reveals the clip
+                uniforms = uniforms.with_transition(
+                    t_in.transition.transition_type,
+                    t_in.eased_progress(),
+                );
+            }
+        } else if let Some(ref t_out) = layer.transition_out {
+            if t_out.transition.transition_type.is_wipe() {
+                // For transition-out: progress 0→1 hides the clip, so invert
+                uniforms = uniforms.with_transition(
+                    t_out.transition.transition_type,
+                    1.0 - t_out.eased_progress(),
+                );
+            }
+        }
+
+        // Create a per-layer uniform buffer with data immediately available.
+        // Using create_buffer_init ensures each layer has its own uniform data,
+        // preventing later layers from overwriting earlier layers' uniforms
+        // (which happens with queue.write_buffer on a shared buffer since
+        // all writes execute before the render pass).
+        let uniform_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("layer_uniform_buffer"),
+                contents: cast_slice(&[uniforms]),
+                usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            });
 
         // Create bind group for this layer
         let bind_group = self.device.create_bind_group(&BindGroupDescriptor {
@@ -775,7 +944,7 @@ impl Compositor {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: self.uniform_buffer.as_entire_binding(),
+                    resource: uniform_buffer.as_entire_binding(),
                 },
                 BindGroupEntry {
                     binding: 1,
@@ -800,11 +969,13 @@ impl Compositor {
 
         // Create a new buffer with the uniform data immediately available
         // (using create_buffer_init ensures data is ready for this draw call)
-        let uniform_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("shape_uniform_buffer"),
-            contents: cast_slice(&[uniforms]),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
+        let uniform_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("shape_uniform_buffer"),
+                contents: cast_slice(&[uniforms]),
+                usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            });
 
         let bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("shape_bind_group"),
@@ -826,11 +997,13 @@ impl Compositor {
         let uniforms = ShapeUniforms::from_line(line, self.width, self.height);
 
         // Create a new buffer with the uniform data immediately available
-        let uniform_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("line_uniform_buffer"),
-            contents: cast_slice(&[uniforms]),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
+        let uniform_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("line_uniform_buffer"),
+                contents: cast_slice(&[uniforms]),
+                usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            });
 
         let bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("line_bind_group"),
@@ -853,16 +1026,24 @@ impl Compositor {
         // For now, render a background box if text has a background color
         // Full text rendering with glyphon will be added later
 
+        let cw = self.width as f32;
+        let ch = self.height as f32;
+
+        // Calculate transition opacity for text
+        let t_opacity = ShapeUniforms::transition_opacity(
+            &text.transition_in,
+            &text.transition_out,
+            cw,
+            ch,
+        );
+        let effective_opacity = text.opacity * t_opacity;
+
         // If there's a background color, render it as a rounded rectangle
         if let Some(bg_color) = &text.style.background_color {
             render_pass.set_pipeline(&self.shape_pipeline);
 
             let padding = text.style.background_padding.unwrap_or(0.0);
             let radius = text.style.background_border_radius.unwrap_or(0.0);
-
-            // Create a shape for the text background
-            let cw = self.width as f32;
-            let ch = self.height as f32;
 
             // Convert percentage to pixels with padding
             let x = text.text_box.x * cw / 100.0 - padding;
@@ -881,7 +1062,7 @@ impl Compositor {
                 sides: 0,
                 corner_radius: radius * scale_factor,
                 stroke_width: 0.0,
-                opacity: text.opacity,
+                opacity: effective_opacity,
                 has_stroke: 0,
                 stroke_style: 0,
                 _pad1: 0,
@@ -900,11 +1081,13 @@ impl Compositor {
             };
 
             // Create a new buffer with the uniform data immediately available
-            let uniform_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("text_bg_uniform_buffer"),
-                contents: cast_slice(&[uniforms]),
-                usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            });
+            let uniform_buffer =
+                self.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("text_bg_uniform_buffer"),
+                        contents: cast_slice(&[uniforms]),
+                        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+                    });
 
             let bind_group = self.device.create_bind_group(&BindGroupDescriptor {
                 label: Some("text_bg_bind_group"),

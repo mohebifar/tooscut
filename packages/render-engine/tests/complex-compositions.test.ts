@@ -10,22 +10,21 @@
  * All tests run at 1920x1080 to match real video editing workflows.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   SnapshotTester,
+  ellipse,
   frame,
   layer,
-  textLayer,
-  rectangle,
-  ellipse,
-  polygon,
   lineLayer,
+  polygon,
+  rectangle,
+  textLayer,
 } from "../src/testing/snapshot-tester.js";
 import {
-  generateSceneTexture,
-  generateGradientTexture,
   generateCheckerboardTexture,
-  generateRadialGradientTexture,
+  generateGradientTexture,
+  generateSceneTexture,
 } from "../src/testing/test-renderer.js";
 
 const WIDTH = 1920;

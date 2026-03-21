@@ -163,8 +163,6 @@ export class FileSnapshotStorage implements SnapshotStorage {
     // In browser environment, we can't directly write to filesystem
     // Instead, we log instructions for the user or use a test server endpoint
     const dataUrl = this.imageDataToDataUrl(imageData);
-    console.log(`[Snapshot] Save "${name}.png" to ${this.basePath}/`);
-    console.log(`[Snapshot] Data URL: ${dataUrl.substring(0, 100)}...`);
 
     // If running in a test environment with a save endpoint:
     try {

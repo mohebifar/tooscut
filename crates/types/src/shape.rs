@@ -153,7 +153,12 @@ impl ShapeLayerData {
         Self {
             id: id.into(),
             shape: ShapeType::Rectangle,
-            shape_box: ShapeBox { x, y, width, height },
+            shape_box: ShapeBox {
+                x,
+                y,
+                width,
+                height,
+            },
             style: ShapeStyle::default(),
             z_index: 50,
             opacity: 1.0,
@@ -167,7 +172,12 @@ impl ShapeLayerData {
         Self {
             id: id.into(),
             shape: ShapeType::Ellipse,
-            shape_box: ShapeBox { x, y, width, height },
+            shape_box: ShapeBox {
+                x,
+                y,
+                width,
+                height,
+            },
             style: ShapeStyle::default(),
             z_index: 50,
             opacity: 1.0,
@@ -182,11 +192,23 @@ impl ShapeLayerData {
     }
 
     /// Create a new polygon shape.
-    pub fn polygon(id: impl Into<String>, x: f32, y: f32, width: f32, height: f32, sides: u32) -> Self {
+    pub fn polygon(
+        id: impl Into<String>,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        sides: u32,
+    ) -> Self {
         Self {
             id: id.into(),
             shape: ShapeType::Polygon,
-            shape_box: ShapeBox { x, y, width, height },
+            shape_box: ShapeBox {
+                x,
+                y,
+                width,
+                height,
+            },
             style: ShapeStyle::default().with_sides(sides),
             z_index: 50,
             opacity: 1.0,

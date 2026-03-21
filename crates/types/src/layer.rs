@@ -105,7 +105,10 @@ pub struct ActiveTransition {
 impl ActiveTransition {
     /// Create a new active transition.
     pub fn new(transition: Transition, progress: f32) -> Self {
-        Self { transition, progress }
+        Self {
+            transition,
+            progress,
+        }
     }
 
     /// Get the eased progress value.

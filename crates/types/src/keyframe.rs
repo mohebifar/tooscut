@@ -121,7 +121,8 @@ impl KeyframeTrack {
 
     /// Sort keyframes by time.
     pub fn sort(&mut self) {
-        self.keyframes.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+        self.keyframes
+            .sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
     }
 
     /// Check if this track has any keyframes.

@@ -1,0 +1,214 @@
+import { useState, useCallback, useEffect } from "react";
+import { Monitor, Smartphone, Square, RectangleHorizontal } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogTitle,
+} from "../ui/dialog";
+import { Button } from "../ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { NumericInput } from "../ui/numeric-input";
+import { useVideoEditorStore } from "../../state/video-editor-store";
+
+interface ProjectSettingsDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+interface ResolutionPreset {
+  label: string;
+  group: string;
+  width: number;
+  height: number;
+  icon: typeof Monitor;
+}
+
+const RESOLUTION_PRESETS: ResolutionPreset[] = [
+  // Landscape
+  { label: "4K UHD", group: "Landscape", width: 3840, height: 2160, icon: Monitor },
+  { label: "1080p Full HD", group: "Landscape", width: 1920, height: 1080, icon: Monitor },
+  { label: "720p HD", group: "Landscape", width: 1280, height: 720, icon: Monitor },
+
+  // Vertical / Mobile
+  { label: "1080×1920", group: "Portrait", width: 1080, height: 1920, icon: Smartphone },
+  { label: "720×1280", group: "Portrait", width: 720, height: 1280, icon: Smartphone },
+
+  // Square
+  { label: "1080×1080", group: "Square", width: 1080, height: 1080, icon: Square },
+
+  // Platform presets
+  { label: "YouTube", group: "Platform", width: 1920, height: 1080, icon: RectangleHorizontal },
+  { label: "YouTube Short", group: "Platform", width: 1080, height: 1920, icon: Smartphone },
+  { label: "Instagram Reel", group: "Platform", width: 1080, height: 1920, icon: Smartphone },
+  { label: "Instagram Post", group: "Platform", width: 1080, height: 1080, icon: Square },
+  { label: "TikTok", group: "Platform", width: 1080, height: 1920, icon: Smartphone },
+];
+
+const GROUPS = ["Landscape", "Portrait", "Square", "Platform"] as const;
+
+const FRAME_RATE_PRESETS = [60, 30, 25, 24];
+
+function findPresetIndex(width: number, height: number): string {
+  const idx = RESOLUTION_PRESETS.findIndex((p) => p.width === width && p.height === height);
+  return idx !== -1 ? String(idx) : "custom";
+}
+
+export function ProjectSettingsDialog({ open, onOpenChange }: ProjectSettingsDialogProps) {
+  const [width, setWidth] = useState(1920);
+  const [height, setHeight] = useState(1080);
+  const [fps, setFps] = useState(30);
+  const [preset, setPreset] = useState("1");
+
+  const settings = useVideoEditorStore((s) => s.settings);
+  const setSettings = useVideoEditorStore((s) => s.setSettings);
+
+  // Sync local state from store when dialog opens
+  useEffect(() => {
+    if (open) {
+      setWidth(settings.width);
+      setHeight(settings.height);
+      setFps(settings.fps);
+      setPreset(findPresetIndex(settings.width, settings.height));
+    }
+  }, [open, settings]);
+
+  const handlePresetChange = useCallback((value: string) => {
+    setPreset(value);
+    if (value === "custom") return;
+    const p = RESOLUTION_PRESETS[Number(value)];
+    if (p) {
+      setWidth(p.width);
+      setHeight(p.height);
+    }
+  }, []);
+
+  const handleWidthChange = useCallback((value: number) => {
+    setWidth(Math.round(value));
+    setPreset("custom");
+  }, []);
+
+  const handleHeightChange = useCallback((value: number) => {
+    setHeight(Math.round(value));
+    setPreset("custom");
+  }, []);
+
+  const handleSave = useCallback(() => {
+    setSettings({ width, height, fps });
+    onOpenChange(false);
+  }, [width, height, fps, setSettings, onOpenChange]);
+
+  const handleClose = useCallback(() => {
+    onOpenChange(false);
+  }, [onOpenChange]);
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Project Settings</DialogTitle>
+          <DialogDescription>
+            Configure resolution and frame rate for your project.
+          </DialogDescription>
+        </DialogHeader>
+
+        <DialogPanel>
+          <div className="grid gap-4 py-4">
+            {/* Resolution preset */}
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Resolution</label>
+              <Select value={preset} onValueChange={handlePresetChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select resolution" />
+                </SelectTrigger>
+                <SelectContent>
+                  {GROUPS.map((group) => {
+                    const items = RESOLUTION_PRESETS.map((p, i) => ({ ...p, index: i })).filter(
+                      (p) => p.group === group,
+                    );
+                    if (items.length === 0) return null;
+                    return (
+                      <div key={group}>
+                        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                          {group}
+                        </div>
+                        {items.map((p) => {
+                          const Icon = p.icon;
+                          return (
+                            <SelectItem key={p.index} value={String(p.index)}>
+                              <span className="flex items-center gap-2">
+                                <Icon className="size-3.5 shrink-0" />
+                                <span>{p.label}</span>
+                                <span className="text-muted-foreground">
+                                  {p.width}×{p.height}
+                                </span>
+                              </span>
+                            </SelectItem>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                  <SelectItem value="custom">Custom</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Width / Height */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <label className="text-sm font-medium">Width</label>
+                <NumericInput
+                  value={width}
+                  onChange={handleWidthChange}
+                  min={1}
+                  max={7680}
+                  step={1}
+                  suffix="px"
+                />
+              </div>
+              <div className="grid gap-2">
+                <label className="text-sm font-medium">Height</label>
+                <NumericInput
+                  value={height}
+                  onChange={handleHeightChange}
+                  min={1}
+                  max={4320}
+                  step={1}
+                  suffix="px"
+                />
+              </div>
+            </div>
+
+            {/* Frame rate */}
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Frame Rate</label>
+              <Select value={String(fps)} onValueChange={(v) => setFps(Number(v))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select frame rate" />
+                </SelectTrigger>
+                <SelectContent>
+                  {FRAME_RATE_PRESETS.map((f) => (
+                    <SelectItem key={f} value={String(f)}>
+                      {f} fps
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </DialogPanel>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave}>Save</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

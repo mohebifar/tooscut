@@ -28,11 +28,14 @@
     "./wasm/compositor": {
       "types": "./wasm/compositor/compositor.d.ts",
       "import": "./wasm/compositor/compositor.js"
-    }
+    },
+    "./wasm/audio-engine/*": "./wasm/audio-engine/*",
+    "./dist/worklet/*": "./dist/worklet/*"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && pnpm build:worklet",
     "build:wasm": "cd ../../crates && ./build.sh",
+    "build:worklet": "tsdown src/worklet/audio-engine.worklet.ts --format iife --out-dir dist/worklet --no-dts",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -41,13 +44,17 @@
     "test:browser:watch": "vitest --config vitest.browser.config.ts",
     "test:ui": "vitest --ui"
   },
-  "devDependencies": {
-    "@vitest/browser": "^3.0.0",
-    "playwright": "^1.50.0",
-    "typescript": "^5.8.0",
-    "vitest": "^3.0.0"
-  },
   "dependencies": {
     "mediabunny": "^1.31.0"
+  },
+  "devDependencies": {
+    "@types/audioworklet": "^0.0.94",
+    "@types/node": "^22.19.7",
+    "@vitest/browser": "^3.0.0",
+    "@webgpu/types": "^0.1.69",
+    "playwright": "^1.50.0",
+    "tsdown": "^0.20.1",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0"
   }
 }

@@ -46,12 +46,23 @@ impl TransitionType {
 
     /// Check if this transition affects scale.
     pub const fn affects_scale(&self) -> bool {
-        matches!(self, Self::ZoomIn | Self::ZoomOut | Self::FlipH | Self::FlipV)
+        matches!(
+            self,
+            Self::ZoomIn | Self::ZoomOut | Self::FlipH | Self::FlipV
+        )
     }
 
     /// Check if this transition affects rotation.
     pub const fn affects_rotation(&self) -> bool {
         matches!(self, Self::RotateCw | Self::RotateCcw)
+    }
+
+    /// Whether this transition uses shader-based wipe masking.
+    pub const fn is_wipe(&self) -> bool {
+        matches!(
+            self,
+            Self::WipeLeft | Self::WipeRight | Self::WipeUp | Self::WipeDown
+        )
     }
 }
 
@@ -154,10 +165,15 @@ impl TransitionEffect {
                 ..Self::NONE
             },
 
+            // Wipe transitions use shader-based UV masking for media layers.
+            // For non-media layers (shapes, text, lines), fall back to opacity fade.
             TransitionType::WipeLeft
             | TransitionType::WipeRight
             | TransitionType::WipeUp
-            | TransitionType::WipeDown => Self::NONE,
+            | TransitionType::WipeDown => Self {
+                opacity: p,
+                ..Self::NONE
+            },
 
             TransitionType::SlideLeft => Self {
                 x_offset: inv_p * canvas_width * direction,
@@ -261,6 +277,28 @@ pub enum CrossTransitionType {
     WipeDown,
 }
 
+impl CrossTransitionType {
+    /// Whether this cross-transition uses shader-based wipe masking.
+    pub const fn is_wipe(&self) -> bool {
+        matches!(
+            self,
+            Self::WipeLeft | Self::WipeRight | Self::WipeUp | Self::WipeDown
+        )
+    }
+
+    /// Convert to the corresponding `TransitionType` for shader uniforms.
+    pub const fn to_transition_type(self) -> TransitionType {
+        match self {
+            Self::Dissolve => TransitionType::Dissolve,
+            Self::Fade => TransitionType::Fade,
+            Self::WipeLeft => TransitionType::WipeLeft,
+            Self::WipeRight => TransitionType::WipeRight,
+            Self::WipeUp => TransitionType::WipeUp,
+            Self::WipeDown => TransitionType::WipeDown,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -273,13 +311,15 @@ mod tests {
 
     #[test]
     fn slide_at_zero_progress() {
-        let effect = TransitionEffect::calculate(TransitionType::SlideLeft, 0.0, 1920.0, 1080.0, 1.0);
+        let effect =
+            TransitionEffect::calculate(TransitionType::SlideLeft, 0.0, 1920.0, 1080.0, 1.0);
         assert!((effect.x_offset - 1920.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn slide_at_full_progress() {
-        let effect = TransitionEffect::calculate(TransitionType::SlideLeft, 1.0, 1920.0, 1080.0, 1.0);
+        let effect =
+            TransitionEffect::calculate(TransitionType::SlideLeft, 1.0, 1920.0, 1080.0, 1.0);
         assert!(effect.x_offset.abs() < f32::EPSILON);
     }
 }

@@ -28,35 +28,6 @@ Shared types used across all modules. These types are the source of truth for Ty
 - `ShapeOverlay` - Shape layer (rectangle, circle, line)
 - `RenderFrame` - Complete frame to render
 
-### `tooscut-keyframe`
-
-Efficient keyframe animation evaluation with temporal coherence caching.
-
-**Features:**
-- Linear, step, and bezier interpolation
-- Cached index lookup for sequential playback (O(1) for frame-to-frame)
-- Binary search fallback for seeking
-- Cubic bezier solver using Newton-Raphson
-
-**Usage:**
-```typescript
-import init, { KeyframeEvaluator } from './wasm/keyframe/keyframe.js';
-
-await init();
-
-const evaluator = new KeyframeEvaluator(JSON.stringify({
-  tracks: [{
-    property: 'opacity',
-    keyframes: [
-      { time: 0, value: 0, interpolation: 'linear', easing: { preset: 'linear' } },
-      { time: 1, value: 1, interpolation: 'linear', easing: { preset: 'linear' } }
-    ]
-  }]
-}));
-
-const opacity = evaluator.evaluate('opacity', 0.5); // 0.5
-```
-
 ### `tooscut-compositor`
 
 GPU-accelerated video compositor using WebGPU/WebGL2 via wgpu.

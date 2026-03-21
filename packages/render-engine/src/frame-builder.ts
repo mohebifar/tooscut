@@ -9,11 +9,13 @@ import type {
   KeyframeTracks,
   Transform,
   Effects,
+  Easing,
   MediaLayerData,
   RenderFrame,
   Crop,
   ActiveTransition,
   ActiveCrossTransition,
+  CrossTransitionType,
   TextLayerData,
   ShapeLayerData,
   LineLayerData,
@@ -38,6 +40,10 @@ export interface CrossTransitionRef {
   outgoingClipId: string;
   incomingClipId: string;
   duration: number;
+  type: CrossTransitionType;
+  /** Original cut point on the timeline. The transition region is [boundary - duration/2, boundary + duration/2]. */
+  boundary: number;
+  easing: Easing;
 }
 
 /**
@@ -212,20 +218,31 @@ export interface TimelineClip {
  */
 export class EvaluatorManager {
   private evaluators = new Map<string, KeyframeEvaluator>();
+  /** Track the keyframes reference to detect changes */
+  private keyframesRefs = new Map<string, KeyframeTracks>();
 
   /**
    * Get or create an evaluator for a clip.
+   * Recreates the evaluator if keyframes have changed.
    */
   getEvaluator(clip: TimelineClip): KeyframeEvaluator | null {
     if (!clip.keyframes || clip.keyframes.tracks.length === 0) {
+      // No keyframes - remove any cached evaluator
+      this.evaluators.delete(clip.id);
+      this.keyframesRefs.delete(clip.id);
       return null;
     }
 
+    const cachedRef = this.keyframesRefs.get(clip.id);
     let evaluator = this.evaluators.get(clip.id);
-    if (!evaluator) {
+
+    // Recreate evaluator if keyframes reference changed (immutable update)
+    if (!evaluator || cachedRef !== clip.keyframes) {
       evaluator = new KeyframeEvaluator(clip.keyframes);
       this.evaluators.set(clip.id, evaluator);
+      this.keyframesRefs.set(clip.id, clip.keyframes);
     }
+
     return evaluator;
   }
 
@@ -234,6 +251,7 @@ export class EvaluatorManager {
    */
   removeEvaluator(clipId: string): void {
     this.evaluators.delete(clipId);
+    this.keyframesRefs.delete(clipId);
   }
 
   /**
@@ -250,6 +268,7 @@ export class EvaluatorManager {
    */
   clear(): void {
     this.evaluators.clear();
+    this.keyframesRefs.clear();
   }
 }
 
@@ -270,42 +289,40 @@ export function buildMediaLayerData(
   timelineTime: number,
   evaluatorManager: EvaluatorManager,
 ): MediaLayerData | null {
-  // Check if clip is visible at this time
-  if (timelineTime < clip.startTime || timelineTime >= clip.startTime + clip.duration) {
-    return null;
+  // Check if clip is visible at this time.
+  // Skip this check for clips in an active cross transition — they may be
+  // rendered outside their normal time bounds during the transition period.
+  if (!clip.crossTransition) {
+    if (timelineTime < clip.startTime || timelineTime >= clip.startTime + clip.duration) {
+      return null;
+    }
   }
 
   // Local time within the clip
   const localTime = timelineTime - clip.startTime + clip.inPoint;
 
-  // Get base values
-  const baseTransform: Transform = {
-    ...DEFAULT_TRANSFORM,
-    ...clip.transform,
-  };
-  const baseEffects: Effects = {
-    ...DEFAULT_EFFECTS,
-    ...clip.effects,
-  };
-
-  // Evaluate keyframes if present
-  let transform = baseTransform;
-  let effects = baseEffects;
-
+  // Build transform/effects with Object.assign to avoid multiple spread allocations.
+  // Single Object.assign call merges DEFAULT → clip overrides → keyframe overrides
+  // into one freshly allocated object (2 objects total vs 4 with chained spreads).
   const evaluator = evaluatorManager.getEvaluator(clip);
+  let transform: Transform;
+  let effects: Effects;
   if (evaluator) {
-    const keyframedTransform = evaluator.evaluateTransform(localTime);
-    const keyframedEffects = evaluator.evaluateEffects(localTime);
-
-    // Merge keyframed values with base (keyframes override base)
-    transform = {
-      ...baseTransform,
-      ...keyframedTransform,
-    };
-    effects = {
-      ...baseEffects,
-      ...keyframedEffects,
-    };
+    transform = Object.assign(
+      {} as Transform,
+      DEFAULT_TRANSFORM,
+      clip.transform,
+      evaluator.evaluateTransform(localTime),
+    );
+    effects = Object.assign(
+      {} as Effects,
+      DEFAULT_EFFECTS,
+      clip.effects,
+      evaluator.evaluateEffects(localTime),
+    );
+  } else {
+    transform = Object.assign({} as Transform, DEFAULT_TRANSFORM, clip.transform);
+    effects = Object.assign({} as Effects, DEFAULT_EFFECTS, clip.effects);
   }
 
   return {
@@ -359,6 +376,8 @@ export interface BuildRenderFrameOptions {
   lineLayers?: LineLayerData[];
   /** All tracks for z-order lookup */
   tracks: Track[];
+  /** Pre-built track index map (avoids rebuilding when caller already has one) */
+  trackIndexMap?: Map<string, number>;
   /** Current timeline time */
   timelineTime: number;
   /** Canvas width */
@@ -420,10 +439,13 @@ export function buildRenderFrame(
     options = optionsOrClips;
   }
 
-  // Build track index lookup
-  const trackIndexMap = new Map<string, number>();
-  for (const track of options.tracks) {
-    trackIndexMap.set(track.id, track.index);
+  // Reuse caller's map or build one
+  let trackIndexMap = options.trackIndexMap;
+  if (!trackIndexMap) {
+    trackIndexMap = new Map<string, number>();
+    for (const track of options.tracks) {
+      trackIndexMap.set(track.id, track.index);
+    }
   }
 
   const mediaLayers: MediaLayerData[] = [];

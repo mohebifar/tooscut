@@ -51,10 +51,30 @@ impl CubicBezier {
 }
 
 impl CubicBezier {
-    pub const LINEAR: Self = Self { x1: 0.0, y1: 0.0, x2: 1.0, y2: 1.0 };
-    pub const EASE_IN: Self = Self { x1: 0.42, y1: 0.0, x2: 1.0, y2: 1.0 };
-    pub const EASE_OUT: Self = Self { x1: 0.0, y1: 0.0, x2: 0.58, y2: 1.0 };
-    pub const EASE_IN_OUT: Self = Self { x1: 0.42, y1: 0.0, x2: 0.58, y2: 1.0 };
+    pub const LINEAR: Self = Self {
+        x1: 0.0,
+        y1: 0.0,
+        x2: 1.0,
+        y2: 1.0,
+    };
+    pub const EASE_IN: Self = Self {
+        x1: 0.42,
+        y1: 0.0,
+        x2: 1.0,
+        y2: 1.0,
+    };
+    pub const EASE_OUT: Self = Self {
+        x1: 0.0,
+        y1: 0.0,
+        x2: 0.58,
+        y2: 1.0,
+    };
+    pub const EASE_IN_OUT: Self = Self {
+        x1: 0.42,
+        y1: 0.0,
+        x2: 0.58,
+        y2: 1.0,
+    };
 
     /// Sample the X coordinate at parameter u.
     #[inline]
@@ -160,7 +180,8 @@ impl Easing {
 
     /// Get the effective cubic bezier curve.
     pub fn to_bezier(&self) -> CubicBezier {
-        self.custom_bezier.unwrap_or_else(|| self.preset.to_bezier())
+        self.custom_bezier
+            .unwrap_or_else(|| self.preset.to_bezier())
     }
 
     /// Evaluate the easing at progress t (0.0-1.0).

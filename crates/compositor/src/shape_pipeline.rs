@@ -5,7 +5,7 @@
 
 use bytemuck::{Pod, Zeroable};
 use wgpu::{
-    BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendState,
+    BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType,
     BufferBindingType, ColorTargetState, ColorWrites, Device, FragmentState, FrontFace,
     MultisampleState, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology,
     RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
@@ -13,7 +13,8 @@ use wgpu::{
 };
 
 use tooscut_types::{
-    LineHeadType, LineLayerData, LineStrokeStyle, ShapeLayerData, ShapeType,
+    ActiveTransition, LineHeadType, LineLayerData, LineStrokeStyle, ShapeLayerData, ShapeType,
+    TransitionEffect,
 };
 
 /// Shape types for the shader.
@@ -127,12 +128,39 @@ impl Default for ShapeUniforms {
 }
 
 impl ShapeUniforms {
+    /// Calculate combined transition opacity from transition_in and transition_out.
+    pub fn transition_opacity(
+        transition_in: &Option<ActiveTransition>,
+        transition_out: &Option<ActiveTransition>,
+        canvas_width: f32,
+        canvas_height: f32,
+    ) -> f32 {
+        let mut opacity = 1.0;
+        if let Some(ref t_in) = transition_in {
+            let e = TransitionEffect::calculate(
+                t_in.transition.transition_type,
+                t_in.eased_progress(),
+                canvas_width,
+                canvas_height,
+                1.0,
+            );
+            opacity *= e.opacity;
+        }
+        if let Some(ref t_out) = transition_out {
+            let e = TransitionEffect::calculate(
+                t_out.transition.transition_type,
+                1.0 - t_out.eased_progress(),
+                canvas_width,
+                canvas_height,
+                -1.0,
+            );
+            opacity *= e.opacity;
+        }
+        opacity
+    }
+
     /// Create uniforms from a shape layer.
-    pub fn from_shape(
-        shape: &ShapeLayerData,
-        canvas_width: u32,
-        canvas_height: u32,
-    ) -> Self {
+    pub fn from_shape(shape: &ShapeLayerData, canvas_width: u32, canvas_height: u32) -> Self {
         let cw = canvas_width as f32;
         let ch = canvas_height as f32;
 
@@ -154,16 +182,32 @@ impl ShapeUniforms {
             ShapeType::Polygon => SHAPE_POLYGON,
         };
 
+        let t_opacity = Self::transition_opacity(
+            &shape.transition_in,
+            &shape.transition_out,
+            cw,
+            ch,
+        );
+
+        let scaled_stroke_width = shape.style.stroke_width * scale_factor;
+
+        // Expand bbox by stroke width so the stroke isn't clipped at edges.
+        // The shader computes center and half_size from bbox, so we offset
+        // the bbox while keeping the SDF center unchanged — the shader
+        // recalculates center = bbox.xy + bbox.zw*0.5 which stays the same
+        // when we expand symmetrically.
+        let stroke_pad = if has_stroke { scaled_stroke_width + 1.0 } else { 0.0 };
+
         Self {
-            bbox: [x, y, w, h],
+            bbox: [x - stroke_pad, y - stroke_pad, w + stroke_pad * 2.0, h + stroke_pad * 2.0],
             canvas: [cw, ch, 1.0 / cw, 1.0 / ch],
             fill_color: shape.style.fill,
             stroke_color,
             shape_type,
             sides: shape.style.sides.unwrap_or(6),
             corner_radius: shape.style.corner_radius * scale_factor,
-            stroke_width: shape.style.stroke_width * scale_factor,
-            opacity: shape.opacity,
+            stroke_width: scaled_stroke_width,
+            opacity: shape.opacity * t_opacity,
             has_stroke: if has_stroke { 1 } else { 0 },
             stroke_style: STROKE_SOLID,
             _pad1: 0,
@@ -183,11 +227,7 @@ impl ShapeUniforms {
     }
 
     /// Create uniforms from a line layer.
-    pub fn from_line(
-        line: &LineLayerData,
-        canvas_width: u32,
-        canvas_height: u32,
-    ) -> Self {
+    pub fn from_line(line: &LineLayerData, canvas_width: u32, canvas_height: u32) -> Self {
         let cw = canvas_width as f32;
         let ch = canvas_height as f32;
 
@@ -228,6 +268,13 @@ impl ShapeUniforms {
             LineHeadType::Diamond => HEAD_DIAMOND,
         };
 
+        let t_opacity = Self::transition_opacity(
+            &line.transition_in,
+            &line.transition_out,
+            cw,
+            ch,
+        );
+
         // Line properties use actual pixel values (no resolution scaling)
         // This gives designers direct control over visual appearance
         Self {
@@ -239,7 +286,7 @@ impl ShapeUniforms {
             sides: 0,
             corner_radius: 0.0,
             stroke_width: line.style.stroke_width,
-            opacity: line.opacity,
+            opacity: line.opacity * t_opacity,
             has_stroke: 0,
             stroke_style,
             _pad1: 0,
@@ -444,8 +491,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let end_head_type = bitcast<u32>(head_params.z);
     let end_head_size = head_params.w;
 
-    let half_size = bbox.zw * 0.5;
-    let center = bbox.xy + half_size;
+    let has_stroke = bitcast<u32>(params2.y);
+
+    // bbox is expanded by stroke_pad for rendering. Recover original shape
+    // half_size by subtracting the same padding used on the Rust side.
+    let stroke_pad = select(0.0, stroke_width + 1.0, has_stroke == 1u && shape_type != SHAPE_LINE);
+    let half_size = bbox.zw * 0.5 - vec2<f32>(stroke_pad, stroke_pad);
+    let center = bbox.xy + bbox.zw * 0.5;
     let p = in.pixel_pos - center;
 
     var d: f32 = 1e10;
@@ -470,6 +522,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     } else if shape_type == SHAPE_LINE {
         // Line with optional heads
         let pixel_pos = in.pixel_pos;
+        let stroke_style_u = bitcast<u32>(params2.z);
 
         // Line direction
         let line_vec = line_end - line_start;
@@ -492,6 +545,35 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         // Line segment SDF
         d = sdf_line_segment(pixel_pos, adjusted_start, adjusted_end, stroke_width);
 
+        // Apply dash/dot pattern to the line segment only (not heads)
+        if stroke_style_u != 0u && line_len > 0.001 {
+            // Project pixel onto line to get parameter t along the line
+            let pa = pixel_pos - adjusted_start;
+            let ba = adjusted_end - adjusted_start;
+            let t_along = dot(pa, ba) / dot(ba, ba);
+            let dist_along = t_along * length(ba);
+
+            if stroke_style_u == 1u {
+                // Dashed: dash_len = 4× stroke width, gap = 3× stroke width
+                let dash_len = stroke_width * 4.0;
+                let gap_len = stroke_width * 3.0;
+                let period = dash_len + gap_len;
+                let phase = dist_along % period;
+                if phase > dash_len {
+                    d = max(d, 0.5);  // Push outside (transparent)
+                }
+            } else if stroke_style_u == 2u {
+                // Dotted: dot spacing = 3× stroke width
+                let spacing = stroke_width * 3.0;
+                let phase = dist_along % spacing;
+                let dot_center = spacing * 0.5;
+                let dot_dist = abs(phase - dot_center);
+                if dot_dist > stroke_width * 0.5 {
+                    d = max(d, 0.5);  // Push outside (transparent)
+                }
+            }
+        }
+
         // Start head
         if start_head_type != HEAD_NONE && start_head_size > 0.0 {
             let head_d = sdf_head(pixel_pos, line_start, -line_dir, start_head_type, start_head_size);
@@ -508,7 +590,31 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         d = sdf_rounded_rect(p, half_size, corner_radius);
     }
 
-    // Calculate alpha with anti-aliasing
+    // Stroke handling
+    let stroke_color = uniforms.data[3];
+
+    if has_stroke == 1u && stroke_width > 0.0 && shape_type != SHAPE_LINE {
+        // For shapes with stroke: the fill region is where d < -stroke_width,
+        // the stroke region is where d is between -stroke_width and 0.
+        let fill_d = d + stroke_width;
+        let fill_alpha = (1.0 - smoothstep(-aa, aa, fill_d)) * fill_color.a * opacity;
+        let outer_alpha = (1.0 - smoothstep(-aa, aa, d)) * opacity;
+        let stroke_alpha = outer_alpha * stroke_color.a - fill_alpha;
+
+        let total_alpha = fill_alpha + max(stroke_alpha, 0.0);
+        if total_alpha < 0.001 {
+            discard;
+        }
+
+        // Blend fill and stroke colors
+        var color = fill_color.rgb * fill_alpha;
+        if stroke_alpha > 0.001 {
+            color = color + stroke_color.rgb * stroke_alpha;
+        }
+        return vec4<f32>(color / total_alpha, total_alpha);
+    }
+
+    // No stroke — simple fill
     let alpha = (1.0 - smoothstep(-aa, aa, d)) * fill_color.a * opacity;
 
     if alpha < 0.001 {
@@ -523,18 +629,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 pub fn create_shape_bind_group_layout(device: &Device) -> BindGroupLayout {
     device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("shape_bind_group_layout"),
-        entries: &[
-            BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
+        entries: &[BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
             },
-        ],
+            count: None,
+        }],
     })
 }
 

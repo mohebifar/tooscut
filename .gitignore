@@ -31,3 +31,5 @@ todos.json
 
 # Rust/WASM build artifacts
 crates/**/target
+
+/target

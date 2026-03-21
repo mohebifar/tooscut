@@ -323,6 +323,12 @@ export function generateShapeTexture(
 
 /**
  * Create a layer with default values.
+ *
+ * Positions are specified relative to canvas center:
+ * - Omitting x/y or setting them to 0 means centered on canvas
+ * - Positive x moves right, positive y moves down
+ *
+ * The createFrame() function adds canvas center to convert to absolute positions.
  */
 export function createLayer(
   textureId: string,
@@ -375,6 +381,23 @@ export function createLayer(
 }
 
 /**
+ * Resolve layer positions by adding canvas center.
+ * All positions are relative to canvas center.
+ */
+function resolveLayerPositions(layers: LayerData[], width: number, height: number): LayerData[] {
+  const centerX = width / 2;
+  const centerY = height / 2;
+  return layers.map((layer) => ({
+    ...layer,
+    transform: {
+      ...layer.transform,
+      x: layer.transform.x + centerX,
+      y: layer.transform.y + centerY,
+    },
+  }));
+}
+
+/**
  * Create a render frame.
  */
 export function createFrame(
@@ -384,7 +407,7 @@ export function createFrame(
   timelineTime: number = 0,
 ): RenderFrame {
   return {
-    media_layers: layers,
+    media_layers: resolveLayerPositions(layers, width, height),
     text_layers: [],
     shape_layers: [],
     line_layers: [],

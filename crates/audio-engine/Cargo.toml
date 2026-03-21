@@ -1,0 +1,29 @@
+[package]
+name = "tooscut-audio-engine"
+version.workspace = true
+edition.workspace = true
+description = "WASM-based audio mixing engine for video editor"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Internal crates
+tooscut-types.workspace = true
+tooscut-keyframe = { path = "../keyframe" }
+
+# WASM bindings
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+
+# Panic handling and logging
+console_error_panic_hook.workspace = true
+log.workspace = true
+console_log.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"

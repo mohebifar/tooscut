@@ -1,0 +1,160 @@
+//! Audio Engine - WASM-based audio mixing for video editor
+//!
+//! This crate provides a sample-accurate audio mixer that runs in an AudioWorklet.
+//! It handles multi-track mixing, cross-transitions, and per-clip/track processing.
+
+mod clip;
+mod effects;
+mod mixer;
+mod source;
+mod time_stretcher;
+mod track;
+mod transition;
+
+use mixer::AudioMixer;
+use wasm_bindgen::prelude::*;
+
+/// Initialize panic hook and logging for better WASM debugging
+#[wasm_bindgen(start)]
+pub fn init() {
+    console_error_panic_hook::set_once();
+    console_log::init_with_level(log::Level::Debug).ok();
+}
+
+/// Audio Engine - main WASM export
+///
+/// This struct wraps the AudioMixer and provides the public API for the AudioWorklet.
+#[wasm_bindgen]
+pub struct AudioEngine {
+    mixer: AudioMixer,
+}
+
+#[wasm_bindgen]
+impl AudioEngine {
+    /// Create a new AudioEngine with the given output sample rate
+    #[wasm_bindgen(constructor)]
+    pub fn new(sample_rate: u32) -> Self {
+        Self {
+            mixer: AudioMixer::new(sample_rate),
+        }
+    }
+
+    /// Upload decoded PCM audio data for a clip
+    ///
+    /// # Arguments
+    /// * `source_id` - Unique identifier for this audio source (asset ID)
+    /// * `pcm_data` - Interleaved stereo PCM data (f32)
+    /// * `source_sample_rate` - Sample rate of the source audio
+    /// * `channels` - Number of channels (1 or 2)
+    #[wasm_bindgen]
+    pub fn upload_audio(
+        &mut self,
+        source_id: &str,
+        pcm_data: &[f32],
+        source_sample_rate: u32,
+        channels: u32,
+    ) {
+        self.mixer
+            .upload_audio(source_id, pcm_data, source_sample_rate, channels);
+    }
+
+    /// Remove audio data for a source
+    #[wasm_bindgen]
+    pub fn remove_audio(&mut self, source_id: &str) {
+        self.mixer.remove_audio(source_id);
+    }
+
+    /// Create a streaming audio source that receives PCM data incrementally
+    ///
+    /// # Arguments
+    /// * `source_id` - Unique identifier for this audio source (asset ID)
+    /// * `sample_rate` - Sample rate of the source audio
+    /// * `channels` - Number of channels (1 or 2)
+    /// * `estimated_duration` - Optional duration hint in seconds for pre-allocation (0 = no hint)
+    #[wasm_bindgen]
+    pub fn create_streaming_source(
+        &mut self,
+        source_id: &str,
+        sample_rate: u32,
+        channels: u32,
+        estimated_duration: f64,
+    ) {
+        let duration_hint = if estimated_duration > 0.0 {
+            Some(estimated_duration)
+        } else {
+            None
+        };
+        self.mixer
+            .create_streaming_source(source_id, sample_rate, channels, duration_hint);
+    }
+
+    /// Append a chunk of interleaved PCM data to a streaming source
+    ///
+    /// # Arguments
+    /// * `source_id` - ID of the streaming source (must have been created with `create_streaming_source`)
+    /// * `chunk` - Interleaved PCM data (f32)
+    #[wasm_bindgen]
+    pub fn append_audio_chunk(&mut self, source_id: &str, chunk: &[f32]) {
+        self.mixer.append_audio_chunk(source_id, chunk);
+    }
+
+    /// Mark a streaming source as complete (all data has been received)
+    ///
+    /// # Arguments
+    /// * `source_id` - ID of the streaming source
+    #[wasm_bindgen]
+    pub fn finalize_audio(&mut self, source_id: &str) {
+        self.mixer.finalize_audio(source_id);
+    }
+
+    /// Update the timeline state (clips, tracks, cross-transitions)
+    ///
+    /// # Arguments
+    /// * `timeline_json` - JSON string containing AudioTimelineState
+    #[wasm_bindgen]
+    pub fn set_timeline(&mut self, timeline_json: &str) {
+        if let Err(e) = self.mixer.set_timeline(timeline_json) {
+            log::error!("[AudioEngine] Failed to set timeline: {}", e);
+        }
+    }
+
+    /// Set playback state
+    #[wasm_bindgen]
+    pub fn set_playing(&mut self, playing: bool) {
+        self.mixer.set_playing(playing);
+    }
+
+    /// Seek to a specific time
+    #[wasm_bindgen]
+    pub fn seek(&mut self, time: f64) {
+        self.mixer.seek(time);
+    }
+
+    /// Render audio frames
+    ///
+    /// Called from the AudioWorklet processor every ~128 samples.
+    /// Output is interleaved stereo (L, R, L, R, ...).
+    ///
+    /// # Arguments
+    /// * `output` - Mutable slice to write interleaved stereo samples
+    /// * `num_frames` - Number of stereo frames to render
+    ///
+    /// # Returns
+    /// Number of frames actually rendered
+    #[wasm_bindgen]
+    pub fn render(&mut self, output: &mut [f32], num_frames: usize) -> usize {
+        self.mixer.render(output, num_frames)
+    }
+
+    /// Get the current playback time (for sync feedback)
+    #[wasm_bindgen]
+    pub fn get_current_time(&self) -> f64 {
+        self.mixer.get_current_time()
+    }
+
+    /// Set master volume (0.0 - 1.0)
+    #[wasm_bindgen]
+    pub fn set_master_volume(&mut self, volume: f32) {
+        self.mixer.set_master_volume(volume);
+    }
+}

@@ -1,106 +1,234 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { Zap, Server, Route as RouteIcon, Shield, Waves, Sparkles } from "lucide-react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useLiveQuery } from "dexie-react-hooks";
+import { Plus, Trash2, Film, Clock, Monitor } from "lucide-react";
+import { Button } from "../components/ui/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "../components/ui/empty";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
+import { db, type LocalProject } from "../state/db";
+import { addTrackPair, type EditableTrack } from "@tooscut/render-engine";
+import { useState } from "react";
 
-export const Route = createFileRoute("/")({ component: App });
+export const Route = createFileRoute("/")({ component: ProjectChooser });
 
-function App() {
-  const features = [
-    {
-      icon: <Zap className="w-12 h-12 text-cyan-400" />,
-      title: "Powerful Server Functions",
-      description:
-        "Write server-side code that seamlessly integrates with your client components. Type-safe, secure, and simple.",
-    },
-    {
-      icon: <Server className="w-12 h-12 text-cyan-400" />,
-      title: "Flexible Server Side Rendering",
-      description:
-        "Full-document SSR, streaming, and progressive enhancement out of the box. Control exactly what renders where.",
-    },
-    {
-      icon: <RouteIcon className="w-12 h-12 text-cyan-400" />,
-      title: "API Routes",
-      description:
-        "Build type-safe API endpoints alongside your application. No separate backend needed.",
-    },
-    {
-      icon: <Shield className="w-12 h-12 text-cyan-400" />,
-      title: "Strongly Typed Everything",
-      description:
-        "End-to-end type safety from server to client. Catch errors before they reach production.",
-    },
-    {
-      icon: <Waves className="w-12 h-12 text-cyan-400" />,
-      title: "Full Streaming Support",
-      description:
-        "Stream data from server to client progressively. Perfect for AI applications and real-time updates.",
-    },
-    {
-      icon: <Sparkles className="w-12 h-12 text-cyan-400" />,
-      title: "Next Generation Ready",
-      description:
-        "Built from the ground up for modern web applications. Deploy anywhere JavaScript runs.",
-    },
-  ];
+function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function formatDate(timestamp: number): string {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+
+  if (diff < 60_000) return "Just now";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}d ago`;
+
+  return date.toLocaleDateString();
+}
+
+function ProjectChooser() {
+  const navigate = useNavigate();
+  const projects = useLiveQuery(() => db.projects.orderBy("updatedAt").reverse().toArray());
+  const [deleteTarget, setDeleteTarget] = useState<LocalProject | null>(null);
+
+  const handleCreateProject = async () => {
+    const id = generateId();
+    const videoTrackId = generateId();
+    const audioTrackId = generateId();
+    const { tracks } = addTrackPair([] as EditableTrack[], videoTrackId, audioTrackId);
+
+    const project: LocalProject = {
+      id,
+      name: "Untitled Project",
+      settings: { width: 1920, height: 1080, fps: 30 },
+      content: {
+        tracks,
+        clips: [],
+        assets: [],
+      },
+      thumbnailDataUrl: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    await db.projects.add(project);
+    void navigate({ to: "/editor/$projectId", params: { projectId: id } });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    const assetIds = deleteTarget.content.assets.map((a) => a.id);
+    await db.projects.delete(deleteTarget.id);
+    if (assetIds.length > 0) {
+      await db.fileHandles.bulkDelete(assetIds);
+    }
+    setDeleteTarget(null);
+  };
+
+  const handleOpenProject = (projectId: string) => {
+    void navigate({ to: "/editor/$projectId", params: { projectId } });
+  };
+
+  if (projects === undefined) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="size-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
-      <section className="relative py-20 px-6 text-center overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-purple-500/10"></div>
-        <div className="relative max-w-5xl mx-auto">
-          <div className="flex items-center justify-center gap-6 mb-6">
-            <img
-              src="/tanstack-circle-logo.png"
-              alt="TanStack Logo"
-              className="w-24 h-24 md:w-32 md:h-32"
-            />
-            <h1 className="text-6xl md:text-7xl font-black text-white [letter-spacing:-0.08em]">
-              <span className="text-gray-300">TANSTACK</span>{" "}
-              <span className="bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
-                START
-              </span>
-            </h1>
+    <div className="min-h-screen bg-background">
+      <header className="border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-10">
+        <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="size-7 rounded-lg bg-primary flex items-center justify-center">
+              <Film className="size-4 text-primary-foreground" />
+            </div>
+            <span className="font-semibold text-foreground tracking-tight">Tooscut</span>
           </div>
-          <p className="text-2xl md:text-3xl text-gray-300 mb-4 font-light">
-            The framework for next generation AI applications
-          </p>
-          <p className="text-lg text-gray-400 max-w-3xl mx-auto mb-8">
-            Full-stack framework powered by TanStack Router for React and Solid. Build modern
-            applications with server functions, streaming, and type safety.
-          </p>
-          <div className="flex flex-col items-center gap-4">
-            <a
-              href="https://tanstack.com/start"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-8 py-3 bg-cyan-500 hover:bg-cyan-600 text-white font-semibold rounded-lg transition-colors shadow-lg shadow-cyan-500/50"
-            >
-              Documentation
-            </a>
-            <p className="text-gray-400 text-sm mt-2">
-              Begin your TanStack Start journey by editing{" "}
-              <code className="px-2 py-1 bg-slate-700 rounded text-cyan-400">
-                /src/routes/index.tsx
-              </code>
+          {projects.length > 0 && (
+            <Button onClick={handleCreateProject} size="sm">
+              <Plus className="size-3.5" />
+              New Project
+            </Button>
+          )}
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-6 py-10">
+        {projects.length > 0 && (
+          <div className="mb-6">
+            <h1 className="text-lg font-semibold text-foreground">Projects</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {projects.length} project{projects.length === 1 ? "" : "s"}
             </p>
           </div>
-        </div>
-      </section>
+        )}
 
-      <section className="py-16 px-6 max-w-7xl mx-auto">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {features.map((feature, index) => (
-            <div
-              key={index}
-              className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6 hover:border-cyan-500/50 transition-all duration-300 hover:shadow-lg hover:shadow-cyan-500/10"
-            >
-              <div className="mb-4">{feature.icon}</div>
-              <h3 className="text-xl font-semibold text-white mb-3">{feature.title}</h3>
-              <p className="text-gray-400 leading-relaxed">{feature.description}</p>
-            </div>
-          ))}
+        {projects.length === 0 ? (
+          <div className="mt-24">
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Film className="size-4" />
+                </EmptyMedia>
+                <EmptyTitle>No projects yet</EmptyTitle>
+                <EmptyDescription>
+                  Create your first project to start editing video.
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button onClick={handleCreateProject}>
+                  <Plus className="size-4" />
+                  New Project
+                </Button>
+              </EmptyContent>
+            </Empty>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {projects.map((project) => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                onOpen={handleOpenProject}
+                onDelete={setDeleteTarget}
+              />
+            ))}
+          </div>
+        )}
+      </main>
+
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete project</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{deleteTarget?.name}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDelete}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function ProjectCard({
+  project,
+  onOpen,
+  onDelete,
+}: {
+  project: LocalProject;
+  onOpen: (id: string) => void;
+  onDelete: (project: LocalProject) => void;
+}) {
+  return (
+    <div
+      onClick={() => onOpen(project.id)}
+      className="group relative rounded-xl border border-border bg-card overflow-hidden cursor-pointer transition-all hover:border-ring hover:shadow-md"
+    >
+      <div className="aspect-video bg-muted relative flex items-center justify-center overflow-hidden">
+        {project.thumbnailDataUrl ? (
+          <img
+            src={project.thumbnailDataUrl}
+            alt={project.name}
+            className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+          />
+        ) : (
+          <div className="flex flex-col items-center gap-1.5 text-muted-foreground/50">
+            <Film className="size-8" />
+          </div>
+        )}
+        <Button
+          variant="secondary"
+          size="icon"
+          className="absolute top-2 right-2 size-7 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(project);
+          }}
+        >
+          <Trash2 className="size-3.5 text-destructive-foreground" />
+        </Button>
+      </div>
+
+      <div className="px-3.5 py-3">
+        <h3 className="font-medium text-sm text-foreground truncate">{project.name}</h3>
+        <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1">
+            <Clock className="size-3" />
+            {formatDate(project.updatedAt)}
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <Monitor className="size-3" />
+            {project.settings.width}x{project.settings.height}
+          </span>
         </div>
-      </section>
+      </div>
     </div>
   );
 }

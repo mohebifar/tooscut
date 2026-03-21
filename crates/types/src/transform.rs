@@ -29,8 +29,24 @@ pub struct Transform {
 
 impl Transform {
     /// Create a new Transform instance.
-    pub fn new(x: f32, y: f32, scale_x: f32, scale_y: f32, rotation: f32, anchor_x: f32, anchor_y: f32) -> Self {
-        Self { x, y, scale_x, scale_y, rotation, anchor_x, anchor_y }
+    pub fn new(
+        x: f32,
+        y: f32,
+        scale_x: f32,
+        scale_y: f32,
+        rotation: f32,
+        anchor_x: f32,
+        anchor_y: f32,
+    ) -> Self {
+        Self {
+            x,
+            y,
+            scale_x,
+            scale_y,
+            rotation,
+            anchor_x,
+            anchor_y,
+        }
     }
 
     /// Create a transform at the given position with centered anchor.
@@ -61,7 +77,13 @@ impl Transform {
     /// to normalized device coordinates (-1 to 1).
     ///
     /// Order: translate to anchor → scale → rotate → translate to position → NDC
-    pub fn to_matrix(&self, canvas_width: u32, canvas_height: u32, layer_width: f32, layer_height: f32) -> Mat4 {
+    pub fn to_matrix(
+        &self,
+        canvas_width: u32,
+        canvas_height: u32,
+        layer_width: f32,
+        layer_height: f32,
+    ) -> Mat4 {
         let cw = canvas_width as f32;
         let ch = canvas_height as f32;
 
@@ -80,7 +102,8 @@ impl Transform {
         // We apply in reverse order (right to left multiplication)
 
         // 1. Translate anchor to origin (so rotation/scale happens around anchor)
-        let anchor_to_origin = Mat4::from_translation(Vec3::new(-anchor_offset_x, -anchor_offset_y, 0.0));
+        let anchor_to_origin =
+            Mat4::from_translation(Vec3::new(-anchor_offset_x, -anchor_offset_y, 0.0));
 
         // 2. Scale
         let scale = Mat4::from_scale(Vec3::new(self.scale_x, self.scale_y, 1.0));
@@ -138,7 +161,12 @@ pub struct Crop {
 impl Crop {
     /// Create a new Crop instance.
     pub fn new(top: f32, right: f32, bottom: f32, left: f32) -> Self {
-        Self { top, right, bottom, left }
+        Self {
+            top,
+            right,
+            bottom,
+            left,
+        }
     }
 }
 

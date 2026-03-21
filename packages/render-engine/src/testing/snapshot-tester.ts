@@ -583,7 +583,7 @@ export class SnapshotTester {
 
       return screenshotPath;
     } catch (e) {
-      console.warn(`[Screenshot] Failed to capture: ${e}`);
+      console.warn("[Screenshot] Failed to capture:", e);
       return null;
     }
   }
@@ -606,6 +606,13 @@ export class SnapshotTester {
 
 /**
  * Builder for creating test layers.
+ *
+ * Positions are specified relative to canvas center:
+ * - (0, 0) = centered on canvas
+ * - Positive X = move right
+ * - Positive Y = move down
+ *
+ * The frame() function converts these to absolute positions by adding canvas center.
  */
 export class LayerBuilder {
   private layer: MediaLayerData;
@@ -613,7 +620,9 @@ export class LayerBuilder {
   constructor(textureId: string) {
     this.layer = {
       texture_id: textureId,
-      transform: { ...DEFAULT_TRANSFORM },
+      // Position defaults to (0, 0) which means centered
+      // frame() will add canvas center to convert to absolute position
+      transform: { ...DEFAULT_TRANSFORM, x: 0, y: 0 },
       effects: { ...DEFAULT_EFFECTS },
       z_index: 0,
     };
@@ -628,7 +637,9 @@ export class LayerBuilder {
   }
 
   /**
-   * Set position.
+   * Set position offset from canvas center.
+   * (0, 0) means centered. Positive x moves right, positive y moves down.
+   * The actual position is calculated when frame() is called by adding canvas center.
    */
   position(x: number, y: number): this {
     this.layer.transform.x = x;
@@ -1326,6 +1337,28 @@ export interface FrameOptions {
 /**
  * Create a render frame from layers.
  */
+/**
+ * Resolve layer positions by adding canvas center.
+ * All positions in the LayerBuilder are relative to canvas center,
+ * so we add half the canvas dimensions to get absolute positions.
+ */
+function resolveLayerPositions(
+  layers: MediaLayerData[],
+  width: number,
+  height: number,
+): MediaLayerData[] {
+  const centerX = width / 2;
+  const centerY = height / 2;
+  return layers.map((layer) => ({
+    ...layer,
+    transform: {
+      ...layer.transform,
+      x: layer.transform.x + centerX,
+      y: layer.transform.y + centerY,
+    },
+  }));
+}
+
 export function frame(
   width: number,
   height: number,
@@ -1342,7 +1375,7 @@ export function frame(
   if (Array.isArray(layersOrOptions)) {
     // Legacy signature
     return {
-      media_layers: layersOrOptions,
+      media_layers: resolveLayerPositions(layersOrOptions, width, height),
       text_layers: [],
       shape_layers: [],
       line_layers: [],
@@ -1353,7 +1386,7 @@ export function frame(
   } else {
     // New options signature
     return {
-      media_layers: layersOrOptions.mediaLayers ?? [],
+      media_layers: resolveLayerPositions(layersOrOptions.mediaLayers ?? [], width, height),
       text_layers: layersOrOptions.textLayers ?? [],
       shape_layers: layersOrOptions.shapeLayers ?? [],
       line_layers: layersOrOptions.lineLayers ?? [],

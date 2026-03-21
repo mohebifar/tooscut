@@ -1,0 +1,345 @@
+import { useCallback } from "react";
+import { KeyframeInput } from "./keyframe-input";
+import { NumericInput } from "../ui/numeric-input";
+import { PropertyRow } from "./property-shared";
+import { Button } from "../ui/button";
+import type { AudioEffectsParams } from "@tooscut/render-engine";
+
+interface AudioEffectsPropertiesProps {
+  clipId: string;
+  clipStartTime: number;
+  audioEffects?: AudioEffectsParams;
+  onToggleEffect: (effectType: keyof AudioEffectsParams, enabled: boolean) => void;
+  onUpdateEffect: (effectType: keyof AudioEffectsParams, params: Record<string, number>) => void;
+}
+
+function EffectToggle({
+  label,
+  enabled,
+  onToggle,
+}: {
+  label: string;
+  enabled: boolean;
+  onToggle: (enabled: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <h3 className="text-xs font-medium text-muted-foreground">{label}</h3>
+      <Button
+        variant={enabled ? "default" : "outline"}
+        size="sm"
+        className="h-5 px-2 text-[10px]"
+        onClick={() => onToggle(!enabled)}
+      >
+        {enabled ? "On" : "Off"}
+      </Button>
+    </div>
+  );
+}
+
+export function AudioEffectsProperties({
+  clipId,
+  clipStartTime,
+  audioEffects,
+  onToggleEffect,
+  onUpdateEffect,
+}: AudioEffectsPropertiesProps) {
+  const eqEnabled = audioEffects?.eq != null;
+  const compEnabled = audioEffects?.compressor != null;
+  const gateEnabled = audioEffects?.noiseGate != null;
+  const reverbEnabled = audioEffects?.reverb != null;
+
+  const handleEqChange = useCallback(
+    (key: string, value: number) => onUpdateEffect("eq", { [key]: value }),
+    [onUpdateEffect],
+  );
+
+  const handleCompChange = useCallback(
+    (key: string, value: number) => onUpdateEffect("compressor", { [key]: value }),
+    [onUpdateEffect],
+  );
+
+  const handleGateChange = useCallback(
+    (key: string, value: number) => onUpdateEffect("noiseGate", { [key]: value }),
+    [onUpdateEffect],
+  );
+
+  const handleReverbChange = useCallback(
+    (key: string, value: number) => onUpdateEffect("reverb", { [key]: value }),
+    [onUpdateEffect],
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* EQ */}
+      <div className="space-y-2">
+        <EffectToggle
+          label="Equalizer"
+          enabled={eqEnabled}
+          onToggle={(v) => onToggleEffect("eq", v)}
+        />
+        {eqEnabled && (
+          <div className="space-y-2">
+            <PropertyRow label="Low">
+              <KeyframeInput
+                clipId={clipId}
+                clipStartTime={clipStartTime}
+                property="eqLowGain"
+                baseValue={audioEffects?.eq?.lowGain ?? 0}
+                onChange={(v) => handleEqChange("lowGain", v)}
+                suffix="dB"
+                precision={1}
+                step={0.5}
+                min={-24}
+                max={24}
+                defaultValue={0}
+              />
+            </PropertyRow>
+            <PropertyRow label="Mid">
+              <KeyframeInput
+                clipId={clipId}
+                clipStartTime={clipStartTime}
+                property="eqMidGain"
+                baseValue={audioEffects?.eq?.midGain ?? 0}
+                onChange={(v) => handleEqChange("midGain", v)}
+                suffix="dB"
+                precision={1}
+                step={0.5}
+                min={-24}
+                max={24}
+                defaultValue={0}
+              />
+            </PropertyRow>
+            <PropertyRow label="High">
+              <KeyframeInput
+                clipId={clipId}
+                clipStartTime={clipStartTime}
+                property="eqHighGain"
+                baseValue={audioEffects?.eq?.highGain ?? 0}
+                onChange={(v) => handleEqChange("highGain", v)}
+                suffix="dB"
+                precision={1}
+                step={0.5}
+                min={-24}
+                max={24}
+                defaultValue={0}
+              />
+            </PropertyRow>
+            <PropertyRow label="Low Freq">
+              <NumericInput
+                value={audioEffects?.eq?.lowFreq ?? 200}
+                onChange={(v) => handleEqChange("lowFreq", v)}
+                suffix="Hz"
+                precision={0}
+                step={10}
+                min={20}
+                max={2000}
+              />
+            </PropertyRow>
+            <PropertyRow label="Mid Freq">
+              <NumericInput
+                value={audioEffects?.eq?.midFreq ?? 1000}
+                onChange={(v) => handleEqChange("midFreq", v)}
+                suffix="Hz"
+                precision={0}
+                step={50}
+                min={100}
+                max={10000}
+              />
+            </PropertyRow>
+            <PropertyRow label="High Freq">
+              <NumericInput
+                value={audioEffects?.eq?.highFreq ?? 5000}
+                onChange={(v) => handleEqChange("highFreq", v)}
+                suffix="Hz"
+                precision={0}
+                step={100}
+                min={1000}
+                max={20000}
+              />
+            </PropertyRow>
+          </div>
+        )}
+      </div>
+
+      {/* Compressor */}
+      <div className="space-y-2">
+        <EffectToggle
+          label="Compressor"
+          enabled={compEnabled}
+          onToggle={(v) => onToggleEffect("compressor", v)}
+        />
+        {compEnabled && (
+          <div className="space-y-2">
+            <PropertyRow label="Threshold">
+              <KeyframeInput
+                clipId={clipId}
+                clipStartTime={clipStartTime}
+                property="compressorThreshold"
+                baseValue={audioEffects?.compressor?.threshold ?? -20}
+                onChange={(v) => handleCompChange("threshold", v)}
+                suffix="dB"
+                precision={1}
+                step={1}
+                min={-60}
+                max={0}
+                defaultValue={-20}
+              />
+            </PropertyRow>
+            <PropertyRow label="Ratio">
+              <NumericInput
+                value={audioEffects?.compressor?.ratio ?? 4}
+                onChange={(v) => handleCompChange("ratio", v)}
+                suffix=":1"
+                precision={1}
+                step={0.5}
+                min={1}
+                max={20}
+              />
+            </PropertyRow>
+            <PropertyRow label="Attack">
+              <NumericInput
+                value={audioEffects?.compressor?.attack ?? 10}
+                onChange={(v) => handleCompChange("attack", v)}
+                suffix="ms"
+                precision={1}
+                step={1}
+                min={0.1}
+                max={200}
+              />
+            </PropertyRow>
+            <PropertyRow label="Release">
+              <NumericInput
+                value={audioEffects?.compressor?.release ?? 100}
+                onChange={(v) => handleCompChange("release", v)}
+                suffix="ms"
+                precision={0}
+                step={10}
+                min={10}
+                max={2000}
+              />
+            </PropertyRow>
+            <PropertyRow label="Makeup">
+              <NumericInput
+                value={audioEffects?.compressor?.makeupGain ?? 0}
+                onChange={(v) => handleCompChange("makeupGain", v)}
+                suffix="dB"
+                precision={1}
+                step={0.5}
+                min={0}
+                max={24}
+              />
+            </PropertyRow>
+          </div>
+        )}
+      </div>
+
+      {/* Noise Gate */}
+      <div className="space-y-2">
+        <EffectToggle
+          label="Noise Gate"
+          enabled={gateEnabled}
+          onToggle={(v) => onToggleEffect("noiseGate", v)}
+        />
+        {gateEnabled && (
+          <div className="space-y-2">
+            <PropertyRow label="Threshold">
+              <KeyframeInput
+                clipId={clipId}
+                clipStartTime={clipStartTime}
+                property="noiseGateThreshold"
+                baseValue={audioEffects?.noiseGate?.threshold ?? -40}
+                onChange={(v) => handleGateChange("threshold", v)}
+                suffix="dB"
+                precision={1}
+                step={1}
+                min={-80}
+                max={0}
+                defaultValue={-40}
+              />
+            </PropertyRow>
+            <PropertyRow label="Attack">
+              <NumericInput
+                value={audioEffects?.noiseGate?.attack ?? 1}
+                onChange={(v) => handleGateChange("attack", v)}
+                suffix="ms"
+                precision={1}
+                step={0.5}
+                min={0.1}
+                max={100}
+              />
+            </PropertyRow>
+            <PropertyRow label="Release">
+              <NumericInput
+                value={audioEffects?.noiseGate?.release ?? 50}
+                onChange={(v) => handleGateChange("release", v)}
+                suffix="ms"
+                precision={0}
+                step={5}
+                min={5}
+                max={500}
+              />
+            </PropertyRow>
+          </div>
+        )}
+      </div>
+
+      {/* Reverb */}
+      <div className="space-y-2">
+        <EffectToggle
+          label="Reverb"
+          enabled={reverbEnabled}
+          onToggle={(v) => onToggleEffect("reverb", v)}
+        />
+        {reverbEnabled && (
+          <div className="space-y-2">
+            <PropertyRow label="Room Size">
+              <NumericInput
+                value={audioEffects?.reverb?.roomSize ?? 0.5}
+                onChange={(v) => handleReverbChange("roomSize", v)}
+                precision={2}
+                step={0.05}
+                min={0}
+                max={1}
+              />
+            </PropertyRow>
+            <PropertyRow label="Damping">
+              <NumericInput
+                value={audioEffects?.reverb?.damping ?? 0.5}
+                onChange={(v) => handleReverbChange("damping", v)}
+                precision={2}
+                step={0.05}
+                min={0}
+                max={1}
+              />
+            </PropertyRow>
+            <PropertyRow label="Width">
+              <NumericInput
+                value={audioEffects?.reverb?.width ?? 1}
+                onChange={(v) => handleReverbChange("width", v)}
+                precision={2}
+                step={0.05}
+                min={0}
+                max={1}
+              />
+            </PropertyRow>
+            <PropertyRow label="Dry/Wet">
+              <KeyframeInput
+                clipId={clipId}
+                clipStartTime={clipStartTime}
+                property="reverbDryWet"
+                baseValue={audioEffects?.reverb?.dryWet ?? 0.3}
+                onChange={(v) => handleReverbChange("dryWet", v)}
+                precision={2}
+                step={0.05}
+                min={0}
+                max={1}
+                defaultValue={0.3}
+              />
+            </PropertyRow>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -6,6 +6,7 @@
  */
 
 import type { ClipBounds, CrossTransitionRef } from "./frame-builder.js";
+import type { CrossTransitionType, Easing } from "./types.js";
 
 // ============================================================================
 // Types
@@ -68,7 +69,8 @@ export interface EditableTrack {
   /** Track index determines z-order for video tracks (higher = on top) */
   index: number;
   type: "video" | "audio";
-  name: string;
+  /** Optional custom name - if not set, derive from position (e.g., "Video 1", "Audio 2") */
+  name?: string;
   /** ID of the paired track (video tracks link to audio, audio to video) */
   pairedTrackId: string;
   muted: boolean;
@@ -106,7 +108,7 @@ export function addTrackPair(
   tracks: readonly EditableTrack[],
   videoTrackId: string,
   audioTrackId: string,
-  name: string,
+  name?: string,
   insertAtIndex?: number,
 ): { tracks: EditableTrack[]; result: TrackPairResult } {
   // Determine insertion index
@@ -123,6 +125,7 @@ export function addTrackPair(
   });
 
   // Create the new track pair
+  // Name is optional - UI should derive names from position (e.g., "Video 1", "Audio 1")
   const videoTrack: EditableTrack = {
     id: videoTrackId,
     index: newIndex,
@@ -138,7 +141,7 @@ export function addTrackPair(
     id: audioTrackId,
     index: newIndex, // Audio tracks share index with their paired video track
     type: "audio",
-    name: `${name} Audio`,
+    name, // Same name as video track if provided
     pairedTrackId: videoTrackId,
     muted: false,
     locked: false,
@@ -626,8 +629,8 @@ export function trimClipLeft<T extends EditableClip>(
   const newDuration = clip.duration - delta;
   const newInPoint = clip.inPoint + delta;
 
-  // Don't allow negative duration or negative in-point
-  if (newDuration <= 0 || newInPoint < 0) return [...clips];
+  // Don't allow negative duration
+  if (newDuration <= 0) return [...clips];
 
   const result = [...clips];
   result[index] = {
@@ -846,6 +849,9 @@ export function addCrossTransition<T extends EditableClip>(
   incomingClipId: string,
   transitionId: string,
   duration: number,
+  type: CrossTransitionType = "Dissolve",
+  boundary?: number,
+  easing: Easing = { preset: "EaseInOut" },
 ): CrossTransitionRef[] | null {
   const [, outgoing] = findClipById(clips, outgoingClipId);
   const [, incoming] = findClipById(clips, incomingClipId);
@@ -872,6 +878,9 @@ export function addCrossTransition<T extends EditableClip>(
     outgoingClipId,
     incomingClipId,
     duration: actualDuration,
+    type,
+    boundary: boundary ?? outgoingEnd,
+    easing,
   };
 
   return [...crossTransitions, newTransition];

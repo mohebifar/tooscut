@@ -25,7 +25,6 @@ describe("WebGPU Debug", () => {
       console.log("Description:", info.description);
     } else {
       console.log("requestAdapterInfo not available, using info property");
-      // @ts-expect-error - older API
       const info = adapter.info;
       if (info) {
         console.log("Adapter info:", info);

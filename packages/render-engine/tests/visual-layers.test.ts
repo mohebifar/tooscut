@@ -231,12 +231,7 @@ describe("visual layers", () => {
       await loadImageTexture(tester, "street-combo", "/tests/fixtures/images/street.jpg");
 
       const renderFrame = frame(400, 300, [
-        layer("street-combo")
-          .position(50, 25)
-          .scale(0.6)
-          .rotation(15)
-          .opacity(0.8)
-          .build(),
+        layer("street-combo").position(50, 25).scale(0.6).rotation(15).opacity(0.8).build(),
       ]);
 
       const imageData = await tester.render(renderFrame);
@@ -250,17 +245,8 @@ describe("visual layers", () => {
       await loadImageTexture(tester, "street-front", "/tests/fixtures/images/street.jpg");
 
       const renderFrame = frame(400, 300, [
-        layer("street-back")
-          .scale(0.8)
-          .position(-50, 0)
-          .opacity(0.6)
-          .zIndex(0)
-          .build(),
-        layer("street-front")
-          .scale(0.5)
-          .position(50, 0)
-          .zIndex(1)
-          .build(),
+        layer("street-back").scale(0.8).position(-50, 0).opacity(0.6).zIndex(0).build(),
+        layer("street-front").scale(0.5).position(50, 0).zIndex(1).build(),
       ]);
 
       const imageData = await tester.render(renderFrame);
@@ -344,9 +330,7 @@ describe("visual layers", () => {
       await loadImageTexture(tester, "street-slide", "/tests/fixtures/images/street.jpg");
 
       const renderFrame = frame(400, 300, [
-        layer("street-slide")
-          .transitionIn("SlideRight", 1, { preset: "EaseOut" }, 0.5)
-          .build(),
+        layer("street-slide").transitionIn("SlideRight", 1, { preset: "EaseOut" }, 0.5).build(),
       ]);
 
       const imageData = await tester.render(renderFrame);
@@ -406,7 +390,12 @@ describe("visual layers", () => {
         dstCtx.drawImage(srcCanvas, 0, 0, targetWidth, targetHeight);
         const resizedData = dstCtx.getImageData(0, 0, targetWidth, targetHeight);
 
-        tester.addRawTexture(textureId, targetWidth, targetHeight, new Uint8Array(resizedData.data));
+        tester.addRawTexture(
+          textureId,
+          targetWidth,
+          targetHeight,
+          new Uint8Array(resizedData.data),
+        );
       } else {
         tester.addRawTexture(textureId, rgbaData.width, rgbaData.height, rgbaData.data);
       }
@@ -455,11 +444,7 @@ describe("visual layers", () => {
     it("renders video frame with position offset", async () => {
       await loadVideoFrame(tester, "video-pos", "/tests/fixtures/videos/sample-480p.mp4", 10);
 
-      const renderFrame = frame(400, 300, [
-        layer("video-pos")
-          .position(50, 25)
-          .build(),
-      ]);
+      const renderFrame = frame(400, 300, [layer("video-pos").position(50, 25).build()]);
 
       const imageData = await tester.render(renderFrame);
 
@@ -469,11 +454,7 @@ describe("visual layers", () => {
     it("renders video frame with scale transform", async () => {
       await loadVideoFrame(tester, "video-scale", "/tests/fixtures/videos/sample-480p.mp4", 5);
 
-      const renderFrame = frame(400, 300, [
-        layer("video-scale")
-          .scale(0.5)
-          .build(),
-      ]);
+      const renderFrame = frame(400, 300, [layer("video-scale").scale(0.5).build()]);
 
       const imageData = await tester.render(renderFrame);
       const pixels = new PixelAsserter(imageData);
@@ -485,12 +466,7 @@ describe("visual layers", () => {
     it("renders video frame with rotation", async () => {
       await loadVideoFrame(tester, "video-rotate", "/tests/fixtures/videos/sample-480p.mp4", 8);
 
-      const renderFrame = frame(400, 300, [
-        layer("video-rotate")
-          .rotation(15)
-          .scale(0.8)
-          .build(),
-      ]);
+      const renderFrame = frame(400, 300, [layer("video-rotate").rotation(15).scale(0.8).build()]);
 
       const imageData = await tester.render(renderFrame);
 
@@ -500,11 +476,7 @@ describe("visual layers", () => {
     it("renders video frame with opacity", async () => {
       await loadVideoFrame(tester, "video-opacity", "/tests/fixtures/videos/sample-480p.mp4", 12);
 
-      const renderFrame = frame(400, 300, [
-        layer("video-opacity")
-          .opacity(0.5)
-          .build(),
-      ]);
+      const renderFrame = frame(400, 300, [layer("video-opacity").opacity(0.5).build()]);
 
       const imageData = await tester.render(renderFrame);
 
@@ -514,11 +486,7 @@ describe("visual layers", () => {
     it("renders video frame with brightness adjustment", async () => {
       await loadVideoFrame(tester, "video-bright", "/tests/fixtures/videos/sample-480p.mp4", 7);
 
-      const renderFrame = frame(400, 300, [
-        layer("video-bright")
-          .brightness(1.3)
-          .build(),
-      ]);
+      const renderFrame = frame(400, 300, [layer("video-bright").brightness(1.3).build()]);
 
       const imageData = await tester.render(renderFrame);
 
@@ -528,11 +496,7 @@ describe("visual layers", () => {
     it("renders video frame with saturation (grayscale)", async () => {
       await loadVideoFrame(tester, "video-gray", "/tests/fixtures/videos/sample-480p.mp4", 20);
 
-      const renderFrame = frame(400, 300, [
-        layer("video-gray")
-          .saturation(0)
-          .build(),
-      ]);
+      const renderFrame = frame(400, 300, [layer("video-gray").saturation(0).build()]);
 
       const imageData = await tester.render(renderFrame);
 
@@ -542,11 +506,7 @@ describe("visual layers", () => {
     it("renders video frame with blur effect", async () => {
       await loadVideoFrame(tester, "video-blur", "/tests/fixtures/videos/sample-480p.mp4", 18);
 
-      const renderFrame = frame(400, 300, [
-        layer("video-blur")
-          .blur(5)
-          .build(),
-      ]);
+      const renderFrame = frame(400, 300, [layer("video-blur").blur(5).build()]);
 
       const imageData = await tester.render(renderFrame);
 
@@ -577,11 +537,7 @@ describe("visual layers", () => {
       const renderFrame = frame(400, 300, {
         mediaLayers: [layer("video-overlay").zIndex(0).build()],
         shapeLayers: [
-          rectangle("caption-bg")
-            .box(10, 75, 80, 15)
-            .fill(0, 0, 0, 0.7)
-            .zIndex(1)
-            .build(),
+          rectangle("caption-bg").box(10, 75, 80, 15).fill(0, 0, 0, 0.7).zIndex(1).build(),
         ],
         textLayers: [
           textLayer("caption", "Video Caption")
@@ -603,9 +559,7 @@ describe("visual layers", () => {
       await loadVideoFrame(tester, "video-fade", "/tests/fixtures/videos/sample-480p.mp4", 10);
 
       const renderFrame = frame(400, 300, [
-        layer("video-fade")
-          .transitionIn("Fade", 1, { preset: "Linear" }, 0.5)
-          .build(),
+        layer("video-fade").transitionIn("Fade", 1, { preset: "Linear" }, 0.5).build(),
       ]);
 
       const imageData = await tester.render(renderFrame);
@@ -615,18 +569,26 @@ describe("visual layers", () => {
 
     it("renders multiple video frames at different timestamps", async () => {
       // Load two frames from different parts of the video
-      await loadVideoFrame(tester, "video-frame1", "/tests/fixtures/videos/sample-480p.mp4", 5, 200, 150);
-      await loadVideoFrame(tester, "video-frame2", "/tests/fixtures/videos/sample-480p.mp4", 20, 200, 150);
+      await loadVideoFrame(
+        tester,
+        "video-frame1",
+        "/tests/fixtures/videos/sample-480p.mp4",
+        5,
+        200,
+        150,
+      );
+      await loadVideoFrame(
+        tester,
+        "video-frame2",
+        "/tests/fixtures/videos/sample-480p.mp4",
+        20,
+        200,
+        150,
+      );
 
       const renderFrame = frame(400, 300, [
-        layer("video-frame1")
-          .position(-100, 0)
-          .zIndex(0)
-          .build(),
-        layer("video-frame2")
-          .position(100, 0)
-          .zIndex(1)
-          .build(),
+        layer("video-frame1").position(-100, 0).zIndex(0).build(),
+        layer("video-frame2").position(100, 0).zIndex(1).build(),
       ]);
 
       const imageData = await tester.render(renderFrame);

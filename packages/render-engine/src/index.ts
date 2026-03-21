@@ -127,10 +127,26 @@ export {
   type TrimClipOptions,
 } from "./clip-operations.js";
 
-// Video frame loading (MediaBunny)
 export {
   VideoFrameLoader,
   VideoFrameLoaderManager,
   type VideoAssetInfo,
   type FrameResult,
+  type VideoFrameMode,
+  type VideoFrameLoaderOptions,
 } from "./video-frame-loader.js";
+
+// Audio engine
+export {
+  BrowserAudioEngine,
+  type AudioClipState,
+  type AudioTrackState,
+  type AudioCrossTransition,
+  type AudioTimelineState,
+  type AudioEngineConfig,
+  type AudioEffectsParams,
+  type AudioEqParams,
+  type AudioCompressorParams,
+  type AudioNoiseGateParams,
+  type AudioReverbParams,
+} from "./audio-engine.js";
