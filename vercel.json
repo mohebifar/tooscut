@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "bash scripts/vercel-install.sh",
-  "buildCommand": ". \"$HOME/.cargo/env\" && pnpm build:wasm && pnpm build",
+  "buildCommand": "pnpm build:wasm && pnpm build",
   "outputDirectory": "apps/ui/.output"
 }
