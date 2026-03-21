@@ -1,0 +1,5 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "cd ../.. && bash scripts/vercel-install.sh",
+  "buildCommand": "cd ../.. && pnpm build:wasm && pnpm --filter @tooscut/render-engine build && cd apps/ui && pnpm build"
+}
