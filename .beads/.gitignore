@@ -31,6 +31,7 @@ beads.left.jsonl
 beads.left.meta.json
 beads.right.jsonl
 beads.right.meta.json
+issues.jsonl
 
 # NOTE: Do NOT add negation patterns (e.g., !issues.jsonl) here.
 # They would override fork protection in .git/info/exclude, allowing
