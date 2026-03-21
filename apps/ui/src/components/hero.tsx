@@ -1,6 +1,13 @@
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ArrowRightIcon, PlayIcon } from "lucide-react";
+import {
+  ArrowRightIcon,
+  SkipBack,
+  ChevronsLeft,
+  Play,
+  ChevronsRight,
+  SkipForward,
+} from "lucide-react";
 import { Link } from "@tanstack/react-router";
 
 export function HeroSection() {
@@ -99,12 +106,9 @@ function EditorMockup() {
         <div className="w-[15%] border-r border-neutral-800 p-2 hidden sm:block">
           <div className="text-[9px] text-neutral-500 mb-2 font-medium">Assets</div>
           <div className="space-y-1.5">
-            {[1, 2, 3, 4].map((i) => (
-              <div
-                key={i}
-                className="aspect-video rounded bg-neutral-800/60 flex items-center justify-center"
-              >
-                <div className="size-3 rounded-sm bg-neutral-700" />
+            {["/hero-asset-video.jpg", "/hero-asset-1.jpg", "/hero-asset-2.jpg"].map((src) => (
+              <div key={src} className="aspect-video rounded bg-neutral-800/60 overflow-hidden">
+                <img src={src} alt="" className="size-full object-cover" draggable={false} />
               </div>
             ))}
           </div>
@@ -113,28 +117,27 @@ function EditorMockup() {
         {/* Preview */}
         <div className="flex-1 flex flex-col">
           <div className="flex-1 flex items-center justify-center p-3">
-            <div className="w-full max-w-[80%] aspect-video rounded bg-gradient-to-br from-indigo-950/80 via-neutral-900 to-purple-950/60 flex items-center justify-center relative overflow-hidden">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_40%,rgba(99,102,241,0.15),transparent_60%)]" />
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_60%,rgba(168,85,247,0.1),transparent_50%)]" />
-              <div className="size-8 rounded-full border-2 border-white/20 flex items-center justify-center">
-                <PlayIcon className="size-3 text-white/40 ml-0.5" />
-              </div>
+            <div className="w-full max-w-[80%] aspect-video rounded overflow-hidden relative">
+              <video
+                src="/hero-preview.mp4"
+                className="size-full object-cover"
+                autoPlay
+                loop
+                muted
+                playsInline
+                poster="/hero-preview.jpg"
+              />
             </div>
           </div>
 
           {/* Transport controls */}
-          <div className="flex items-center justify-center gap-3 py-1.5 border-t border-neutral-800">
-            <div className="flex items-center gap-2">
-              {["\u23EE", "\u23EA", "\u25B6", "\u23E9", "\u23ED"].map((icon, i) => (
-                <div
-                  key={i}
-                  className="text-[8px] text-neutral-500 hover:text-neutral-300 cursor-pointer"
-                >
-                  {icon}
-                </div>
-              ))}
-            </div>
-            <span className="text-[9px] text-neutral-600 font-mono">00:00:12:15</span>
+          <div className="flex items-center justify-center gap-2 py-1.5 border-t border-neutral-800">
+            <SkipBack className="size-2.5 text-neutral-500" />
+            <ChevronsLeft className="size-2.5 text-neutral-500" />
+            <Play className="size-3 text-neutral-400" />
+            <ChevronsRight className="size-2.5 text-neutral-500" />
+            <SkipForward className="size-2.5 text-neutral-500" />
+            <span className="text-[9px] text-neutral-600 font-mono ml-1">00:00:12.15</span>
           </div>
         </div>
 
@@ -142,23 +145,27 @@ function EditorMockup() {
         <div className="w-[18%] border-l border-neutral-800 p-2 hidden md:block">
           <div className="text-[9px] text-neutral-500 mb-2 font-medium">Properties</div>
           <div className="space-y-2">
-            {["Position", "Scale", "Rotation", "Opacity"].map((prop) => (
-              <div key={prop} className="flex items-center justify-between">
-                <span className="text-[8px] text-neutral-600">{prop}</span>
-                <div className="h-4 w-12 rounded-sm bg-neutral-800 border border-neutral-700" />
+            {[
+              { label: "Position", value: "960, 540" },
+              { label: "Scale", value: "100%" },
+              { label: "Rotation", value: "0.0°" },
+              { label: "Opacity", value: "100%" },
+            ].map((prop) => (
+              <div key={prop.label} className="flex items-center justify-between">
+                <span className="text-[8px] text-neutral-600">{prop.label}</span>
+                <span className="text-[8px] text-neutral-400 font-mono">{prop.value}</span>
               </div>
             ))}
             <div className="border-t border-neutral-800 pt-2 mt-2">
               <div className="text-[9px] text-neutral-500 mb-1.5 font-medium">Effects</div>
-              {["Brightness", "Contrast", "Blur"].map((fx) => (
-                <div key={fx} className="flex items-center justify-between mb-1">
-                  <span className="text-[8px] text-neutral-600">{fx}</span>
-                  <div className="h-1 w-12 rounded-full bg-neutral-800">
-                    <div
-                      className="h-1 rounded-full bg-indigo-500/40"
-                      style={{ width: `${40 + Math.random() * 40}%` }}
-                    />
-                  </div>
+              {[
+                { label: "Brightness", value: 72 },
+                { label: "Contrast", value: 58 },
+                { label: "Blur", value: 0 },
+              ].map((fx) => (
+                <div key={fx.label} className="flex items-center justify-between mb-1">
+                  <span className="text-[8px] text-neutral-600">{fx.label}</span>
+                  <span className="text-[8px] text-neutral-400 font-mono">{fx.value}</span>
                 </div>
               ))}
             </div>
@@ -187,9 +194,30 @@ function EditorMockup() {
           <div className="flex items-center gap-0 flex-1 min-h-0">
             <div className="w-[12%] sm:w-[15%] text-[8px] text-neutral-500 pr-1 truncate">V1</div>
             <div className="flex-1 flex gap-0.5 items-center h-full">
-              <div className="h-full rounded-sm bg-indigo-500/25 border border-indigo-500/30 flex-[3] min-w-0" />
-              <div className="h-full rounded-sm bg-violet-500/25 border border-violet-500/30 flex-[2] min-w-0" />
-              <div className="h-full rounded-sm bg-indigo-500/25 border border-indigo-500/30 flex-[4] min-w-0" />
+              <div className="h-full rounded-sm border border-indigo-500/30 flex-[3] min-w-0 overflow-hidden">
+                <img
+                  src="/hero-asset-video.jpg"
+                  alt=""
+                  className="size-full object-cover opacity-60"
+                  draggable={false}
+                />
+              </div>
+              <div className="h-full rounded-sm border border-violet-500/30 flex-[2] min-w-0 overflow-hidden">
+                <img
+                  src="/hero-asset-1.jpg"
+                  alt=""
+                  className="size-full object-cover opacity-60"
+                  draggable={false}
+                />
+              </div>
+              <div className="h-full rounded-sm border border-indigo-500/30 flex-[4] min-w-0 overflow-hidden">
+                <img
+                  src="/hero-asset-2.jpg"
+                  alt=""
+                  className="size-full object-cover opacity-60"
+                  draggable={false}
+                />
+              </div>
             </div>
           </div>
           {/* Video Track 2 */}
@@ -197,7 +225,14 @@ function EditorMockup() {
             <div className="w-[12%] sm:w-[15%] text-[8px] text-neutral-500 pr-1 truncate">V2</div>
             <div className="flex-1 flex gap-0.5 items-center h-full">
               <div className="flex-[2]" />
-              <div className="h-full rounded-sm bg-emerald-500/25 border border-emerald-500/30 flex-[3] min-w-0" />
+              <div className="h-full rounded-sm border border-emerald-500/30 flex-[3] min-w-0 overflow-hidden">
+                <img
+                  src="/hero-asset-1.jpg"
+                  alt=""
+                  className="size-full object-cover opacity-50"
+                  draggable={false}
+                />
+              </div>
               <div className="flex-[4]" />
             </div>
           </div>
