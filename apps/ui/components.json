@@ -20,6 +20,7 @@
   },
   "registries": {
     "@kibo-ui": "https://www.kibo-ui.com/r/{name}.json",
-    "@coss": "https://coss.com/ui/r/{name}.json"
+    "@coss": "https://coss.com/ui/r/{name}.json",
+    "@efferd": "https://efferd.com/r/{style}/{name}.json"
   }
 }

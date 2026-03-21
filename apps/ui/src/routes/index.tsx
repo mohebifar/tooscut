@@ -1,234 +1,33 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useLiveQuery } from "dexie-react-hooks";
-import { Plus, Trash2, Film, Clock, Monitor } from "lucide-react";
-import { Button } from "../components/ui/button";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "../components/ui/empty";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "../components/ui/dialog";
-import { db, type LocalProject } from "../state/db";
-import { addTrackPair, type EditableTrack } from "@tooscut/render-engine";
-import { useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { Header } from "../components/header";
+import { HeroSection } from "../components/hero";
+import { FeatureSection } from "../components/feature-section";
+import { Footer } from "../components/footer";
 
-export const Route = createFileRoute("/")({ component: ProjectChooser });
+export const Route = createFileRoute("/")({ component: LandingPage });
 
-function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function formatDate(timestamp: number): string {
-  const date = new Date(timestamp);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-
-  if (diff < 60_000) return "Just now";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}d ago`;
-
-  return date.toLocaleDateString();
-}
-
-function ProjectChooser() {
-  const navigate = useNavigate();
-  const projects = useLiveQuery(() => db.projects.orderBy("updatedAt").reverse().toArray());
-  const [deleteTarget, setDeleteTarget] = useState<LocalProject | null>(null);
-
-  const handleCreateProject = async () => {
-    const id = generateId();
-    const videoTrackId = generateId();
-    const audioTrackId = generateId();
-    const { tracks } = addTrackPair([] as EditableTrack[], videoTrackId, audioTrackId);
-
-    const project: LocalProject = {
-      id,
-      name: "Untitled Project",
-      settings: { width: 1920, height: 1080, fps: 30 },
-      content: {
-        tracks,
-        clips: [],
-        assets: [],
-      },
-      thumbnailDataUrl: null,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    await db.projects.add(project);
-    void navigate({ to: "/editor/$projectId", params: { projectId: id } });
-  };
-
-  const handleConfirmDelete = async () => {
-    if (!deleteTarget) return;
-    const assetIds = deleteTarget.content.assets.map((a) => a.id);
-    await db.projects.delete(deleteTarget.id);
-    if (assetIds.length > 0) {
-      await db.fileHandles.bulkDelete(assetIds);
-    }
-    setDeleteTarget(null);
-  };
-
-  const handleOpenProject = (projectId: string) => {
-    void navigate({ to: "/editor/$projectId", params: { projectId } });
-  };
-
-  if (projects === undefined) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="size-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-      </div>
-    );
-  }
-
+function LandingPage() {
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="size-7 rounded-lg bg-primary flex items-center justify-center">
-              <Film className="size-4 text-primary-foreground" />
-            </div>
-            <span className="font-semibold text-foreground tracking-tight">Tooscut</span>
-          </div>
-          {projects.length > 0 && (
-            <Button onClick={handleCreateProject} size="sm">
-              <Plus className="size-3.5" />
-              New Project
-            </Button>
-          )}
-        </div>
-      </header>
+    <div className="min-h-screen bg-background flex flex-col">
+      <Header />
 
-      <main className="max-w-5xl mx-auto px-6 py-10">
-        {projects.length > 0 && (
-          <div className="mb-6">
-            <h1 className="text-lg font-semibold text-foreground">Projects</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {projects.length} project{projects.length === 1 ? "" : "s"}
+      <main className="flex-1">
+        <HeroSection />
+
+        <section className="py-20 px-4">
+          <div className="mx-auto max-w-5xl mb-12 text-center">
+            <h2 className="font-semibold text-2xl md:text-3xl text-foreground">
+              Everything you need to edit
+            </h2>
+            <p className="mt-2 text-muted-foreground text-sm md:text-base max-w-lg mx-auto">
+              Built on WebGPU and Rust/WASM for performance that rivals native apps.
             </p>
           </div>
-        )}
-
-        {projects.length === 0 ? (
-          <div className="mt-24">
-            <Empty>
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <Film className="size-4" />
-                </EmptyMedia>
-                <EmptyTitle>No projects yet</EmptyTitle>
-                <EmptyDescription>
-                  Create your first project to start editing video.
-                </EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Button onClick={handleCreateProject}>
-                  <Plus className="size-4" />
-                  New Project
-                </Button>
-              </EmptyContent>
-            </Empty>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {projects.map((project) => (
-              <ProjectCard
-                key={project.id}
-                project={project}
-                onOpen={handleOpenProject}
-                onDelete={setDeleteTarget}
-              />
-            ))}
-          </div>
-        )}
+          <FeatureSection />
+        </section>
       </main>
 
-      <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete project</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete "{deleteTarget?.name}"? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleConfirmDelete}>
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-function ProjectCard({
-  project,
-  onOpen,
-  onDelete,
-}: {
-  project: LocalProject;
-  onOpen: (id: string) => void;
-  onDelete: (project: LocalProject) => void;
-}) {
-  return (
-    <div
-      onClick={() => onOpen(project.id)}
-      className="group relative rounded-xl border border-border bg-card overflow-hidden cursor-pointer transition-all hover:border-ring hover:shadow-md"
-    >
-      <div className="aspect-video bg-muted relative flex items-center justify-center overflow-hidden">
-        {project.thumbnailDataUrl ? (
-          <img
-            src={project.thumbnailDataUrl}
-            alt={project.name}
-            className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-1.5 text-muted-foreground/50">
-            <Film className="size-8" />
-          </div>
-        )}
-        <Button
-          variant="secondary"
-          size="icon"
-          className="absolute top-2 right-2 size-7 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(project);
-          }}
-        >
-          <Trash2 className="size-3.5 text-destructive-foreground" />
-        </Button>
-      </div>
-
-      <div className="px-3.5 py-3">
-        <h3 className="font-medium text-sm text-foreground truncate">{project.name}</h3>
-        <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1">
-            <Clock className="size-3" />
-            {formatDate(project.updatedAt)}
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <Monitor className="size-3" />
-            {project.settings.width}x{project.settings.height}
-          </span>
-        </div>
-      </div>
+      <Footer />
     </div>
   );
 }

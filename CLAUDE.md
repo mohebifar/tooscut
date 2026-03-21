@@ -111,11 +111,6 @@ When making architectural decisions, update `packages/render-engine/docs/DESIGN.
 - Keyframe evaluation
 - Text/shape rendering
 
-## Reference
-
-Original codebase: `/Users/mohebifar/dev/other/kareem/subformer`
-Original docs: `/Users/mohebifar/dev/other/kareem/subformer/claude-docs/`
-
 
 # Agent Instructions for task management
 

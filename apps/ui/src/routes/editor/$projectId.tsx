@@ -21,6 +21,8 @@ import type { MediaAsset } from "../../state/video-editor-store";
 
 export const Route = createFileRoute("/editor/$projectId")({
   component: EditorPage,
+  ssr: false,
+  pendingComponent: EditorSkeleton,
 });
 
 function EditorPage() {
@@ -153,19 +155,89 @@ function EditorPage() {
 
       {/* Overlay loading/error state so the canvas stays mounted (transferControlToOffscreen is one-shot) */}
       {(loading || error) && (
-        <div className="fixed inset-0 z-50 bg-background flex items-center justify-center flex-col gap-4">
+        <div className="fixed inset-0 z-50 bg-background flex flex-col">
           {error ? (
-            <>
+            <div className="flex-1 flex items-center justify-center flex-col gap-4">
               <p className="text-destructive text-lg">{error}</p>
-              <Button variant="link" onClick={() => navigate({ to: "/" })}>
+              <Button variant="link" onClick={() => navigate({ to: "/projects" })}>
                 Back to projects
               </Button>
-            </>
+            </div>
           ) : (
-            <p className="text-muted-foreground">Loading project...</p>
+            <EditorSkeleton />
           )}
         </div>
       )}
     </>
+  );
+}
+
+function SkeletonBlock({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return <div className={`animate-pulse rounded bg-muted ${className ?? ""}`} style={style} />;
+}
+
+function EditorSkeleton() {
+  return (
+    <div className="flex h-screen flex-col bg-background select-none">
+      {/* Toolbar skeleton */}
+      <div className="shrink-0 h-10 border-b border-border bg-card flex items-center gap-2 px-3">
+        <SkeletonBlock className="h-5 w-5 rounded" />
+        <SkeletonBlock className="h-5 w-20" />
+        <div className="flex-1" />
+        <SkeletonBlock className="h-5 w-16" />
+      </div>
+
+      {/* Main content area */}
+      <div className="flex flex-1 min-h-0">
+        {/* Asset panel */}
+        <div className="w-62.5 border-r border-border bg-card p-3 flex flex-col gap-3">
+          <SkeletonBlock className="h-5 w-24" />
+          <SkeletonBlock className="h-8 w-full" />
+          <div className="grid grid-cols-2 gap-2 mt-1">
+            <SkeletonBlock className="aspect-video" />
+            <SkeletonBlock className="aspect-video" />
+            <SkeletonBlock className="aspect-video" />
+            <SkeletonBlock className="aspect-video" />
+          </div>
+        </div>
+
+        {/* Preview panel */}
+        <div className="flex-1 flex flex-col bg-background">
+          <div className="flex-1 flex items-center justify-center p-6">
+            <SkeletonBlock className="w-full max-w-160 aspect-video" />
+          </div>
+          <div className="shrink-0 h-10 border-t border-border bg-card flex items-center justify-center gap-3 px-4">
+            <SkeletonBlock className="h-5 w-5 rounded-full" />
+            <SkeletonBlock className="h-5 w-5 rounded-full" />
+            <SkeletonBlock className="h-5 w-5 rounded-full" />
+            <SkeletonBlock className="h-4 w-24 ml-2" />
+          </div>
+        </div>
+
+        {/* Properties panel */}
+        <div className="w-60 border-l border-border bg-card p-3 flex flex-col gap-3">
+          <SkeletonBlock className="h-5 w-20" />
+          <SkeletonBlock className="h-8 w-full" />
+          <SkeletonBlock className="h-8 w-full" />
+          <SkeletonBlock className="h-8 w-3/4" />
+        </div>
+      </div>
+
+      {/* Timeline skeleton */}
+      <div className="h-62.5 border-t border-border bg-card p-3 flex flex-col gap-2">
+        <div className="flex items-center gap-2 mb-1">
+          <SkeletonBlock className="h-4 w-32" />
+          <div className="flex-1" />
+          <SkeletonBlock className="h-4 w-16" />
+        </div>
+        {/* Track rows */}
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="flex items-center gap-2 h-12">
+            <SkeletonBlock className="h-full w-30 shrink-0" />
+            <SkeletonBlock className="h-full flex-1" style={{ maxWidth: `${60 - i * 15}%` }} />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

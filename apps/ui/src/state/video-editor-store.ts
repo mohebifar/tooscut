@@ -187,6 +187,9 @@ interface VideoEditorState {
   selectedTransition: { clipId: string; edge: "in" | "out" } | null;
   selectedCrossTransition: string | null;
 
+  // Clipboard (not tracked by undo/redo)
+  clipboard: EditorClip[];
+
   // View state
   zoom: number;
   scrollX: number;
@@ -228,6 +231,10 @@ interface VideoEditorState {
   setSelectedTransition: (selection: { clipId: string; edge: "in" | "out" } | null) => void;
   setSelectedCrossTransition: (id: string | null) => void;
   clearSelection: () => void;
+
+  // Actions - Clipboard
+  copySelectedClips: () => void;
+  pasteClipsAtPlayhead: () => void;
 
   // Actions - Tracks
   addTrack: () => { videoTrackId: string; audioTrackId: string };
@@ -640,6 +647,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
         selectedClipIds: [],
         selectedTransition: null,
         selectedCrossTransition: null,
+        clipboard: [],
 
         zoom: 50,
         scrollX: 0,
@@ -724,6 +732,59 @@ export const useVideoEditorStore = create<VideoEditorState>()(
           set({ selectedCrossTransition: id, selectedClipIds: [], selectedTransition: null }),
         clearSelection: () =>
           set({ selectedClipIds: [], selectedTransition: null, selectedCrossTransition: null }),
+
+        // Clipboard actions
+        copySelectedClips: () => {
+          const state = get();
+          if (state.selectedClipIds.length === 0) return;
+          const clipsToCopy = state.clips.filter((c) => state.selectedClipIds.includes(c.id));
+          set({ clipboard: clipsToCopy });
+        },
+
+        pasteClipsAtPlayhead: () => {
+          const state = get();
+          if (state.clipboard.length === 0) return;
+
+          // Calculate the offset: shift all pasted clips so the earliest starts at playhead
+          const earliestStart = Math.min(...state.clipboard.map((c) => c.startTime));
+          const offset = state.currentTime - earliestStart;
+
+          // Build an old-id → new-id map for relinking
+          const idMap = new Map<string, string>();
+          for (const clip of state.clipboard) {
+            idMap.set(clip.id, generateId());
+          }
+
+          const newClipIds: string[] = [];
+          for (const clip of state.clipboard) {
+            const newId = idMap.get(clip.id)!;
+            newClipIds.push(newId);
+
+            // Resolve linked clip id within the pasted group
+            let newLinkedId: string | undefined;
+            if ("linkedClipId" in clip && clip.linkedClipId) {
+              newLinkedId = idMap.get(clip.linkedClipId);
+            }
+
+            const newClip: EditorClip = {
+              ...clip,
+              id: newId,
+              startTime: clip.startTime + offset,
+              ...(newLinkedId !== undefined
+                ? { linkedClipId: newLinkedId }
+                : { linkedClipId: undefined }),
+            } as EditorClip;
+
+            set((s) => {
+              let clips = addClip(s.clips, newClip);
+              clips = resolveOverlaps(clips, s.tracks, newId, newClip.startTime, newClip.trackId);
+              return { clips, duration: calculateDuration(clips) };
+            });
+          }
+
+          // Select the newly pasted clips
+          set({ selectedClipIds: newClipIds });
+        },
 
         // Track actions
         addTrack: () => {

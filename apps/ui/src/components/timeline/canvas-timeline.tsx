@@ -78,6 +78,8 @@ export function CanvasTimeline() {
   const selectedTransition = useVideoEditorStore((s) => s.selectedTransition);
   const selectedCrossTransition = useVideoEditorStore((s) => s.selectedCrossTransition);
   const removeCrossTransitionById = useVideoEditorStore((s) => s.removeCrossTransitionById);
+  const copySelectedClips = useVideoEditorStore((s) => s.copySelectedClips);
+  const pasteClipsAtPlayhead = useVideoEditorStore((s) => s.pasteClipsAtPlayhead);
   const undo = useTemporalStore((s) => s.undo);
   const redo = useTemporalStore((s) => s.redo);
 
@@ -127,6 +129,20 @@ export function CanvasTimeline() {
         } else {
           undo();
         }
+        return;
+      }
+
+      // Cmd/Ctrl+C: Copy selected clips
+      if ((e.metaKey || e.ctrlKey) && e.key === "c") {
+        e.preventDefault();
+        copySelectedClips();
+        return;
+      }
+
+      // Cmd/Ctrl+V: Paste clips at playhead
+      if ((e.metaKey || e.ctrlKey) && e.key === "v") {
+        e.preventDefault();
+        pasteClipsAtPlayhead();
         return;
       }
 
@@ -191,13 +207,13 @@ export function CanvasTimeline() {
         seekTo(newTime);
       }
 
-      // V: Select tool
-      if (e.key === "v" || e.key === "V") {
+      // V: Select tool (only without modifiers)
+      if ((e.key === "v" || e.key === "V") && !e.metaKey && !e.ctrlKey) {
         setActiveTool("select");
       }
 
-      // C: Razor tool
-      if (e.key === "c" || e.key === "C") {
+      // C: Razor tool (only without modifiers)
+      if ((e.key === "c" || e.key === "C") && !e.metaKey && !e.ctrlKey) {
         setActiveTool("razor");
       }
 
@@ -229,6 +245,8 @@ export function CanvasTimeline() {
     setActiveTool,
     undo,
     redo,
+    copySelectedClips,
+    pasteClipsAtPlayhead,
     selectedTransition,
     setClipTransitionIn,
     setClipTransitionOut,

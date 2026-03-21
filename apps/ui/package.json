@@ -28,6 +28,7 @@
     "@tooscut/render-engine": "workspace:^",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cobe": "^0.6.5",
     "color": "^5.0.3",
     "comlink": "^4.4.2",
     "dexie": "^4.3.0",

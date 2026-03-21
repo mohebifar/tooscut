@@ -1,5 +1,8 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "../../state/db";
+import { Route } from "../../routes/editor/$projectId";
 import { Button } from "../ui/button";
 import { Separator } from "../ui/separator";
 import {
@@ -13,7 +16,8 @@ import {
 } from "../ui/menubar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { Toggle } from "../ui/toggle";
-import { Undo2, Redo2, MousePointer2, Scissors, DownloadIcon } from "lucide-react";
+import { Undo2, Redo2, MousePointer2, Scissors, DownloadIcon, ChevronLeft } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { ExportDialog } from "./export-dialog";
 import { ProjectSettingsDialog } from "./project-settings-dialog";
 import { useVideoEditorStore, useTemporalStore } from "../../state/video-editor-store";
@@ -37,6 +41,9 @@ export function Toolbar() {
   const removeCrossTransitionById = useVideoEditorStore((s) => s.removeCrossTransitionById);
   const setClipTransitionIn = useVideoEditorStore((s) => s.setClipTransitionIn);
   const setClipTransitionOut = useVideoEditorStore((s) => s.setClipTransitionOut);
+  const clipboard = useVideoEditorStore((s) => s.clipboard);
+  const copySelectedClips = useVideoEditorStore((s) => s.copySelectedClips);
+  const pasteClipsAtPlayhead = useVideoEditorStore((s) => s.pasteClipsAtPlayhead);
   const undo = useTemporalStore((s) => s.undo);
   const redo = useTemporalStore((s) => s.redo);
   const canUndo = useTemporalStore((s) => s.pastStates.length > 0);
@@ -91,6 +98,21 @@ export function Toolbar() {
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex items-center gap-1 px-2 py-1 bg-card border-b border-border">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
+              <Link to="/projects">
+                <ChevronLeft className="h-4 w-4" />
+              </Link>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Back to Projects</p>
+          </TooltipContent>
+        </Tooltip>
+
+        <Separator orientation="vertical" className="mx-1 h-5" />
+
         {/* File/Edit/View menus */}
         <Menubar className="border-none shadow-none bg-transparent h-auto p-0">
           <MenubarMenu>
@@ -98,11 +120,11 @@ export function Toolbar() {
               File
             </MenubarTrigger>
             <MenubarContent>
-              <MenubarItem onClick={() => navigate({ to: "/" })}>
+              <MenubarItem onClick={() => navigate({ to: "/projects" })}>
                 New Project
                 <MenubarShortcut>⌘N</MenubarShortcut>
               </MenubarItem>
-              <MenubarItem onClick={() => navigate({ to: "/" })}>
+              <MenubarItem onClick={() => navigate({ to: "/projects" })}>
                 Open Project
                 <MenubarShortcut>⌘O</MenubarShortcut>
               </MenubarItem>
@@ -151,11 +173,11 @@ export function Toolbar() {
                 Cut
                 <MenubarShortcut>⌘X</MenubarShortcut>
               </MenubarItem>
-              <MenubarItem disabled>
+              <MenubarItem disabled={selectedClipIds.length === 0} onClick={copySelectedClips}>
                 Copy
                 <MenubarShortcut>⌘C</MenubarShortcut>
               </MenubarItem>
-              <MenubarItem disabled>
+              <MenubarItem disabled={clipboard.length === 0} onClick={pasteClipsAtPlayhead}>
                 Paste
                 <MenubarShortcut>⌘V</MenubarShortcut>
               </MenubarItem>
@@ -192,6 +214,10 @@ export function Toolbar() {
             </MenubarContent>
           </MenubarMenu>
         </Menubar>
+
+        <Separator orientation="vertical" className="mx-2 h-5" />
+
+        <ToolbarProjectName />
 
         <Separator orientation="vertical" className="mx-2 h-5" />
 
@@ -285,5 +311,58 @@ export function Toolbar() {
         <ProjectSettingsDialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen} />
       </div>
     </TooltipProvider>
+  );
+}
+
+function ToolbarProjectName() {
+  const { projectId } = Route.useParams();
+  const project = useLiveQuery(() => db.projects.get(projectId), [projectId]);
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  if (!project) return null;
+
+  const commit = () => {
+    const trimmed = value.trim();
+    if (trimmed && trimmed !== project.name) {
+      void db.projects.update(project.id, { name: trimmed });
+    }
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        className="text-xs text-foreground bg-transparent border-b border-ring outline-none w-40"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") setEditing(false);
+        }}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="text-xs text-muted-foreground hover:text-foreground transition-colors truncate max-w-48 cursor-text"
+      onClick={() => {
+        setValue(project.name);
+        setEditing(true);
+      }}
+    >
+      {project.name}
+    </button>
   );
 }
