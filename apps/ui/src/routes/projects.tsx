@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Plus, Trash2, Film, Clock, Monitor } from "lucide-react";
+import { Plus, Trash2, Film, Clock, Monitor, TriangleAlert, Smartphone } from "lucide-react";
 import { Button } from "../components/ui/button";
 import {
   Empty,
@@ -43,10 +43,28 @@ function formatDate(timestamp: number): string {
   return date.toLocaleDateString();
 }
 
+function isChromiumBrowser(): boolean {
+  if (typeof navigator === "undefined") return true;
+  const ua = navigator.userAgent;
+  // Chrome/Chromium-based browsers have "Chrome/" in UA but not "Edg/" false positive — Edge is also Chromium
+  // Key non-Chromium browsers: Firefox (Gecko), Safari (without Chrome token)
+  const hasChrome = /Chrome\//.test(ua);
+  const isFirefox = /Firefox\//.test(ua);
+  // Safari has "Safari/" but NOT "Chrome/" in the UA
+  const isSafariOnly = /Safari\//.test(ua) && !hasChrome;
+  return hasChrome || (!isFirefox && !isSafariOnly);
+}
+
 function ProjectChooser() {
   const navigate = useNavigate();
   const projects = useLiveQuery(() => db.projects.orderBy("updatedAt").reverse().toArray());
   const [deleteTarget, setDeleteTarget] = useState<LocalProject | null>(null);
+  const [showBrowserWarning, setShowBrowserWarning] = useState(() => !isChromiumBrowser());
+  const [showMobileWarning, setShowMobileWarning] = useState(
+    () =>
+      typeof navigator !== "undefined" &&
+      /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent),
+  );
 
   const handleCreateProject = async () => {
     const id = generateId();
@@ -112,6 +130,46 @@ function ProjectChooser() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-10">
+        {showMobileWarning && (
+          <div className="mb-4 flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
+            <Smartphone className="size-4 shrink-0 mt-0.5 text-yellow-400" />
+            <div className="flex-1">
+              <p className="font-medium text-yellow-100">Designed for desktop</p>
+              <p className="mt-0.5 text-yellow-300/80">
+                This editor is designed for desktop use. For the best experience, please visit on a
+                desktop computer.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowMobileWarning(false)}
+              className="shrink-0 text-yellow-400 hover:text-yellow-200 transition-colors"
+            >
+              &times;
+            </button>
+          </div>
+        )}
+
+        {showBrowserWarning && (
+          <div className="mb-6 flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
+            <TriangleAlert className="size-4 shrink-0 mt-0.5 text-yellow-400" />
+            <div className="flex-1">
+              <p className="font-medium text-yellow-100">Browser not fully supported</p>
+              <p className="mt-0.5 text-yellow-300/80">
+                This editor relies on WebGPU for rendering, which currently works best in Chrome or
+                other Chromium-based browsers. You may experience issues in your current browser.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowBrowserWarning(false)}
+              className="shrink-0 text-yellow-400 hover:text-yellow-200 transition-colors"
+            >
+              &times;
+            </button>
+          </div>
+        )}
+
         {projects.length > 0 && (
           <div className="mb-6">
             <h1 className="text-lg font-semibold text-foreground">Projects</h1>
