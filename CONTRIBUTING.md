@@ -65,4 +65,4 @@ pnpm build:wasm   # Rebuild WASM (after Rust changes)
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the [PolyForm Noncommercial License 1.0.0](./LICENSE).
+By contributing, you agree that your contributions will be licensed under the [Elastic License 2.0](./LICENSE).

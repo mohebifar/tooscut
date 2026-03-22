@@ -8,7 +8,7 @@ By signing this CLA, you agree to the following terms:
 
 3. **No Warranty**: You provide your contributions on an "as is" basis, without warranties of any kind.
 
-4. **License**: Your contributions will be licensed under the same [PolyForm Noncommercial License 1.0.0](./LICENSE) as the rest of the project.
+4. **License**: Your contributions will be licensed under the same [Elastic License 2.0](./LICENSE) as the rest of the project.
 
 ## How to Sign
 
