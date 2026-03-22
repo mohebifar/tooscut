@@ -9,12 +9,12 @@ export function Footer() {
           <p className="text-muted-foreground text-sm">
             &copy; {new Date().getFullYear()} Tooscut. Licensed under{" "}
             <a
-              href="https://polyformproject.org/licenses/noncommercial/1.0.0/"
+              href="https://www.elastic.co/licensing/elastic-license"
               className="underline hover:text-foreground"
               target="_blank"
               rel="noopener"
             >
-              PolyForm Noncommercial 1.0.0
+              Elastic License 2.0
             </a>
             .
           </p>
