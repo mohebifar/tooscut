@@ -538,7 +538,51 @@ export class VideoFrameLoader {
   }
 
   /**
+   * Get a VideoFrame at the specified timestamp.
+   * Works in both preview and export modes.
+   *
+   * @param timestamp - Time in seconds
+   * @returns VideoFrame that must be closed after use
+   */
+  async getVideoFrame(timestamp: number): Promise<VideoFrame> {
+    if (this._mode === "export") {
+      const { sample } = await this.getSample(timestamp);
+      const videoFrame = sample.toVideoFrame();
+      sample.close();
+      return videoFrame;
+    }
+    const bitmap = await this.getImageBitmap(timestamp);
+    const frame = new VideoFrame(bitmap, { timestamp: timestamp * 1_000_000 });
+    bitmap.close();
+    return frame;
+  }
+
+  /**
+   * Get raw RGBA pixel data at the specified timestamp.
+   * Works in both preview and export modes.
+   *
+   * @param timestamp - Time in seconds
+   * @returns Object with width, height, and RGBA pixel data
+   */
+  async getRgbaData(
+    timestamp: number,
+  ): Promise<{ width: number; height: number; data: Uint8Array }> {
+    const bitmap = await this.getImageBitmap(timestamp);
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return {
+      width: canvas.width,
+      height: canvas.height,
+      data: new Uint8Array(imageData.data.buffer),
+    };
+  }
+
+  /**
    * Get raw VideoSample (export mode only).
+   * Alias: getFrame
    * Caller is responsible for calling sample.close().
    */
   async getSample(timestamp: number): Promise<FrameResult> {
@@ -546,6 +590,13 @@ export class VideoFrameLoader {
       throw new Error("getSample is only available in export mode");
     }
     return (this.adapter as MediaBunnyAdapter).getSample(timestamp);
+  }
+
+  /**
+   * Alias for getSample (export mode only).
+   */
+  async getFrame(timestamp: number): Promise<FrameResult> {
+    return this.getSample(timestamp);
   }
 
   /**
@@ -673,6 +724,23 @@ export class VideoFrameLoaderManager {
     }
     this.loaders.clear();
     this.loadingPromises.clear();
+  }
+
+  /**
+   * Convenience method: get a frame for an asset.
+   * Creates or reuses a loader, then calls getFrame.
+   */
+  async getFrame(
+    assetId: string,
+    blobOrUrl: Blob | string,
+    timestamp: number,
+    options?: VideoFrameLoaderOptions,
+  ): Promise<FrameResult> {
+    const loader = await this.getLoader(assetId, blobOrUrl, {
+      mode: "export",
+      ...options,
+    });
+    return loader.getFrame(timestamp);
   }
 
   /**

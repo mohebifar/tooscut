@@ -11,6 +11,8 @@ export default defineConfig({
       "tests/compositor.test.ts",
       "tests/visual-layers.test.ts",
       "tests/complex-compositions.test.ts",
+      "tests/webgpu-debug.test.ts",
+      "tests/video-frame-loader.test.ts",
     ],
   },
 });
