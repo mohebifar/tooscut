@@ -80,4 +80,6 @@ jobs:
 
       - run: pnpm test
 
+      - run: pnpm --filter @tooscut/render-engine exec playwright install --with-deps chromium
+
       - run: pnpm run --filter @tooscut/render-engine test:browser

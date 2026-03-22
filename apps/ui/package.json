@@ -6,7 +6,7 @@
     "dev": "vite dev --port 4200",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "clean": "rm -rf dist .output node_modules/.vite"
