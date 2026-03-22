@@ -182,12 +182,8 @@ impl ShapeUniforms {
             ShapeType::Polygon => SHAPE_POLYGON,
         };
 
-        let t_opacity = Self::transition_opacity(
-            &shape.transition_in,
-            &shape.transition_out,
-            cw,
-            ch,
-        );
+        let t_opacity =
+            Self::transition_opacity(&shape.transition_in, &shape.transition_out, cw, ch);
 
         let scaled_stroke_width = shape.style.stroke_width * scale_factor;
 
@@ -196,10 +192,19 @@ impl ShapeUniforms {
         // the bbox while keeping the SDF center unchanged — the shader
         // recalculates center = bbox.xy + bbox.zw*0.5 which stays the same
         // when we expand symmetrically.
-        let stroke_pad = if has_stroke { scaled_stroke_width + 1.0 } else { 0.0 };
+        let stroke_pad = if has_stroke {
+            scaled_stroke_width + 1.0
+        } else {
+            0.0
+        };
 
         Self {
-            bbox: [x - stroke_pad, y - stroke_pad, w + stroke_pad * 2.0, h + stroke_pad * 2.0],
+            bbox: [
+                x - stroke_pad,
+                y - stroke_pad,
+                w + stroke_pad * 2.0,
+                h + stroke_pad * 2.0,
+            ],
             canvas: [cw, ch, 1.0 / cw, 1.0 / ch],
             fill_color: shape.style.fill,
             stroke_color,
@@ -268,12 +273,7 @@ impl ShapeUniforms {
             LineHeadType::Diamond => HEAD_DIAMOND,
         };
 
-        let t_opacity = Self::transition_opacity(
-            &line.transition_in,
-            &line.transition_out,
-            cw,
-            ch,
-        );
+        let t_opacity = Self::transition_opacity(&line.transition_in, &line.transition_out, cw, ch);
 
         // Line properties use actual pixel values (no resolution scaling)
         // This gives designers direct control over visual appearance
@@ -595,11 +595,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     if has_stroke == 1u && stroke_width > 0.0 && shape_type != SHAPE_LINE {
         // For shapes with stroke: the fill region is where d < -stroke_width,
-        // the stroke region is where d is between -stroke_width and 0.
+        // the stroke region is the ring where d is between -stroke_width and 0.
         let fill_d = d + stroke_width;
-        let fill_alpha = (1.0 - smoothstep(-aa, aa, fill_d)) * fill_color.a * opacity;
-        let outer_alpha = (1.0 - smoothstep(-aa, aa, d)) * opacity;
-        let stroke_alpha = outer_alpha * stroke_color.a - fill_alpha;
+        let inner_coverage = 1.0 - smoothstep(-aa, aa, fill_d);
+        let outer_coverage = 1.0 - smoothstep(-aa, aa, d);
+        let stroke_coverage = outer_coverage - inner_coverage;
+        let fill_alpha = inner_coverage * fill_color.a * opacity;
+        let stroke_alpha = stroke_coverage * stroke_color.a * opacity;
 
         let total_alpha = fill_alpha + max(stroke_alpha, 0.0);
         if total_alpha < 0.001 {
