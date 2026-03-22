@@ -1032,37 +1032,3 @@ interface KeyframeTracks {
   tracks: KeyframeTrack[];
 }
 ```
-
----
-
-## Changelog
-
-| Date       | Change                                                                                                   |
-| ---------- | -------------------------------------------------------------------------------------------------------- |
-| 2024-01-31 | Initial design document created                                                                          |
-| 2024-01-31 | Track system: Tracks always created/deleted in pairs (video + audio)                                     |
-| 2024-01-31 | Z-order: Determined by track index, not stored on clips                                                  |
-| 2024-01-31 | Overlap rules: No overlapping clips on same track except during cross transitions                        |
-| 2024-01-31 | Keyframe evaluation: Pure TypeScript with temporal coherence caching                                     |
-| 2024-01-31 | Testing: Snapshot testing framework with visual verification                                             |
-| 2024-01-31 | Compositor: All rendering in Rust/WASM - no JS-side rendering                                            |
-| 2024-01-31 | Text rendering: glyphon + cosmic-text in Rust for GPU-accelerated text                                   |
-| 2024-01-31 | Shape rendering: SDF shaders in WASM for rectangles, circles, lines                                      |
-| 2024-01-31 | Unified transitions: All visual layers (media, text, shape, line) share the same transition system       |
-| 2024-01-31 | Shape primitives: Rectangle (with corner radius), Ellipse, Polygon. Square/circle are just special cases |
-| 2024-01-31 | Lines as separate type with endpoints (x1,y1,x2,y2) and head styles (arrow, circle, square, diamond)     |
-| 2024-01-31 | RenderFrame now contains separate arrays: media_layers, text_layers, shape_layers, line_layers           |
-| 2024-01-31 | Visual tests: Comprehensive test suite (56 tests) for all layer types, transitions, z-ordering, opacity  |
-| 2024-01-31 | Test builders: TextLayerBuilder, ShapeLayerBuilder, LineLayerBuilder with fluent API                     |
-| 2025-01-31 | glyphon 0.8 integration for GPU-accelerated text rendering with wgpu 24 compatibility                    |
-| 2025-01-31 | Embedded fonts: DejaVu Sans, Noto Sans, Noto Sans Arabic, Noto Sans SC (~3.2MB total)                    |
-| 2025-01-31 | Multilingual text support: Latin (LTR), Arabic/Persian (RTL), Chinese (CJK), mixed bidirectional         |
-| 2025-01-31 | Text rendering uses two-pass architecture: main pass for backgrounds, separate pass for glyphs           |
-| 2025-01-31 | Visual tests: Added multilingual text tests (English, Persian, Chinese, mixed LTR/RTL)                   |
-| 2025-02-01 | Custom font loading: Added loadFont(fontFamily, fontData) and isFontLoaded(fontFamily) APIs              |
-| 2025-02-01 | Font family resolution: cosmic-text handles fallback when requested font is not found                    |
-| 2025-02-04 | Streaming audio decode: Replace bulk decodeAudioData() with incremental MediaBunny decode                |
-| 2025-02-04 | AudioClipSource: Added new_streaming(), append_chunk(), finalize() for incremental PCM upload            |
-| 2025-02-04 | AudioEngine WASM: Exported create_streaming_source, append_audio_chunk, finalize_audio bindings          |
-| 2025-02-04 | BrowserAudioEngine: streamAudioFromUrl() with BlobSource/UrlSource selection and bulk fallback           |
-| 2025-02-04 | Removed HTMLAudioElement fallback from use-audio-engine hook — WASM-only playback                        |
