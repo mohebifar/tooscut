@@ -255,6 +255,66 @@ export function TextProperties({
         </PropertyRow>
       </PropertySection>
 
+      <PropertySection title="Background">
+        <PropertyRow label="Enabled">
+          <Toggle
+            variant="outline"
+            size="sm"
+            pressed={style.background_color != null}
+            onPressedChange={(pressed) => {
+              if (pressed) {
+                onUpdateStyle(clip.id, {
+                  background_color: [0, 0, 0, 0.7],
+                  background_padding: 16,
+                  background_border_radius: 4,
+                });
+              } else {
+                onUpdateStyle(clip.id, {
+                  background_color: undefined,
+                  background_padding: undefined,
+                  background_border_radius: undefined,
+                });
+              }
+            }}
+          >
+            {style.background_color != null ? "On" : "Off"}
+          </Toggle>
+        </PropertyRow>
+        {style.background_color != null && (
+          <>
+            <PropertyRow label="Color">
+              <ColorInput
+                value={style.background_color}
+                onChange={(color) => onUpdateStyle(clip.id, { background_color: color })}
+                showAlpha
+              />
+            </PropertyRow>
+            <PropertyRow label="Padding">
+              <NumericInput
+                value={style.background_padding ?? 0}
+                onChange={(v) => onUpdateStyle(clip.id, { background_padding: v })}
+                suffix="px"
+                precision={0}
+                step={1}
+                min={0}
+                max={100}
+              />
+            </PropertyRow>
+            <PropertyRow label="Radius">
+              <NumericInput
+                value={style.background_border_radius ?? 0}
+                onChange={(v) => onUpdateStyle(clip.id, { background_border_radius: v })}
+                suffix="px"
+                precision={0}
+                step={1}
+                min={0}
+                max={100}
+              />
+            </PropertyRow>
+          </>
+        )}
+      </PropertySection>
+
       <PropertySection title="Opacity">
         <PropertyRow label="Opacity">
           <NumericInput

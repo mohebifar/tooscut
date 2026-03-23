@@ -485,6 +485,13 @@ impl Compositor {
 
         let mut is_first_pass = true;
 
+        // Collect all text items across all z-indices for a single batched
+        // render_layers() call at the end.  glyphon's prepare() overwrites
+        // internal GPU buffers, so calling it per-z-index means only the last
+        // group's glyphs survive deferred command execution.  Text backgrounds
+        // (shape pipeline) are still rendered per-z-index for correct ordering.
+        let mut all_text_items: Vec<TextLayerData> = Vec::new();
+
         for z in z_indices {
             // Collect non-text items at this z-index
             let non_text_items: Vec<&RenderItem> = items
@@ -562,7 +569,8 @@ impl Compositor {
                 }
             }
 
-            // Render text items at this z-index
+            // Render text background boxes at this z-index (uses shape pipeline,
+            // safe to call per-z-index for correct z-ordering)
             if !text_items.is_empty() {
                 // If this is the first pass (no non-text items rendered yet), clear first
                 if is_first_pass {
@@ -583,7 +591,7 @@ impl Compositor {
                     });
                 }
 
-                // Render text backgrounds first
+                // Render text backgrounds
                 {
                     let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
                         label: Some("text_background_pass"),
@@ -605,17 +613,25 @@ impl Compositor {
                     }
                 }
 
-                // Render text glyphs
-                if let Some(ref mut text_renderer) = self.text_renderer {
-                    if let Err(e) = text_renderer.render_layers(
-                        &self.device,
-                        &self.queue,
-                        encoder,
-                        view,
-                        &text_items,
-                    ) {
-                        log::error!("Text rendering failed: {}", e);
-                    }
+                // Accumulate text items for batched glyph rendering
+                all_text_items.extend(text_items);
+            }
+        }
+
+        // Render ALL text glyphs in a single batched call.
+        // This is necessary because glyphon's prepare() overwrites internal
+        // vertex/index buffers — calling it multiple times with deferred wgpu
+        // command encoding means only the last call's data survives.
+        if !all_text_items.is_empty() {
+            if let Some(ref mut text_renderer) = self.text_renderer {
+                if let Err(e) = text_renderer.render_layers(
+                    &self.device,
+                    &self.queue,
+                    encoder,
+                    view,
+                    &all_text_items,
+                ) {
+                    log::error!("Text rendering failed: {}", e);
                 }
             }
         }
