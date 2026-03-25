@@ -3,6 +3,7 @@ import { LogoIcon } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { Link } from "@tanstack/react-router";
 import { useScroll } from "@/hooks/use-scroll";
+import { GithubIcon } from "lucide-react";
 
 export function Header() {
   const scrolled = useScroll(10);
@@ -10,7 +11,7 @@ export function Header() {
   return (
     <header
       className={cn("sticky top-0 z-50 w-full border-transparent border-b", {
-        "border-border bg-background/95 backdrop-blur-sm supports-backdrop-filter:bg-background/50":
+        "border-border bg-background/95 backdrop-blur-sm supports-backdrop-filter:bg-background/90":
           scrolled,
       })}
     >
@@ -25,6 +26,7 @@ export function Header() {
         <div className="flex items-center gap-2">
           <Button variant="outline" asChild>
             <a href="https://github.com/mohebifar/tooscut" target="_blank" rel="noopener">
+              <GithubIcon className="h-4 w-4" />
               GitHub
             </a>
           </Button>
