@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { VideoFrameLoaderManager } from "@tooscut/render-engine";
+import { VideoFrameLoaderManager, framesToSeconds } from "@tooscut/render-engine";
 import { useVideoEditorStore } from "../../state/video-editor-store";
 import {
   getCachedBitmap,
@@ -22,6 +22,8 @@ import { useAssetStore } from "./use-asset-store";
 
 /** Width of each thumbnail slot in pixels */
 const THUMBNAIL_SLOT_WIDTH = 80;
+/** Height to resize thumbnails */
+const THUMBNAIL_RESIZE_HEIGHT = 80;
 
 /** Buffer zone - number of slots to preload beyond visible area */
 const BUFFER_SLOTS = 2;
@@ -99,6 +101,7 @@ export function useClipThumbnails({
   const thumbnailDataRef = useRef<ClipThumbnailData[]>([]);
 
   const assets = useAssetStore((state) => state.assets);
+  const fps = useVideoEditorStore((s) => s.settings.fps);
 
   // Initialize loader manager (dedicated instance for thumbnails)
   useEffect(() => {
@@ -124,11 +127,13 @@ export function useClipThumbnails({
 
       for (let i = 0; i < numSlots; i++) {
         // Image clips use timestamp 0 for all slots (same image, no time variation)
-        // Video clips compute media time from inPoint and speed
-        const mediaTime =
+        // Video clips compute media time from inPoint and speed (all in frames),
+        // then convert to seconds for video frame extraction
+        const mediaTimeFrames =
           clip.type === "image"
             ? 0
             : clip.inPoint + (i + 0.5) * (clip.duration / numSlots) * clip.speed;
+        const mediaTime = framesToSeconds(mediaTimeFrames, fps);
 
         // Check exact cache first, then fall back to nearest cached frame
         const exactBitmap = getCachedBitmap(clip.assetId, mediaTime, THUMBNAIL_SLOT_WIDTH);
@@ -289,7 +294,15 @@ export function useClipThumbnails({
                 activeLoads--;
                 break;
               }
-              bitmap = await loader.getImageBitmap(slot.timestamp);
+              const fullBitmap = await loader.getImageBitmap(slot.timestamp);
+              // Resize to thumbnail size for better rendering quality and lower memory
+              const aspect = fullBitmap.width / fullBitmap.height;
+              bitmap = await createImageBitmap(fullBitmap, {
+                resizeWidth: Math.round(THUMBNAIL_RESIZE_HEIGHT * aspect),
+                resizeHeight: THUMBNAIL_RESIZE_HEIGHT,
+                resizeQuality: "high",
+              });
+              fullBitmap.close();
             }
 
             if (signal.aborted) {

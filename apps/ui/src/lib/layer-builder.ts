@@ -236,9 +236,10 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
         id: mc.id,
         assetId: textureId,
         trackId: mc.trackId,
-        startTime: mc.startTime,
-        duration: mc.duration,
-        inPoint: mc.inPoint,
+        // Convert frame-based clip fields to seconds for buildRenderFrame/buildMediaLayerData
+        startTime: framesToSeconds(mc.startTime, settings.fps),
+        duration: framesToSeconds(mc.duration, settings.fps),
+        inPoint: framesToSeconds(mc.inPoint, settings.fps),
         transform: mc.transform,
         effects: mc.effects,
         keyframes: mc.keyframes,
