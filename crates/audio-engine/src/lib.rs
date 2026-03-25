@@ -107,6 +107,59 @@ impl AudioEngine {
         self.mixer.finalize_audio(source_id);
     }
 
+    /// Create a windowed audio source (metadata only, fixed-size buffer)
+    ///
+    /// Unlike streaming sources, windowed sources only retain a limited amount
+    /// of decoded PCM in memory. The JS side manages decode-ahead and sends
+    /// buffer updates as the playhead moves.
+    ///
+    /// # Arguments
+    /// * `source_id` - Unique identifier for this audio source (asset ID)
+    /// * `sample_rate` - Sample rate of the source audio
+    /// * `channels` - Number of channels (1 or 2)
+    /// * `duration` - Total duration of the source media in seconds
+    /// * `max_buffer_seconds` - Maximum seconds of PCM to retain (e.g. 30.0)
+    #[wasm_bindgen]
+    pub fn create_windowed_source(
+        &mut self,
+        source_id: &str,
+        sample_rate: u32,
+        channels: u32,
+        duration: f64,
+        max_buffer_seconds: f64,
+    ) {
+        self.mixer.create_windowed_source(
+            source_id,
+            sample_rate,
+            channels,
+            duration,
+            max_buffer_seconds,
+        );
+    }
+
+    /// Update the buffered PCM window for a windowed source
+    ///
+    /// # Arguments
+    /// * `source_id` - ID of the windowed source
+    /// * `start_time` - Start time in source-time seconds for this chunk
+    /// * `pcm_data` - Interleaved PCM data (f32)
+    #[wasm_bindgen]
+    pub fn update_source_buffer(&mut self, source_id: &str, start_time: f64, pcm_data: &[f32]) {
+        self.mixer.update_source_buffer(source_id, start_time, pcm_data);
+    }
+
+    /// Clear all buffered data for a windowed source (used on seek)
+    #[wasm_bindgen]
+    pub fn clear_source_buffer(&mut self, source_id: &str) {
+        self.mixer.clear_source_buffer(source_id);
+    }
+
+    /// Get buffer misses since last query (diagnostics)
+    #[wasm_bindgen]
+    pub fn get_buffer_misses(&mut self, source_id: &str) -> u64 {
+        self.mixer.get_buffer_misses(source_id)
+    }
+
     /// Update the timeline state (clips, tracks, cross-transitions)
     ///
     /// # Arguments

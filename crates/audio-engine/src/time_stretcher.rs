@@ -85,7 +85,7 @@ impl TimeStretcher {
     }
 
     /// Get the next stereo sample from the stretcher.
-    pub fn get_sample(&mut self, source: &AudioClipSource) -> (f32, f32) {
+    pub fn get_sample(&mut self, source: &mut AudioClipSource) -> (f32, f32) {
         // Process windows until we have enough output ahead of read_pos
         while self.write_pos <= self.read_pos + 1 {
             self.process_window(source);
@@ -111,7 +111,7 @@ impl TimeStretcher {
     }
 
     /// Process one WSOLA window.
-    fn process_window(&mut self, source: &AudioClipSource) {
+    fn process_window(&mut self, source: &mut AudioClipSource) {
         let tps = 1.0 / self.sample_rate as f64;
         let synthesis_hop = (ANALYSIS_HOP as f64 / self.speed).round().max(1.0) as usize;
 
@@ -145,7 +145,7 @@ impl TimeStretcher {
 
     /// WSOLA: find the best offset around target_source_time by cross-correlating
     /// with the tail of the previous output window.
-    fn find_best_offset(&mut self, source: &AudioClipSource, tps: f64) -> f64 {
+    fn find_best_offset(&mut self, source: &mut AudioClipSource, tps: f64) -> f64 {
         // Extract the overlap region from the output buffer (what's already been written
         // at the current write position). We use the mono sum for correlation.
         let overlap_len = WINDOW_SIZE.min(ANALYSIS_HOP);
@@ -230,13 +230,13 @@ mod tests {
 
     #[test]
     fn test_speed_1x_passthrough() {
-        let source = make_sine_source(48000, 200, 440.0);
+        let mut source = make_sine_source(48000, 200, 440.0);
         let mut stretcher = TimeStretcher::new(48000);
         stretcher.reset(0.0, 1.0);
 
         let mut non_zero = 0;
         for _ in 0..4800 {
-            let (l, _r) = stretcher.get_sample(&source);
+            let (l, _r) = stretcher.get_sample(&mut source);
             if l.abs() > 0.01 {
                 non_zero += 1;
             }
@@ -246,13 +246,13 @@ mod tests {
 
     #[test]
     fn test_speed_2x_produces_output() {
-        let source = make_sine_source(48000, 400, 440.0);
+        let mut source = make_sine_source(48000, 400, 440.0);
         let mut stretcher = TimeStretcher::new(48000);
         stretcher.reset(0.0, 2.0);
 
         let mut non_zero = 0;
         for _ in 0..4800 {
-            let (l, _r) = stretcher.get_sample(&source);
+            let (l, _r) = stretcher.get_sample(&mut source);
             if l.abs() > 0.01 {
                 non_zero += 1;
             }
@@ -262,13 +262,13 @@ mod tests {
 
     #[test]
     fn test_speed_half_produces_output() {
-        let source = make_sine_source(48000, 400, 440.0);
+        let mut source = make_sine_source(48000, 400, 440.0);
         let mut stretcher = TimeStretcher::new(48000);
         stretcher.reset(0.0, 0.5);
 
         let mut non_zero = 0;
         for _ in 0..4800 {
-            let (l, _r) = stretcher.get_sample(&source);
+            let (l, _r) = stretcher.get_sample(&mut source);
             if l.abs() > 0.01 {
                 non_zero += 1;
             }

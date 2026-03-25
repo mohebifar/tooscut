@@ -61,6 +61,27 @@ interface FinalizeAudioMessage {
   sourceId: string;
 }
 
+interface CreateWindowedSourceMessage {
+  type: "create-windowed-source";
+  sourceId: string;
+  sampleRate: number;
+  channels: number;
+  duration: number;
+  maxBufferSeconds: number;
+}
+
+interface UpdateSourceBufferMessage {
+  type: "update-source-buffer";
+  sourceId: string;
+  startTime: number;
+  pcmData: Float32Array;
+}
+
+interface ClearSourceBufferMessage {
+  type: "clear-source-buffer";
+  sourceId: string;
+}
+
 type WorkletMessage =
   | InitMessage
   | UploadAudioMessage
@@ -71,7 +92,10 @@ type WorkletMessage =
   | SetMasterVolumeMessage
   | CreateStreamingSourceMessage
   | AppendAudioChunkMessage
-  | FinalizeAudioMessage;
+  | FinalizeAudioMessage
+  | CreateWindowedSourceMessage
+  | UpdateSourceBufferMessage
+  | ClearSourceBufferMessage;
 
 /**
  * AudioWorkletProcessor that uses WASM for audio mixing.
@@ -146,6 +170,24 @@ class AudioEngineProcessor extends AudioWorkletProcessor {
 
       case "finalize-audio":
         this.engine?.finalize_audio(message.sourceId);
+        break;
+
+      case "create-windowed-source":
+        this.engine?.create_windowed_source(
+          message.sourceId,
+          message.sampleRate,
+          message.channels,
+          message.duration,
+          message.maxBufferSeconds,
+        );
+        break;
+
+      case "update-source-buffer":
+        this.engine?.update_source_buffer(message.sourceId, message.startTime, message.pcmData);
+        break;
+
+      case "clear-source-buffer":
+        this.engine?.clear_source_buffer(message.sourceId);
         break;
     }
   }

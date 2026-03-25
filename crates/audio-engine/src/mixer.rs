@@ -130,6 +130,49 @@ impl AudioMixer {
         }
     }
 
+    /// Create a windowed audio source (metadata only, fixed-size buffer)
+    pub fn create_windowed_source(
+        &mut self,
+        source_id: &str,
+        sample_rate: u32,
+        channels: u32,
+        duration: f64,
+        max_buffer_seconds: f64,
+    ) {
+        let source = AudioClipSource::new_windowed(
+            source_id.to_string(),
+            sample_rate,
+            channels,
+            duration,
+            max_buffer_seconds,
+        );
+        self.sources.insert(source_id.to_string(), source);
+    }
+
+    /// Update the buffered PCM window for a source
+    pub fn update_source_buffer(&mut self, source_id: &str, start_time: f64, pcm_data: &[f32]) {
+        if let Some(source) = self.sources.get_mut(source_id) {
+            source.update_buffer(start_time, pcm_data.to_vec());
+        }
+    }
+
+    /// Clear all buffered data for a source (used on seek)
+    pub fn clear_source_buffer(&mut self, source_id: &str) {
+        if let Some(source) = self.sources.get_mut(source_id) {
+            source.clear_buffer();
+        }
+    }
+
+    /// Get buffer misses since last query (diagnostics)
+    pub fn get_buffer_misses(&mut self, source_id: &str) -> u64 {
+        if let Some(source) = self.sources.get_mut(source_id) {
+            source.get_buffer_misses()
+        } else {
+            0
+        }
+    }
+
+
     /// Set the timeline state from JSON
     pub fn set_timeline(&mut self, timeline_json: &str) -> Result<(), String> {
         let state: AudioTimelineState =
@@ -244,8 +287,8 @@ impl AudioMixer {
                 continue;
             }
 
-            // Get audio source
-            let source = match self.sources.get(&clip.source_id) {
+            // Get audio source (mutable for windowed buffer tracking)
+            let source = match self.sources.get_mut(&clip.source_id) {
                 Some(s) => s,
                 None => continue,
             };
