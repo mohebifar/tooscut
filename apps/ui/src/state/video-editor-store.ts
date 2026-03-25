@@ -144,16 +144,20 @@ export interface NewClipInput {
 
 /**
  * Media asset stored in the editor.
+ * Duration is in frame counts relative to the project frame rate.
  */
 export interface MediaAsset {
   id: string;
   type: "video" | "audio" | "image";
   name: string;
   url: string;
+  /** Asset duration in frames (project frame rate) */
   duration: number;
   width?: number;
   height?: number;
   thumbnailUrl?: string;
+  /** Native frame rate of the source media (for frame-accurate extraction) */
+  sourceFps?: FrameRate;
 }
 
 /**

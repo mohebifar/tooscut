@@ -15,9 +15,11 @@ import type { CrossTransitionType, Easing } from "./types.js";
 /**
  * Full clip data for editing operations.
  * Extends ClipBounds with all editable properties.
+ * All time values are in integer frame counts relative to the project frame rate.
  */
 export interface EditableClip extends ClipBounds {
   trackId: string;
+  /** In-point within the source media in frames */
   inPoint: number;
   linkedClipId?: string;
 }
