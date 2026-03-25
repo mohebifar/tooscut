@@ -61,7 +61,7 @@ export function useAudioEngine() {
     };
   }, []);
 
-  // Stream-decode and upload audio to WASM engine
+  // Register audio sources for windowed decode-ahead playback
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine || !isWasmReady) return;
@@ -72,8 +72,8 @@ export function useAudioEngine() {
       if (uploadedSourcesRef.current.has(asset.id)) continue;
       uploadedSourcesRef.current.add(asset.id);
 
-      engine.streamAudioFromUrl(asset.id, asset.url).catch((err) => {
-        console.error(`[useAudioEngine] Failed to stream audio for ${asset.id}:`, err);
+      engine.registerAudioSource(asset.id, asset.file).catch((err) => {
+        console.error(`[useAudioEngine] Failed to register audio for ${asset.id}:`, err);
         uploadedSourcesRef.current.delete(asset.id);
       });
     }

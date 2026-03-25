@@ -5,11 +5,11 @@
  * It manages:
  * - AudioContext and AudioWorklet setup
  * - WASM module loading
- * - Streaming audio decode via MediaBunny
+ * - Windowed audio decode-ahead via MediaBunny (O(1) memory)
  * - Timeline state synchronization
  */
 
-import { Input, ALL_FORMATS, UrlSource, BlobSource, AudioSampleSink } from "mediabunny";
+import { Input, ALL_FORMATS, BlobSource, AudioSampleSink, type AudioSample } from "mediabunny";
 import type { KeyframeTracks } from "./types.js";
 
 /**
@@ -146,6 +146,96 @@ export interface AudioEngineConfig {
   workletPath?: string;
   /** Path to the WASM binary (default: /wasm/audio-engine/audio_engine_bg.wasm) */
   wasmPath?: string;
+  /** Maximum seconds of PCM to buffer per source in WASM (default: 30) */
+  maxBufferSeconds?: number;
+  /** Seconds of audio to decode ahead of playhead (default: 10) */
+  prefetchAhead?: number;
+  /** Seconds of audio to keep behind playhead (default: 2) */
+  prefetchBehind?: number;
+}
+
+// --- Decode-ahead manager internals ---
+
+/** Buffered time range */
+interface BufferedRange {
+  start: number;
+  end: number;
+}
+
+/** Per-source decode state */
+interface SourceDecodeState {
+  sourceId: string;
+  file: File | Blob;
+  sampleRate: number;
+  channels: number;
+  duration: number;
+  /** Ranges of source-time that have been sent to WASM */
+  bufferedRanges: BufferedRange[];
+  /** AbortController for current decode operation */
+  decodeAbort: AbortController | null;
+  /** Time range of the currently active decode */
+  activeDecodeRange?: BufferedRange;
+  /** Whether initial probe has completed */
+  isReady: boolean;
+}
+
+/**
+ * Interleave an AudioSample into a Float32Array.
+ */
+function interleaveAudioSample(sample: AudioSample): Float32Array {
+  const numberOfChannels = sample.numberOfChannels;
+  const numberOfFrames = sample.numberOfFrames;
+
+  if (numberOfChannels === 1) {
+    const bytesNeeded = sample.allocationSize({ format: "f32", planeIndex: 0 });
+    const pcmData = new Float32Array(bytesNeeded / 4);
+    sample.copyTo(pcmData, { format: "f32", planeIndex: 0 });
+    return pcmData;
+  }
+
+  const channelBuffers: Float32Array[] = [];
+  for (let ch = 0; ch < numberOfChannels; ch++) {
+    const bytesNeeded = sample.allocationSize({ format: "f32-planar", planeIndex: ch });
+    const channelData = new Float32Array(bytesNeeded / 4);
+    sample.copyTo(channelData, { format: "f32-planar", planeIndex: ch });
+    channelBuffers.push(channelData);
+  }
+
+  const pcmData = new Float32Array(numberOfFrames * numberOfChannels);
+  for (let i = 0; i < numberOfFrames; i++) {
+    for (let ch = 0; ch < numberOfChannels; ch++) {
+      pcmData[i * numberOfChannels + ch] = channelBuffers[ch][i];
+    }
+  }
+  return pcmData;
+}
+
+/**
+ * Subtract buffered ranges from a desired range, returning unbuffered gaps.
+ */
+function subtractRanges(desired: BufferedRange, buffered: BufferedRange[]): BufferedRange[] {
+  let gaps: BufferedRange[] = [{ start: desired.start, end: desired.end }];
+
+  for (const buf of buffered) {
+    const nextGaps: BufferedRange[] = [];
+    for (const gap of gaps) {
+      if (buf.end <= gap.start || buf.start >= gap.end) {
+        // No overlap
+        nextGaps.push(gap);
+      } else {
+        // Overlap: split gap around buffered region
+        if (gap.start < buf.start) {
+          nextGaps.push({ start: gap.start, end: buf.start });
+        }
+        if (gap.end > buf.end) {
+          nextGaps.push({ start: buf.end, end: gap.end });
+        }
+      }
+    }
+    gaps = nextGaps;
+  }
+
+  return gaps;
 }
 
 /**
@@ -157,16 +247,19 @@ export class BrowserAudioEngine {
   private isReady = false;
   private config: Required<AudioEngineConfig>;
 
-  // Track active streaming operations to avoid duplicates
-  private activeStreams = new Map<string, AbortController>();
-  // Track sources that have been fully streamed
-  private streamedSources = new Set<string>();
+  // Decode-ahead state
+  private sources = new Map<string, SourceDecodeState>();
+  private currentClips: AudioClipState[] = [];
+  private lastPlayheadTime = 0;
 
   constructor(config: AudioEngineConfig = {}) {
     this.config = {
       sampleRate: config.sampleRate ?? 48000,
       workletPath: config.workletPath ?? "/audio-engine.worklet.js",
       wasmPath: config.wasmPath ?? "/wasm/audio-engine/audio_engine_bg.wasm",
+      maxBufferSeconds: config.maxBufferSeconds ?? 30,
+      prefetchAhead: config.prefetchAhead ?? 10,
+      prefetchBehind: config.prefetchBehind ?? 2,
     };
   }
 
@@ -183,6 +276,11 @@ export class BrowserAudioEngine {
 
     // Load the worklet module
     await this.audioContext.audioWorklet.addModule(this.config.workletPath);
+
+    // Guard: audioContext may have been disposed/closed during the async gap (React Strict Mode)
+    if (!this.audioContext || (this.audioContext.state as string) === "closed") {
+      throw new Error("AudioContext was closed during initialization");
+    }
 
     // Create the worklet node with stereo output
     this.workletNode = new AudioWorkletNode(this.audioContext, "audio-engine-processor", {
@@ -208,9 +306,19 @@ export class BrowserAudioEngine {
       this.workletNode!.port.addEventListener("message", handler);
     });
 
+    // Guard again after second async gap
+    if (!this.audioContext || (this.audioContext.state as string) === "closed") {
+      throw new Error("AudioContext was closed during initialization");
+    }
+
     // Fetch WASM binary and send to worklet
     const wasmResponse = await fetch(this.config.wasmPath);
     const wasmBinary = await wasmResponse.arrayBuffer();
+
+    // Guard again after fetch
+    if (!this.workletNode) {
+      throw new Error("Audio engine was disposed during initialization");
+    }
 
     // Initialize the worklet with WASM binary
     this.workletNode.port.postMessage(
@@ -254,7 +362,8 @@ export class BrowserAudioEngine {
 
     switch (type) {
       case "time-update":
-        // Could emit an event or callback here
+        this.lastPlayheadTime = event.data.time as number;
+        this.prefetchForPlayhead(this.lastPlayheadTime);
         break;
       case "error":
         console.error("[AudioEngine] Worklet error:", event.data.message);
@@ -280,179 +389,286 @@ export class BrowserAudioEngine {
     }
   }
 
-  /**
-   * Decode and upload audio from a URL using streaming decode
-   *
-   * Uses MediaBunny to decode audio incrementally, sending PCM chunks
-   * to the WASM engine as they become available. Audio is playable
-   * immediately (silence for regions not yet decoded).
-   *
-   * @param sourceId - Unique identifier for this audio source
-   * @param url - URL to fetch audio from
-   */
-  async uploadAudioFromUrl(sourceId: string, url: string): Promise<void> {
-    return this.streamAudioFromUrl(sourceId, url);
-  }
+  // --- Windowed audio source management ---
 
   /**
-   * Stream-decode audio from a URL and upload PCM chunks incrementally
+   * Register an audio source for windowed decode-ahead playback.
    *
-   * @param sourceId - Unique identifier for this audio source
-   * @param url - URL to fetch audio from
+   * Probes the file for codec metadata, creates a windowed source in WASM,
+   * and begins initial prefetch from the start of the file.
+   *
+   * @param sourceId - Unique identifier for this audio source (asset ID)
+   * @param file - The original compressed audio/video file
    */
-  async streamAudioFromUrl(sourceId: string, url: string): Promise<void> {
+  async registerAudioSource(sourceId: string, file: File | Blob): Promise<void> {
     if (!this.isReady || !this.workletNode) {
       throw new Error("Audio engine not initialized");
     }
 
-    // Already fully streamed
-    if (this.streamedSources.has(sourceId)) return;
+    // Already registered
+    if (this.sources.has(sourceId)) return;
 
-    // Already streaming
-    if (this.activeStreams.has(sourceId)) return;
+    // Probe the file for metadata
+    const source = new BlobSource(file);
+    const input = new Input({ formats: ALL_FORMATS, source });
 
-    const abortController = new AbortController();
-    this.activeStreams.set(sourceId, abortController);
+    const audioTrack = await input.getPrimaryAudioTrack();
+    if (!audioTrack || !(await audioTrack.canDecode())) {
+      console.warn(`[AudioEngine] No decodable audio track in source ${sourceId}`);
+      return;
+    }
 
-    try {
-      // Use BlobSource for blob: URLs (local files), UrlSource for remote URLs
-      let source;
-      if (url.startsWith("blob:")) {
-        const response = await fetch(url);
-        const blob = await response.blob();
-        source = new BlobSource(blob);
+    const sampleRate = audioTrack.sampleRate;
+    const channels = audioTrack.numberOfChannels;
+    const duration = (await input.computeDuration()) ?? 0;
+
+    if (duration <= 0) {
+      console.warn(`[AudioEngine] Cannot determine duration for source ${sourceId}`);
+      return;
+    }
+
+    // Create windowed source in WASM
+    this.workletNode.port.postMessage({
+      type: "create-windowed-source",
+      sourceId,
+      sampleRate,
+      channels,
+      duration,
+      maxBufferSeconds: this.config.maxBufferSeconds,
+    });
+
+    const state: SourceDecodeState = {
+      sourceId,
+      file,
+      sampleRate,
+      channels,
+      duration,
+      bufferedRanges: [],
+      decodeAbort: null,
+      isReady: true,
+    };
+
+    this.sources.set(sourceId, state);
+
+    // Start initial prefetch from time 0
+    this.prefetchSource(state, 0);
+  }
+
+  /**
+   * Prefetch audio data for all sources based on the current playhead position.
+   */
+  private prefetchForPlayhead(playheadTime: number): void {
+    // Group clips by source
+    const sourceClips = new Map<string, AudioClipState[]>();
+    for (const clip of this.currentClips) {
+      const existing = sourceClips.get(clip.sourceId);
+      if (existing) {
+        existing.push(clip);
       } else {
-        source = new UrlSource(url);
+        sourceClips.set(clip.sourceId, [clip]);
       }
-      const input = new Input({ formats: ALL_FORMATS, source });
+    }
 
-      const audioTrack = await input.getPrimaryAudioTrack();
-      if (!audioTrack || !(await audioTrack.canDecode())) {
-        // No decodable audio track — fall back to bulk decode
-        await this.decodeAndUploadFallback(sourceId, url);
-        return;
-      }
+    for (const [sourceId, state] of this.sources) {
+      if (!state.isReady) continue;
 
-      const sourceSampleRate = audioTrack.sampleRate;
-      const sourceChannels = audioTrack.numberOfChannels;
-      const estimatedDuration = (await input.computeDuration()) ?? 0;
+      const clips = sourceClips.get(sourceId);
 
-      // Create streaming source in WASM engine
-      this.workletNode!.port.postMessage({
-        type: "create-streaming-source",
-        sourceId,
-        sampleRate: sourceSampleRate,
-        channels: sourceChannels,
-        estimatedDuration,
-      });
+      if (!clips || clips.length === 0) {
+        // No clip info yet — prefetch a window around the playhead as a best-effort
+        // This covers the case where registerAudioSource runs before setTimeline
+        const desiredStart = Math.max(0, playheadTime - this.config.prefetchBehind);
+        const desiredEnd = Math.min(state.duration, playheadTime + this.config.prefetchAhead);
+        if (desiredEnd <= desiredStart) continue;
 
-      const sink = new AudioSampleSink(audioTrack);
-
-      for await (const sample of sink.samples()) {
-        if (abortController.signal.aborted) break;
-
-        const numberOfChannels = sample.numberOfChannels;
-        const numberOfFrames = sample.numberOfFrames;
-
-        // Interleave channels into a single Float32Array
-        let pcmData: Float32Array;
-
-        if (numberOfChannels === 1) {
-          // Mono: copy single channel directly
-          const bytesNeeded = sample.allocationSize({ format: "f32", planeIndex: 0 });
-          pcmData = new Float32Array(bytesNeeded / 4);
-          sample.copyTo(pcmData, { format: "f32", planeIndex: 0 });
-        } else {
-          // Multi-channel: interleave (typically stereo)
-          const channelBuffers: Float32Array[] = [];
-          for (let ch = 0; ch < numberOfChannels; ch++) {
-            const bytesNeeded = sample.allocationSize({ format: "f32-planar", planeIndex: ch });
-            const channelData = new Float32Array(bytesNeeded / 4);
-            sample.copyTo(channelData, { format: "f32-planar", planeIndex: ch });
-            channelBuffers.push(channelData);
-          }
-
-          // Interleave: L, R, L, R, ...
-          pcmData = new Float32Array(numberOfFrames * numberOfChannels);
-          for (let i = 0; i < numberOfFrames; i++) {
-            for (let ch = 0; ch < numberOfChannels; ch++) {
-              pcmData[i * numberOfChannels + ch] = channelBuffers[ch][i];
-            }
-          }
+        const gaps = subtractRanges({ start: desiredStart, end: desiredEnd }, state.bufferedRanges);
+        if (gaps.length > 0) {
+          const decodeEnd = Math.min(state.duration, gaps[0].start + this.config.prefetchAhead);
+          this.prefetchSource(state, gaps[0].start, decodeEnd);
         }
+        continue;
+      }
 
-        sample.close();
+      // Find the source-time ranges needed for each active clip
+      for (const clip of clips) {
+        // Is this clip active or about to be active?
+        const clipEnd = clip.startTime + clip.duration;
+        if (playheadTime > clipEnd + this.config.prefetchBehind) continue;
+        if (playheadTime < clip.startTime - this.config.prefetchAhead) continue;
 
-        // Transfer the buffer to the worklet (zero-copy)
-        const buffer = pcmData.buffer as ArrayBuffer;
-        this.workletNode!.port.postMessage(
-          {
-            type: "append-audio-chunk",
-            sourceId,
-            pcmData: new Float32Array(buffer),
-          },
-          [buffer],
+        // Calculate source-time for the current playhead position
+        const sourceTime = clip.inPoint + (playheadTime - clip.startTime) * clip.speed;
+        const sourceAhead = this.config.prefetchAhead * clip.speed;
+        const sourceBehind = this.config.prefetchBehind * clip.speed;
+
+        const desiredStart = Math.max(0, sourceTime - sourceBehind);
+        const desiredEnd = Math.min(state.duration, sourceTime + sourceAhead);
+
+        if (desiredEnd <= desiredStart) continue;
+
+        // Check what's already buffered
+        const gaps = subtractRanges({ start: desiredStart, end: desiredEnd }, state.bufferedRanges);
+
+        if (gaps.length === 0) continue;
+
+        // Always decode a full prefetchAhead window from the gap start,
+        // not just the tiny gap. Avoids spawning a new decode session
+        // every 100ms for tiny 0.1s slices.
+        const decodeEnd = Math.min(
+          state.duration,
+          gaps[0].start + this.config.prefetchAhead * clip.speed,
         );
+        this.prefetchSource(state, gaps[0].start, decodeEnd);
       }
-
-      // All chunks sent — finalize
-      this.workletNode!.port.postMessage({
-        type: "finalize-audio",
-        sourceId,
-      });
-
-      this.streamedSources.add(sourceId);
-    } catch (err) {
-      console.warn(`[AudioEngine] Streaming decode failed for ${sourceId}, falling back:`, err);
-      try {
-        await this.decodeAndUploadFallback(sourceId, url);
-      } catch (fallbackErr) {
-        console.error(`[AudioEngine] Fallback decode also failed for ${sourceId}:`, fallbackErr);
-        throw fallbackErr;
-      }
-    } finally {
-      this.activeStreams.delete(sourceId);
     }
   }
 
   /**
-   * Fallback: decode audio using Web Audio API's decodeAudioData and upload in bulk
+   * Decode and send a range of audio from a source file to the WASM buffer.
+   * Skips if there's already an active decode whose range overlaps with the requested range.
+   * This prevents constant abort-restart cycles from time-update driven prefetching.
    */
-  private async decodeAndUploadFallback(sourceId: string, url: string): Promise<void> {
-    const response = await fetch(url);
-    const arrayBuffer = await response.arrayBuffer();
+  private prefetchSource(state: SourceDecodeState, fromTime: number, toTime?: number): void {
+    const targetEnd = toTime ?? Math.min(fromTime + this.config.prefetchAhead, state.duration);
 
-    const audioBuffer = await this.audioContext!.decodeAudioData(arrayBuffer);
-
-    // Convert to interleaved stereo
-    const numFrames = audioBuffer.length;
-    const pcmData = new Float32Array(numFrames * 2);
-
-    const leftChannel = audioBuffer.getChannelData(0);
-    const rightChannel =
-      audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : leftChannel;
-
-    for (let i = 0; i < numFrames; i++) {
-      pcmData[i * 2] = leftChannel[i];
-      pcmData[i * 2 + 1] = rightChannel[i];
+    // Skip if an active decode is already running and its range overlaps with what we need.
+    // The active decode will eventually cover the gap as it progresses sequentially.
+    if (state.decodeAbort && !state.decodeAbort.signal.aborted && state.activeDecodeRange) {
+      const active = state.activeDecodeRange;
+      // Active decode overlaps or will reach the requested range
+      if (active.end >= fromTime && active.start <= targetEnd) {
+        return;
+      }
     }
 
-    // Transfer the buffer for zero-copy
-    const buffer = pcmData.buffer.slice(0) as ArrayBuffer;
+    // Abort any existing decode for this source
+    if (state.decodeAbort) {
+      state.decodeAbort.abort();
+    }
 
-    this.workletNode!.port.postMessage(
-      {
-        type: "upload-audio",
-        sourceId,
-        pcmData: new Float32Array(buffer),
-        sampleRate: this.config.sampleRate,
-        channels: 2,
-      },
-      [buffer],
-    );
+    const abortController = new AbortController();
+    state.decodeAbort = abortController;
+    state.activeDecodeRange = { start: fromTime, end: targetEnd };
 
-    this.streamedSources.add(sourceId);
+    void this.decodeRange(state, fromTime, targetEnd, abortController.signal)
+      .catch((err) => {
+        if (!abortController.signal.aborted) {
+          console.error(`[AudioEngine] Decode failed for ${state.sourceId}:`, err);
+        }
+      })
+      .finally(() => {
+        // Clear active range if this is still the current decode
+        if (state.decodeAbort === abortController) {
+          state.decodeAbort = null;
+          state.activeDecodeRange = undefined;
+        }
+      });
   }
+
+  /**
+   * Decode a specific time range from a source file and send to WASM.
+   */
+  private async decodeRange(
+    state: SourceDecodeState,
+    fromTime: number,
+    toTime: number,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const source = new BlobSource(state.file);
+    const input = new Input({ formats: ALL_FORMATS, source });
+
+    const audioTrack = await input.getPrimaryAudioTrack();
+    if (!audioTrack || !(await audioTrack.canDecode())) return;
+
+    const sink = new AudioSampleSink(audioTrack);
+
+    // Use startTimestamp/endTimestamp to seek directly to the range
+    for await (const sample of sink.samples(fromTime, toTime)) {
+      if (signal.aborted) break;
+
+      const sampleTimestamp = sample.timestamp;
+      const pcmData = interleaveAudioSample(sample);
+      const chunkDuration = sample.numberOfFrames / state.sampleRate;
+
+      sample.close();
+
+      // Send to WASM worklet
+      const buffer = pcmData.buffer as ArrayBuffer;
+      this.workletNode!.port.postMessage(
+        {
+          type: "update-source-buffer",
+          sourceId: state.sourceId,
+          startTime: sampleTimestamp,
+          pcmData: new Float32Array(buffer),
+        },
+        [buffer],
+      );
+
+      // Track buffered range
+      this.addBufferedRange(state, sampleTimestamp, sampleTimestamp + chunkDuration);
+    }
+  }
+
+  /**
+   * Add a buffered range and merge overlapping/adjacent ranges.
+   */
+  private addBufferedRange(state: SourceDecodeState, start: number, end: number): void {
+    // Fast path: merge with last range if contiguous (sequential decode)
+    const last = state.bufferedRanges[state.bufferedRanges.length - 1];
+    if (last && start <= last.end + 0.001 && start >= last.start) {
+      last.end = Math.max(last.end, end);
+      return;
+    }
+
+    // General path: insert, sort, and merge
+    state.bufferedRanges.push({ start, end });
+    state.bufferedRanges.sort((a, b) => a.start - b.start);
+    const merged: BufferedRange[] = [];
+    for (const range of state.bufferedRanges) {
+      const prev = merged[merged.length - 1];
+      if (prev && range.start <= prev.end + 0.001) {
+        prev.end = Math.max(prev.end, range.end);
+      } else {
+        merged.push({ ...range });
+      }
+    }
+    state.bufferedRanges = merged;
+  }
+
+  /**
+   * Handle seek: reset buffered ranges (WASM may evict old data),
+   * abort decodes that don't cover the new position, and re-prefetch.
+   */
+  private onSeek(time: number): void {
+    for (const [, state] of this.sources) {
+      if (!state.isReady) continue;
+
+      // Reset JS-side buffered ranges — WASM manages its own eviction,
+      // so our tracking may be stale after a seek. This forces re-evaluation
+      // of what needs to be decoded.
+      state.bufferedRanges = [];
+
+      // Only abort if the active decode doesn't cover the new position
+      if (state.decodeAbort && state.activeDecodeRange) {
+        const active = state.activeDecodeRange;
+        if (time >= active.start && time <= active.end) {
+          continue; // Active decode covers the seek target, keep it
+        }
+      }
+
+      // Abort and restart from new position
+      if (state.decodeAbort) {
+        state.decodeAbort.abort();
+        state.decodeAbort = null;
+        state.activeDecodeRange = undefined;
+      }
+    }
+
+    // Prefetch from the new position
+    this.prefetchForPlayhead(time);
+  }
+
+  // --- Public API ---
 
   /**
    * Remove audio source
@@ -460,13 +676,12 @@ export class BrowserAudioEngine {
   removeAudio(sourceId: string): void {
     if (!this.workletNode) return;
 
-    this.streamedSources.delete(sourceId);
-
-    // Abort any in-progress streaming
-    const activeStream = this.activeStreams.get(sourceId);
-    if (activeStream) {
-      activeStream.abort();
-      this.activeStreams.delete(sourceId);
+    const state = this.sources.get(sourceId);
+    if (state) {
+      if (state.decodeAbort) {
+        state.decodeAbort.abort();
+      }
+      this.sources.delete(sourceId);
     }
 
     this.workletNode.port.postMessage({
@@ -480,6 +695,8 @@ export class BrowserAudioEngine {
    */
   setTimeline(state: AudioTimelineState): void {
     if (!this.workletNode) return;
+
+    this.currentClips = state.clips;
 
     this.workletNode.port.postMessage({
       type: "set-timeline",
@@ -509,6 +726,9 @@ export class BrowserAudioEngine {
       type: "seek",
       time,
     });
+
+    // Clear and re-prefetch windowed sources
+    this.onSeek(time);
   }
 
   /**
@@ -537,12 +757,13 @@ export class BrowserAudioEngine {
       this.audioContext = null;
     }
 
-    // Abort all active streams
-    for (const controller of this.activeStreams.values()) {
-      controller.abort();
+    // Abort all decode-ahead operations
+    for (const state of this.sources.values()) {
+      if (state.decodeAbort) {
+        state.decodeAbort.abort();
+      }
     }
-    this.activeStreams.clear();
-    this.streamedSources.clear();
+    this.sources.clear();
     this.isReady = false;
   }
 
