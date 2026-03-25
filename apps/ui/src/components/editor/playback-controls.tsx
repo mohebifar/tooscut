@@ -21,8 +21,9 @@ export function PlaybackControls() {
   const isPlaying = useVideoEditorStore((s) => s.isPlaying);
   const seekTo = useVideoEditorStore((s) => s.seekTo);
   const setIsPlaying = useVideoEditorStore((s) => s.setIsPlaying);
+  const settings = useVideoEditorStore((s) => s.settings);
 
-  const frameTime = 1 / 30;
+  const frameTime = settings.fps.denominator / settings.fps.numerator;
 
   const handleJumpToStart = () => seekTo(0);
   const handleStepBackward = () => seekTo(Math.max(0, currentTime - frameTime));

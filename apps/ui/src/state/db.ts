@@ -36,6 +36,26 @@ class EditorDatabase extends Dexie {
       projects: "id, updatedAt, name",
       fileHandles: "id",
     });
+
+    // Migrate fps from number to FrameRate { numerator, denominator }
+    this.version(2)
+      .stores({
+        projects: "id, updatedAt, name",
+        fileHandles: "id",
+      })
+      .upgrade((tx) => {
+        return tx
+          .table("projects")
+          .toCollection()
+          .modify((project: any) => {
+            if (typeof project.settings?.fps === "number") {
+              project.settings.fps = {
+                numerator: project.settings.fps,
+                denominator: 1,
+              };
+            }
+          });
+      });
   }
 }
 

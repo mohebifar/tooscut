@@ -30,6 +30,7 @@ import {
   type CrossTransitionRef,
   type CrossTransitionType,
   type AudioEffectsParams,
+  type FrameRate,
   addTrackPair,
   removeTrackPair,
   addClip,
@@ -161,7 +162,7 @@ export interface MediaAsset {
 export interface ProjectSettings {
   width: number;
   height: number;
-  fps: number;
+  fps: FrameRate;
 }
 
 // ============================================================================
@@ -633,7 +634,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
         settings: {
           width: 1920,
           height: 1080,
-          fps: 30,
+          fps: { numerator: 30, denominator: 1 },
         },
 
         tracks: [],
@@ -679,7 +680,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             clips: [],
             crossTransitions: [],
             assets: [],
-            settings: { width: 1920, height: 1080, fps: 30 },
+            settings: { width: 1920, height: 1080, fps: { numerator: 30, denominator: 1 } },
             currentTime: 0,
             isPlaying: false,
             selectedClipIds: [],

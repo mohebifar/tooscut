@@ -394,3 +394,54 @@ export const ANIMATABLE_PROPERTIES = {
 } as const;
 
 export type AnimatableProperty = keyof typeof ANIMATABLE_PROPERTIES;
+
+// ============================================================================
+// Frame Rate
+// ============================================================================
+
+/**
+ * Rational frame rate representation.
+ *
+ * Uses numerator/denominator to exactly represent rates like 29.97fps (30000/1001)
+ * without floating-point error.
+ */
+export interface FrameRate {
+  numerator: number;
+  denominator: number;
+}
+
+/**
+ * Standard frame rate presets.
+ */
+export const FRAME_RATE_PRESETS = {
+  "23.976": { numerator: 24000, denominator: 1001 },
+  "24": { numerator: 24, denominator: 1 },
+  "25": { numerator: 25, denominator: 1 },
+  "29.97": { numerator: 30000, denominator: 1001 },
+  "30": { numerator: 30, denominator: 1 },
+  "50": { numerator: 50, denominator: 1 },
+  "59.94": { numerator: 60000, denominator: 1001 },
+  "60": { numerator: 60, denominator: 1 },
+} as const satisfies Record<string, FrameRate>;
+
+/**
+ * Convert a frame count to seconds using a rational frame rate.
+ */
+export function framesToSeconds(frames: number, fps: FrameRate): number {
+  return (frames * fps.denominator) / fps.numerator;
+}
+
+/**
+ * Convert seconds to a frame count using a rational frame rate.
+ * Rounds to the nearest frame.
+ */
+export function secondsToFrames(seconds: number, fps: FrameRate): number {
+  return Math.round((seconds * fps.numerator) / fps.denominator);
+}
+
+/**
+ * Get the frame rate as a floating-point number (e.g., 29.97).
+ */
+export function frameRateToFloat(fps: FrameRate): number {
+  return fps.numerator / fps.denominator;
+}

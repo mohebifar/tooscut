@@ -102,7 +102,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
     const options: ExportOptions = {
       width: settings.width,
       height: settings.height,
-      frameRate: settings.fps,
+      frameRate: settings.fps.numerator / settings.fps.denominator,
       videoBitrate: qualityPreset?.bitrate,
     };
 
@@ -167,7 +167,9 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
                   </div>
                   <div>
                     <span className="font-medium">Frame rate: </span>
-                    {settings.fps} fps
+                    {Math.round((settings.fps.numerator / settings.fps.denominator) * 100) /
+                      100}{" "}
+                    fps
                   </div>
                 </div>
               </div>

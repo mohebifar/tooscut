@@ -75,7 +75,7 @@ function ProjectChooser() {
     const project: LocalProject = {
       id,
       name: "Untitled Project",
-      settings: { width: 1920, height: 1080, fps: 30 },
+      settings: { width: 1920, height: 1080, fps: { numerator: 30, denominator: 1 } },
       content: {
         tracks,
         clips: [],
