@@ -2,6 +2,7 @@
  * Asset store for managing imported media files.
  */
 import { create } from "zustand";
+import { secondsToFrames } from "@tooscut/render-engine";
 import { db } from "../../state/db";
 import {
   useVideoEditorStore,
@@ -517,12 +518,14 @@ export function handleNativeFileDrop(
  */
 export function addAssetsToStores(imported: MediaAsset[]) {
   useAssetStore.getState().addAssets(imported);
-  const editorAssets = imported.map((a) => ({
+  const projectFps = useVideoEditorStore.getState().settings.fps;
+  const editorAssets: StoreMediaAsset[] = imported.map((a) => ({
     id: a.id,
     type: a.type,
     name: a.name,
     url: a.url,
-    duration: a.duration,
+    // Convert source duration (seconds) to project frames
+    duration: a.type === "image" ? 0 : secondsToFrames(a.duration, projectFps),
     width: a.width,
     height: a.height,
     thumbnailUrl: a.thumbnailUrl,

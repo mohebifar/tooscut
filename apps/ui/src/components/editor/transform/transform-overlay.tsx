@@ -27,7 +27,7 @@ interface TransformOverlayProps {
 export function TransformOverlay({ displayWidth, displayHeight }: TransformOverlayProps) {
   const settings = useVideoEditorStore((s) => s.settings);
   const clips = useVideoEditorStore((s) => s.clips);
-  const currentTime = useVideoEditorStore((s) => s.currentTime);
+  const currentTime = useVideoEditorStore((s) => s.currentFrame);
   const selectedClipIds = useVideoEditorStore((s) => s.selectedClipIds);
   const setSelectedClipIds = useVideoEditorStore((s) => s.setSelectedClipIds);
   const tracks = useVideoEditorStore((s) => s.tracks);

@@ -181,8 +181,10 @@ interface VideoEditorState {
   tracks: EditableTrack[];
   clips: EditorClip[];
   crossTransitions: CrossTransitionRef[];
-  currentTime: number;
-  duration: number;
+  /** Current playhead position in frames (project frame rate) */
+  currentFrame: number;
+  /** Total project duration in frames (project frame rate) */
+  durationFrames: number;
   isPlaying: boolean;
   /** Incremented on user-initiated seeks so audio engine can detect them */
   seekVersion: number;
@@ -218,9 +220,9 @@ interface VideoEditorState {
   updateAssetUrl: (assetId: string, url: string) => void;
 
   // Actions - Playback
-  setCurrentTime: (time: number) => void;
-  /** Seek to a time (user-initiated) — also increments seekVersion for audio sync */
-  seekTo: (time: number) => void;
+  setCurrentFrame: (frame: number) => void;
+  /** Seek to a frame (user-initiated) — also increments seekVersion for audio sync */
+  seekTo: (frame: number) => void;
   setIsPlaying: (playing: boolean) => void;
   togglePlayback: () => void;
 
@@ -390,10 +392,14 @@ function availableExtensionBefore(clip: EditorClip): number {
   return Math.max(0, clip.inPoint / speed);
 }
 
-function calculateDuration(clips: EditorClip[]): number {
-  if (clips.length === 0) return 30; // Default 30 seconds
+/** Calculate project duration in frames. Adds 150 frames (~5s at 30fps) padding after last clip. */
+function calculateDurationFrames(clips: EditorClip[], fps: FrameRate): number {
+  const fpsFloat = fps.numerator / fps.denominator;
+  const defaultDuration = Math.round(30 * fpsFloat); // 30 seconds default
+  const padding = Math.round(5 * fpsFloat); // 5 seconds padding
+  if (clips.length === 0) return defaultDuration;
   const maxEnd = Math.max(...clips.map((c) => c.startTime + c.duration));
-  return Math.max(30, maxEnd + 5);
+  return Math.max(defaultDuration, maxEnd + padding);
 }
 
 /**
@@ -644,8 +650,8 @@ export const useVideoEditorStore = create<VideoEditorState>()(
         tracks: [],
         clips: [],
         crossTransitions: [],
-        currentTime: 0,
-        duration: 30,
+        currentFrame: 0,
+        durationFrames: 900, // 30s at 30fps
         isPlaying: false,
         seekVersion: 0,
 
@@ -654,7 +660,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
         selectedCrossTransition: null,
         clipboard: [],
 
-        zoom: 50,
+        zoom: 1.67, // pixels per frame (~50px/s at 30fps)
         scrollX: 0,
         scrollY: 0,
         activeTool: "select" as const,
@@ -670,12 +676,12 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             crossTransitions: data.crossTransitions ?? [],
             assets: data.assets,
             settings: data.settings,
-            currentTime: 0,
+            currentFrame: 0,
             isPlaying: false,
             selectedClipIds: [],
             selectedTransition: null,
             selectedCrossTransition: null,
-            duration: calculateDuration(data.clips),
+            durationFrames: calculateDurationFrames(data.clips, data.settings.fps),
           }),
 
         resetStore: () =>
@@ -685,16 +691,16 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             crossTransitions: [],
             assets: [],
             settings: { width: 1920, height: 1080, fps: { numerator: 30, denominator: 1 } },
-            currentTime: 0,
+            currentFrame: 0,
             isPlaying: false,
             selectedClipIds: [],
             selectedTransition: null,
             selectedCrossTransition: null,
-            zoom: 50,
+            zoom: 1.67, // pixels per frame (~50px/s at 30fps)
             scrollX: 0,
             scrollY: 0,
             activeTool: "select" as const,
-            duration: 30,
+            durationFrames: 900, // 30s at 30fps
           }),
 
         setSettings: (updates) =>
@@ -708,17 +714,17 @@ export const useVideoEditorStore = create<VideoEditorState>()(
           })),
 
         // Playback actions
-        setCurrentTime: (time) => set({ currentTime: Math.max(0, time) }),
-        seekTo: (time) =>
+        setCurrentFrame: (frame) => set({ currentFrame: Math.max(0, Math.round(frame)) }),
+        seekTo: (frame) =>
           set((state) => ({
-            currentTime: Math.max(0, time),
+            currentFrame: Math.max(0, Math.round(frame)),
             seekVersion: state.seekVersion + 1,
           })),
         setIsPlaying: (isPlaying) => set({ isPlaying }),
         togglePlayback: () => set((state) => ({ isPlaying: !state.isPlaying })),
 
         // View actions
-        setZoom: (zoom) => set({ zoom: Math.max(1, Math.min(500, zoom)) }),
+        setZoom: (zoom) => set({ zoom: Math.max(0.03, Math.min(20, zoom)) }),
         setScrollX: (scrollX) => set({ scrollX: Math.max(0, scrollX) }),
         setScrollY: (scrollY) => set({ scrollY: Math.max(0, scrollY) }),
         setActiveTool: (activeTool) => set({ activeTool }),
@@ -752,7 +758,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
 
           // Calculate the offset: shift all pasted clips so the earliest starts at playhead
           const earliestStart = Math.min(...state.clipboard.map((c) => c.startTime));
-          const offset = state.currentTime - earliestStart;
+          const offset = state.currentFrame - earliestStart;
 
           // Build an old-id → new-id map for relinking
           const idMap = new Map<string, string>();
@@ -783,7 +789,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             set((s) => {
               let clips = addClip(s.clips, newClip);
               clips = resolveOverlaps(clips, s.tracks, newId, newClip.startTime, newClip.trackId);
-              return { clips, duration: calculateDuration(clips) };
+              return { clips, durationFrames: calculateDurationFrames(clips, get().settings.fps) };
             });
           }
 
@@ -812,7 +818,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
               tracks,
               clips,
               selectedClipIds: state.selectedClipIds.filter((id) => clips.some((c) => c.id === id)),
-              duration: calculateDuration(clips),
+              durationFrames: calculateDurationFrames(clips, get().settings.fps),
             };
           }),
 
@@ -893,7 +899,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             clips = resolveOverlaps(clips, state.tracks, id, newClip.startTime, trackId);
             return {
               clips,
-              duration: calculateDuration(clips),
+              durationFrames: calculateDurationFrames(clips, get().settings.fps),
             };
           });
 
@@ -911,7 +917,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
               clips,
               crossTransitions,
               selectedClipIds: state.selectedClipIds.filter((id) => clips.some((c) => c.id === id)),
-              duration: calculateDuration(clips),
+              durationFrames: calculateDurationFrames(clips, get().settings.fps),
             };
           }),
 
@@ -933,7 +939,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             return {
               clips,
               crossTransitions: validateCrossTransitions(clips, state.crossTransitions),
-              duration: calculateDuration(clips),
+              durationFrames: calculateDurationFrames(clips, get().settings.fps),
             };
           }),
 
@@ -996,7 +1002,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
               return {
                 clips,
                 crossTransitions: validateCrossTransitions(clips, state.crossTransitions),
-                duration: calculateDuration(clips),
+                durationFrames: calculateDurationFrames(clips, get().settings.fps),
               };
             }
 
@@ -1015,7 +1021,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
               return {
                 clips,
                 crossTransitions: validateCrossTransitions(clips, state.crossTransitions),
-                duration: calculateDuration(clips),
+                durationFrames: calculateDurationFrames(clips, get().settings.fps),
               };
             }
 
@@ -1035,7 +1041,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             return {
               clips,
               crossTransitions: validateCrossTransitions(clips, state.crossTransitions),
-              duration: calculateDuration(clips),
+              durationFrames: calculateDurationFrames(clips, get().settings.fps),
             };
           }),
 
@@ -1106,7 +1112,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             return {
               clips,
               crossTransitions: validateCrossTransitions(clips, state.crossTransitions),
-              duration: calculateDuration(clips),
+              durationFrames: calculateDurationFrames(clips, get().settings.fps),
             };
           }),
 
@@ -1128,7 +1134,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             return {
               clips,
               crossTransitions: validateCrossTransitions(clips, state.crossTransitions),
-              duration: calculateDuration(clips),
+              durationFrames: calculateDurationFrames(clips, get().settings.fps),
             };
           }),
 
@@ -1151,7 +1157,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             return {
               clips,
               crossTransitions: validateCrossTransitions(clips, state.crossTransitions),
-              duration: calculateDuration(clips),
+              durationFrames: calculateDurationFrames(clips, get().settings.fps),
             };
           }),
 
@@ -1198,7 +1204,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             return {
               clips,
               crossTransitions: validateCrossTransitions(clips, state.crossTransitions),
-              duration: calculateDuration(clips),
+              durationFrames: calculateDurationFrames(clips, get().settings.fps),
             };
           }),
 
@@ -1226,7 +1232,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
 
             return {
               clips: sortClipsByStartTime(result.updatedClips),
-              duration: calculateDuration(result.updatedClips),
+              durationFrames: calculateDurationFrames(result.updatedClips, get().settings.fps),
             };
           }),
 

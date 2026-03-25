@@ -2,34 +2,35 @@ import { Button } from "../ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { useVideoEditorStore } from "../../state/video-editor-store";
 import { Play, Pause, SkipBack, SkipForward, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { type FrameRate } from "@tooscut/render-engine";
 
 /**
- * Format time as HH:MM:SS.ms
+ * Format a frame number as timecode HH:MM:SS:FF
  */
-function formatTimecode(seconds: number): string {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  const ms = Math.floor((seconds % 1) * 100);
+function formatTimecode(frame: number, fps: FrameRate): string {
+  const fpsFloat = fps.numerator / fps.denominator;
+  const totalSeconds = frame / fpsFloat;
+  const hrs = Math.floor(totalSeconds / 3600);
+  const mins = Math.floor((totalSeconds % 3600) / 60);
+  const secs = Math.floor(totalSeconds % 60);
+  const ff = Math.floor(frame % fpsFloat);
 
-  return `${hrs.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}.${ms.toString().padStart(2, "0")}`;
+  return `${hrs.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}:${ff.toString().padStart(2, "0")}`;
 }
 
 export function PlaybackControls() {
-  const currentTime = useVideoEditorStore((s) => s.currentTime);
-  const duration = useVideoEditorStore((s) => s.duration);
+  const currentFrame = useVideoEditorStore((s) => s.currentFrame);
+  const durationFrames = useVideoEditorStore((s) => s.durationFrames);
   const isPlaying = useVideoEditorStore((s) => s.isPlaying);
   const seekTo = useVideoEditorStore((s) => s.seekTo);
   const setIsPlaying = useVideoEditorStore((s) => s.setIsPlaying);
   const settings = useVideoEditorStore((s) => s.settings);
 
-  const frameTime = settings.fps.denominator / settings.fps.numerator;
-
   const handleJumpToStart = () => seekTo(0);
-  const handleStepBackward = () => seekTo(Math.max(0, currentTime - frameTime));
+  const handleStepBackward = () => seekTo(Math.max(0, currentFrame - 1));
   const handlePlayPause = () => setIsPlaying(!isPlaying);
-  const handleStepForward = () => seekTo(Math.min(duration, currentTime + frameTime));
-  const handleJumpToEnd = () => seekTo(duration);
+  const handleStepForward = () => seekTo(Math.min(durationFrames, currentFrame + 1));
+  const handleJumpToEnd = () => seekTo(durationFrames);
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -101,7 +102,8 @@ export function PlaybackControls() {
 
         {/* Time display */}
         <div className="ml-4 font-mono text-sm text-muted-foreground">
-          {formatTimecode(currentTime)} / {formatTimecode(duration)}
+          {formatTimecode(currentFrame, settings.fps)} /{" "}
+          {formatTimecode(durationFrames, settings.fps)}
         </div>
       </div>
     </TooltipProvider>

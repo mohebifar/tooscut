@@ -74,20 +74,25 @@ export function PreviewPanel() {
 
   // Store state - only subscribe to things that need re-renders
   const settings = useVideoEditorStore((s) => s.settings);
+  const fps = settings.fps;
   const previewMode = useVideoEditorStore((s) => s.previewMode);
   const isPlaying = useVideoEditorStore((s) => s.isPlaying);
-  const setCurrentTime = useVideoEditorStore((s) => s.setCurrentTime);
-  const duration = useVideoEditorStore((s) => s.duration);
+  const setCurrentFrame = useVideoEditorStore((s) => s.setCurrentFrame);
+  const duration = useVideoEditorStore((s) => s.durationFrames);
 
   // Keep refs in sync with store state
   const isPlayingRef = useRef(isPlaying);
   const durationRef = useRef(duration);
+  const fpsRef = useRef(fps);
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
   useEffect(() => {
     durationRef.current = duration;
   }, [duration]);
+  useEffect(() => {
+    fpsRef.current = fps;
+  }, [fps]);
 
   // Assets are managed in a separate store for file handling
   const assets = useAssetStore((s) => s.assets);
@@ -149,7 +154,7 @@ export function PreviewPanel() {
         // to cover timing races between compositor init and project loading.
         const renderInitialFrame = () => {
           if (compositorRef.current?.isReady && !isPlayingRef.current) {
-            void renderFrameRef.current?.(useVideoEditorStore.getState().currentTime);
+            void renderFrameRef.current?.(useVideoEditorStore.getState().currentFrame);
           }
         };
         // First attempt: next animation frame (after React commit + effects)
@@ -187,7 +192,7 @@ export function PreviewPanel() {
   useEffect(() => {
     if (compositorRef.current?.isReady) {
       compositorRef.current.resize(settings.width, settings.height);
-      void renderFrameRef.current?.(useVideoEditorStore.getState().currentTime);
+      void renderFrameRef.current?.(useVideoEditorStore.getState().currentFrame);
     }
   }, [settings.width, settings.height]);
 
@@ -237,12 +242,14 @@ export function PreviewPanel() {
   }, [assets, isInitialized, getOrCreateImageElement]);
 
   /**
-   * Render a frame at the given timeline time.
+   * Render a frame at the given timeline frame number.
+   * Converts to seconds at the rendering boundary for buildLayersForTime,
+   * calculateSourceTime, and video frame extraction.
    * During playback: extracts frames from playing video elements.
    * During scrubbing: seeks and extracts frames.
    */
   const renderFrame = useCallback(
-    async (time: number) => {
+    async (frame: number) => {
       const compositor = compositorRef.current;
       if (!compositor?.isReady) return;
 
@@ -264,14 +271,19 @@ export function PreviewPanel() {
         const currentTracks = state.tracks;
         const currentSettings = state.settings;
         const currentCrossTransitions = state.crossTransitions;
+        const currentFps = currentSettings.fps;
 
-        // Use layer-builder to get visible clips and render frame
-        const { frame, visibleMediaClips, crossTransitionTextureMap } = buildLayersForTime({
+        // Pass frame number to layer-builder — it converts to seconds internally
+        const {
+          frame: renderFrameData,
+          visibleMediaClips,
+          crossTransitionTextureMap,
+        } = buildLayersForTime({
           clips: currentClips,
           tracks: currentTracks,
           crossTransitions: currentCrossTransitions,
           settings: currentSettings,
-          timelineTime: time,
+          timelineTime: frame,
           evaluatorManager: evaluatorManagerRef.current,
         });
 
@@ -292,7 +304,7 @@ export function PreviewPanel() {
           const isInCrossTransition = crossTransitionTextureMap.has(clip.id);
           const loaderKey = isInCrossTransition ? `${assetId}:${clip.id}` : assetId;
 
-          const sourceTime = calculateSourceTime(time, clip);
+          const sourceTime = calculateSourceTime(frame, clip, currentFps);
 
           try {
             const loader = await loaderManager.getLoader(loaderKey, asset.file);
@@ -373,7 +385,7 @@ export function PreviewPanel() {
           }
         }
 
-        compositor.renderFrame(frame);
+        compositor.renderFrame(renderFrameData);
       } finally {
         renderingRef.current = false;
 
@@ -383,7 +395,7 @@ export function PreviewPanel() {
           pendingRenderRef.current = false;
           requestAnimationFrame(() => {
             if (!isPlayingRef.current) {
-              void renderFrameRef.current?.(useVideoEditorStore.getState().currentTime);
+              void renderFrameRef.current?.(useVideoEditorStore.getState().currentFrame);
             }
           });
         }
@@ -398,27 +410,32 @@ export function PreviewPanel() {
   }, [renderFrame]);
 
   /**
-   * Animation loop for playback
+   * Animation loop for playback.
+   * Computes the current frame from elapsed wall-clock time and the fps rate.
+   * Frame values are integers; seconds conversion happens at the render boundary.
    */
   const tick = useCallback(
     (timestamp: number) => {
       if (!isPlayingRef.current) return;
 
-      // Detect external seek (e.g., playhead drag) by comparing store time
+      const currentFps = fpsRef.current;
+      const fpsFloat = currentFps.numerator / currentFps.denominator;
+
+      // Detect external seek (e.g., playhead drag) by comparing store frame
       // with what we last wrote. If they differ, re-anchor playback from there.
-      const storeTime = useVideoEditorStore.getState().currentTime;
-      if (Math.abs(storeTime - lastTickTimeRef.current) > 0.01) {
-        playbackStartPositionRef.current = storeTime;
+      const storeFrame = useVideoEditorStore.getState().currentFrame;
+      if (Math.abs(storeFrame - lastTickTimeRef.current) > 0.5) {
+        playbackStartPositionRef.current = storeFrame;
         playbackStartTimeRef.current = timestamp;
       }
 
       const elapsed = (timestamp - playbackStartTimeRef.current) / 1000;
-      const newTime = playbackStartPositionRef.current + elapsed;
+      const newFrame = playbackStartPositionRef.current + Math.floor(elapsed * fpsFloat);
 
-      if (newTime >= durationRef.current) {
+      if (newFrame >= durationRef.current) {
         isPlaybackEngineRunningRef.current = false;
         playingVideoAssetsRef.current.clear();
-        setCurrentTime(durationRef.current);
+        setCurrentFrame(durationRef.current);
         lastTickTimeRef.current = durationRef.current;
         useVideoEditorStore.getState().setIsPlaying(false);
         // Pause all videos and dispose per-clip loaders
@@ -436,18 +453,18 @@ export function PreviewPanel() {
         return;
       }
 
-      // Update store time periodically (~30fps for smooth playhead movement)
+      // Update store frame periodically (~30fps for smooth playhead movement)
       const timeSinceStoreUpdate = timestamp - lastStoreUpdateRef.current;
       if (timeSinceStoreUpdate >= 33) {
-        setCurrentTime(newTime);
-        lastTickTimeRef.current = newTime;
+        setCurrentFrame(newFrame);
+        lastTickTimeRef.current = newFrame;
         lastStoreUpdateRef.current = timestamp;
       }
 
-      void renderFrameRef.current?.(newTime);
+      void renderFrameRef.current?.(newFrame);
       rafIdRef.current = requestAnimationFrame(tick);
     },
-    [setCurrentTime],
+    [setCurrentFrame],
   );
 
   /**
@@ -458,12 +475,13 @@ export function PreviewPanel() {
     isPlaybackEngineRunningRef.current = true;
 
     const state = useVideoEditorStore.getState();
-    const time = state.currentTime;
-    const dur = state.duration;
+    const currentFps = state.settings.fps;
+    const frameNum = state.currentFrame;
+    const dur = state.durationFrames;
 
-    const startTime = time >= dur ? 0 : time;
-    if (time >= dur) {
-      setCurrentTime(0);
+    const startFrame = frameNum >= dur ? 0 : frameNum;
+    if (frameNum >= dur) {
+      setCurrentFrame(0);
     }
 
     const loaderManager = loaderManagerRef.current;
@@ -472,10 +490,10 @@ export function PreviewPanel() {
     // Reset the set of video elements we've started playing
     playingVideoAssetsRef.current.clear();
 
-    // Start playing video elements for visible clips
+    // Start playing video elements for visible clips (clip times are in frames)
     const visibleVideoClips = clips.filter(
       (c): c is VideoClip =>
-        c.type === "video" && startTime >= c.startTime && startTime < c.startTime + c.duration,
+        c.type === "video" && startFrame >= c.startTime && startFrame < c.startTime + c.duration,
     );
 
     // Build cross-transition clip set for per-clip loader keys
@@ -494,7 +512,7 @@ export function PreviewPanel() {
 
       try {
         const loader = await loaderManager.getLoader(loaderKey, asset.file);
-        const sourceTime = calculateSourceTime(startTime, clip);
+        const sourceTime = calculateSourceTime(startFrame, clip, currentFps);
         loader.play(sourceTime);
         playingVideoAssetsRef.current.add(loaderKey);
       } catch {
@@ -503,11 +521,11 @@ export function PreviewPanel() {
     }
 
     playbackStartTimeRef.current = performance.now();
-    playbackStartPositionRef.current = startTime;
-    lastTickTimeRef.current = startTime;
+    playbackStartPositionRef.current = startFrame;
+    lastTickTimeRef.current = startFrame;
     lastStoreUpdateRef.current = performance.now();
     rafIdRef.current = requestAnimationFrame(tick);
-  }, [setCurrentTime, tick, calculateSourceTime]);
+  }, [setCurrentFrame, tick]);
 
   /**
    * Stop playback engine - pauses video elements
@@ -554,12 +572,12 @@ export function PreviewPanel() {
     if (!isInitialized || isPlaying) return;
 
     const rerenderFrame = () => {
-      void renderFrame(useVideoEditorStore.getState().currentTime);
+      void renderFrame(useVideoEditorStore.getState().currentFrame);
     };
 
     // Re-render when currentTime changes (scrubbing)
     const unsubscribeTime = useVideoEditorStore.subscribe(
-      (state) => state.currentTime,
+      (state) => state.currentFrame,
       () => {
         rerenderFrame();
       },
@@ -587,7 +605,7 @@ export function PreviewPanel() {
     const unsubscribeAssets = useAssetStore.subscribe(() => {
       requestAnimationFrame(() => {
         if (!isPlayingRef.current && compositorRef.current?.isReady) {
-          void renderFrameRef.current?.(useVideoEditorStore.getState().currentTime);
+          void renderFrameRef.current?.(useVideoEditorStore.getState().currentFrame);
         }
       });
     });
@@ -732,7 +750,7 @@ export function PreviewPanel() {
     if (!asset) return;
 
     const store = useVideoEditorStore.getState();
-    const { tracks, clips, currentTime, addClipToTrack, addTrack, linkClipPair } = store;
+    const { tracks, clips, currentFrame, addClipToTrack, addTrack, linkClipPair } = store;
 
     // Audio assets go to audio tracks, video/image go to video tracks
     const isAudio = asset.type === "audio";
@@ -745,13 +763,13 @@ export function PreviewPanel() {
 
     let targetTrack: (typeof candidateTracks)[number] | null = candidateTracks[0] ?? null;
 
-    // Check if the frontmost track is occupied at the playhead position
+    // Check if the frontmost track is occupied at the playhead position (all in frames)
     if (targetTrack) {
       const occupied = clips.some(
         (c) =>
           c.trackId === targetTrack!.id &&
-          c.startTime < currentTime + asset.duration &&
-          c.startTime + c.duration > currentTime,
+          c.startTime < currentFrame + asset.duration &&
+          c.startTime + c.duration > currentFrame,
       );
       if (occupied) {
         targetTrack = null; // Will create a new track
@@ -781,11 +799,11 @@ export function PreviewPanel() {
       transform = { scale_x: scale, scale_y: scale };
     }
 
-    // Create the clip at the current playhead position
+    // Create the clip at the current playhead position (all in frames)
     const clipId = addClipToTrack({
       type: clipType,
       trackId,
-      startTime: currentTime,
+      startTime: currentFrame,
       duration: asset.duration,
       name: asset.name,
       assetId: asset.id,
@@ -801,7 +819,7 @@ export function PreviewPanel() {
         const audioClipId = addClipToTrack({
           type: "audio",
           trackId: pairedAudioTrackId,
-          startTime: currentTime,
+          startTime: currentFrame,
           duration: asset.duration,
           name: `${asset.name} (Audio)`,
           assetId: asset.id,

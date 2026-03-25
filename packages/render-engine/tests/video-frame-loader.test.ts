@@ -11,6 +11,7 @@
 
 import { beforeAll, describe, expect, it } from "vitest";
 import { VideoFrameLoader, VideoFrameLoaderManager } from "../src/video-frame-loader.js";
+import { Compositor } from "../src/compositor.js";
 
 describe("VideoFrameLoader", () => {
   let testVideoBlob: Blob;
@@ -58,7 +59,9 @@ describe("VideoFrameLoader", () => {
     });
 
     it("extracts a frame from URL-loaded video", async () => {
-      const loader = await VideoFrameLoader.fromUrl(LOCAL_VIDEO_URL, { mode: "export" });
+      const loader = await VideoFrameLoader.fromUrl(LOCAL_VIDEO_URL, {
+        mode: "export",
+      });
 
       const frame = await loader.getFrame(1);
 
@@ -71,7 +74,9 @@ describe("VideoFrameLoader", () => {
     });
 
     it("gets RGBA data from URL-loaded video", async () => {
-      const loader = await VideoFrameLoader.fromUrl(LOCAL_VIDEO_URL, { mode: "export" });
+      const loader = await VideoFrameLoader.fromUrl(LOCAL_VIDEO_URL, {
+        mode: "export",
+      });
 
       const rgbaData = await loader.getRgbaData(0.5);
 
@@ -87,7 +92,9 @@ describe("VideoFrameLoader", () => {
     });
 
     it("gets VideoFrame from URL-loaded video for GPU upload", async () => {
-      const loader = await VideoFrameLoader.fromUrl(LOCAL_VIDEO_URL, { mode: "export" });
+      const loader = await VideoFrameLoader.fromUrl(LOCAL_VIDEO_URL, {
+        mode: "export",
+      });
 
       const videoFrame = await loader.getVideoFrame(0.5);
 
@@ -105,7 +112,9 @@ describe("VideoFrameLoader", () => {
     const SAMPLE_VIDEO_URL = "/tests/fixtures/videos/sample-480p.mp4";
 
     it("loads a longer video and gets metadata", async () => {
-      const loader = await VideoFrameLoader.fromUrl(SAMPLE_VIDEO_URL, { mode: "export" });
+      const loader = await VideoFrameLoader.fromUrl(SAMPLE_VIDEO_URL, {
+        mode: "export",
+      });
 
       expect(loader.info.width).toBe(480);
       expect(loader.info.height).toBe(270);
@@ -116,7 +125,9 @@ describe("VideoFrameLoader", () => {
     });
 
     it("extracts frame from middle of video", async () => {
-      const loader = await VideoFrameLoader.fromUrl(SAMPLE_VIDEO_URL, { mode: "export" });
+      const loader = await VideoFrameLoader.fromUrl(SAMPLE_VIDEO_URL, {
+        mode: "export",
+      });
 
       // Get a frame from the middle of the video
       const frame = await loader.getFrame(15);
@@ -131,7 +142,9 @@ describe("VideoFrameLoader", () => {
     });
 
     it("extracts frame near end of video", async () => {
-      const loader = await VideoFrameLoader.fromUrl(SAMPLE_VIDEO_URL, { mode: "export" });
+      const loader = await VideoFrameLoader.fromUrl(SAMPLE_VIDEO_URL, {
+        mode: "export",
+      });
 
       const frame = await loader.getFrame(28);
 
@@ -143,7 +156,9 @@ describe("VideoFrameLoader", () => {
     });
 
     it("gets RGBA data from longer video", async () => {
-      const loader = await VideoFrameLoader.fromUrl(SAMPLE_VIDEO_URL, { mode: "export" });
+      const loader = await VideoFrameLoader.fromUrl(SAMPLE_VIDEO_URL, {
+        mode: "export",
+      });
 
       const rgbaData = await loader.getRgbaData(10);
 
@@ -159,7 +174,9 @@ describe("VideoFrameLoader", () => {
     });
 
     it("iterates over frames in a range", async () => {
-      const loader = await VideoFrameLoader.fromUrl(SAMPLE_VIDEO_URL, { mode: "export" });
+      const loader = await VideoFrameLoader.fromUrl(SAMPLE_VIDEO_URL, {
+        mode: "export",
+      });
 
       const frames: number[] = [];
       // Get frames from 10s to 11s
@@ -181,7 +198,9 @@ describe("VideoFrameLoader", () => {
     });
 
     it("measures seek performance across video", async () => {
-      const loader = await VideoFrameLoader.fromUrl(SAMPLE_VIDEO_URL, { mode: "export" });
+      const loader = await VideoFrameLoader.fromUrl(SAMPLE_VIDEO_URL, {
+        mode: "export",
+      });
       const times: number[] = [];
 
       // Random seeks across the video (worst case for decoder)
@@ -209,7 +228,9 @@ describe("VideoFrameLoader", () => {
     });
 
     it("measures sequential playback performance", async () => {
-      const loader = await VideoFrameLoader.fromUrl(SAMPLE_VIDEO_URL, { mode: "export" });
+      const loader = await VideoFrameLoader.fromUrl(SAMPLE_VIDEO_URL, {
+        mode: "export",
+      });
       const times: number[] = [];
 
       // Simulate 30fps playback for 1 second starting at 15s
@@ -242,7 +263,9 @@ describe("VideoFrameLoader", () => {
 
   describe("frame extraction", () => {
     it("gets a frame at timestamp 0", async () => {
-      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, { mode: "export" });
+      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, {
+        mode: "export",
+      });
 
       const frame = await loader.getFrame(0);
 
@@ -255,7 +278,9 @@ describe("VideoFrameLoader", () => {
     });
 
     it("gets a frame at middle of video", async () => {
-      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, { mode: "export" });
+      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, {
+        mode: "export",
+      });
 
       const frame = await loader.getFrame(1.0);
 
@@ -268,7 +293,9 @@ describe("VideoFrameLoader", () => {
     });
 
     it("clamps timestamp to valid range", async () => {
-      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, { mode: "export" });
+      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, {
+        mode: "export",
+      });
 
       // Request beyond duration
       const frame = await loader.getFrame(10.0);
@@ -282,7 +309,9 @@ describe("VideoFrameLoader", () => {
     });
 
     it("clamps negative timestamp to 0", async () => {
-      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, { mode: "export" });
+      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, {
+        mode: "export",
+      });
 
       const frame = await loader.getFrame(-5.0);
 
@@ -296,7 +325,9 @@ describe("VideoFrameLoader", () => {
 
   describe("VideoFrame extraction", () => {
     it("gets a WebCodecs VideoFrame", async () => {
-      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, { mode: "export" });
+      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, {
+        mode: "export",
+      });
 
       const videoFrame = await loader.getVideoFrame(0.5);
 
@@ -311,7 +342,9 @@ describe("VideoFrameLoader", () => {
 
   describe("RGBA data extraction", () => {
     it("gets raw RGBA pixel data", async () => {
-      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, { mode: "export" });
+      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, {
+        mode: "export",
+      });
 
       const result = await loader.getRgbaData(0);
 
@@ -337,7 +370,9 @@ describe("VideoFrameLoader", () => {
 
   describe("frame iteration", () => {
     it("iterates over frames in a range", async () => {
-      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, { mode: "export" });
+      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, {
+        mode: "export",
+      });
 
       const frames: number[] = [];
       for await (const frame of loader.frames(0, 1.0)) {
@@ -358,7 +393,9 @@ describe("VideoFrameLoader", () => {
 
   describe("disposal", () => {
     it("throws after disposal", async () => {
-      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, { mode: "export" });
+      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, {
+        mode: "export",
+      });
       loader.dispose();
 
       expect(loader.disposed).toBe(true);
@@ -368,7 +405,9 @@ describe("VideoFrameLoader", () => {
 
   describe("performance", () => {
     it("measures sequential frame access time", async () => {
-      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, { mode: "export" });
+      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, {
+        mode: "export",
+      });
       const times: number[] = [];
 
       // Warm up
@@ -400,7 +439,9 @@ describe("VideoFrameLoader", () => {
     });
 
     it("measures random seek time", async () => {
-      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, { mode: "export" });
+      const loader = await VideoFrameLoader.fromBlob(testVideoBlob, {
+        mode: "export",
+      });
       const times: number[] = [];
 
       // Random seeks (worst case for decoder)
@@ -494,11 +535,6 @@ describe("VideoFrameLoader + Compositor integration", () => {
   });
 
   it("renders video frame through compositor", async () => {
-    // This test demonstrates the full pipeline:
-    // VideoFrameLoader → RGBA data → Compositor → Canvas
-
-    const { Compositor } = await import("../src/compositor.js");
-
     // Create compositor
     const canvas = document.createElement("canvas");
     canvas.width = 320;
@@ -506,7 +542,9 @@ describe("VideoFrameLoader + Compositor integration", () => {
     const compositor = await Compositor.fromCanvas(canvas);
 
     // Load video frame
-    const loader = await VideoFrameLoader.fromBlob(testVideoBlob, { mode: "export" });
+    const loader = await VideoFrameLoader.fromBlob(testVideoBlob, {
+      mode: "export",
+    });
     const rgbaData = await loader.getRgbaData(0.5);
 
     // Upload to compositor
@@ -563,7 +601,9 @@ describe("VideoFrameLoader + Compositor integration", () => {
     // This test demonstrates using WebCodecs VideoFrame
     // which can be uploaded via uploadBitmap for zero-copy transfer
 
-    const loader = await VideoFrameLoader.fromBlob(testVideoBlob, { mode: "export" });
+    const loader = await VideoFrameLoader.fromBlob(testVideoBlob, {
+      mode: "export",
+    });
 
     // Get WebCodecs VideoFrame
     const videoFrame = await loader.getVideoFrame(1.0);

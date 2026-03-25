@@ -64,7 +64,7 @@ export function KeyframeInput({
   displayMultiplier = 1,
   className,
 }: KeyframeInputProps) {
-  const currentTime = useVideoEditorStore((s) => s.currentTime);
+  const currentTime = useVideoEditorStore((s) => s.currentFrame);
   const clips = useVideoEditorStore((s) => s.clips);
   const addKeyframe = useVideoEditorStore((s) => s.addKeyframe);
   const updateKeyframe = useVideoEditorStore((s) => s.updateKeyframe);

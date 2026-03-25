@@ -80,7 +80,7 @@ export function KeyframeButton({
   onReset,
   clipStartTime,
 }: KeyframeButtonProps) {
-  const currentTime = useVideoEditorStore((s) => s.currentTime);
+  const currentTime = useVideoEditorStore((s) => s.currentFrame);
   const clips = useVideoEditorStore((s) => s.clips);
   const addKeyframe = useVideoEditorStore((s) => s.addKeyframe);
   const deleteKeyframe = useVideoEditorStore((s) => s.deleteKeyframe);

@@ -24,6 +24,7 @@ import {
   lineLayer,
 } from "../src/testing/snapshot-tester.js";
 import { generateSceneTexture } from "../src/testing/test-renderer.js";
+import { VideoFrameLoader } from "../src/video-frame-loader.js";
 
 describe("visual layers", () => {
   let tester: SnapshotTester;
@@ -344,14 +345,6 @@ describe("visual layers", () => {
   // ============================================================================
 
   describe("video layers", () => {
-    // Import VideoFrameLoader dynamically to avoid issues if mediabunny isn't available
-    let VideoFrameLoader: typeof import("../src/video-frame-loader.js").VideoFrameLoader;
-
-    beforeAll(async () => {
-      const module = await import("../src/video-frame-loader.js");
-      VideoFrameLoader = module.VideoFrameLoader;
-    });
-
     /**
      * Helper to load a video frame and add it as a texture.
      * Uses MediaBunny's VideoFrameLoader for frame-accurate video decoding.

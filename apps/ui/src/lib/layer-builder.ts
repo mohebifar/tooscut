@@ -9,6 +9,7 @@
 import {
   buildRenderFrame,
   KeyframeEvaluator,
+  framesToSeconds,
   type TextLayerData,
   type ShapeLayerData,
   type LineLayerData,
@@ -22,6 +23,8 @@ import {
   type CrossTransition,
   type Transition,
   type CrossTransitionRef,
+  type EditableTrack,
+  type FrameRate,
   EvaluatorManager,
 } from "@tooscut/render-engine";
 import type {
@@ -33,13 +36,13 @@ import type {
   LineClip,
   ProjectSettings,
 } from "../state/video-editor-store";
-import type { EditableTrack } from "@tooscut/render-engine";
 
 export interface LayerBuilderInput {
   clips: EditorClip[];
   tracks: EditableTrack[];
   crossTransitions: CrossTransitionRef[];
   settings: ProjectSettings;
+  /** Current timeline position in frames (project frame rate) */
   timelineTime: number;
   evaluatorManager: EvaluatorManager;
   /** If true, ignore muted track filtering (for export) */
@@ -265,15 +268,16 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
       let opacity = sc.effects?.opacity ?? 1;
 
       if (sc.keyframes?.tracks?.length) {
-        const localTime = timelineTime - sc.startTime;
+        // Keyframes are in seconds — convert frame-based local time to seconds
+        const localTimeSeconds = framesToSeconds(timelineTime - sc.startTime, settings.fps);
         const evaluator = new KeyframeEvaluator(sc.keyframes);
-        const ex = evaluator.evaluate("x", localTime);
-        const ey = evaluator.evaluate("y", localTime);
-        const ew = evaluator.evaluate("width", localTime);
-        const eh = evaluator.evaluate("height", localTime);
-        const cr = evaluator.evaluate("cornerRadius", localTime);
-        const sw = evaluator.evaluate("strokeWidth", localTime);
-        const op = evaluator.evaluate("opacity", localTime);
+        const ex = evaluator.evaluate("x", localTimeSeconds);
+        const ey = evaluator.evaluate("y", localTimeSeconds);
+        const ew = evaluator.evaluate("width", localTimeSeconds);
+        const eh = evaluator.evaluate("height", localTimeSeconds);
+        const cr = evaluator.evaluate("cornerRadius", localTimeSeconds);
+        const sw = evaluator.evaluate("strokeWidth", localTimeSeconds);
+        const op = evaluator.evaluate("opacity", localTimeSeconds);
 
         if (!Number.isNaN(ex) || !Number.isNaN(ey) || !Number.isNaN(ew) || !Number.isNaN(eh)) {
           box = {
@@ -314,14 +318,15 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
       let opacity = lc.effects?.opacity ?? 1;
 
       if (lc.keyframes?.tracks?.length) {
-        const localTime = timelineTime - lc.startTime;
+        // Keyframes are in seconds — convert frame-based local time to seconds
+        const localTimeSeconds = framesToSeconds(timelineTime - lc.startTime, settings.fps);
         const evaluator = new KeyframeEvaluator(lc.keyframes);
-        const x1 = evaluator.evaluate("x1", localTime);
-        const y1 = evaluator.evaluate("y1", localTime);
-        const x2 = evaluator.evaluate("x2", localTime);
-        const y2 = evaluator.evaluate("y2", localTime);
-        const sw = evaluator.evaluate("strokeWidth", localTime);
-        const op = evaluator.evaluate("opacity", localTime);
+        const x1 = evaluator.evaluate("x1", localTimeSeconds);
+        const y1 = evaluator.evaluate("y1", localTimeSeconds);
+        const x2 = evaluator.evaluate("x2", localTimeSeconds);
+        const y2 = evaluator.evaluate("y2", localTimeSeconds);
+        const sw = evaluator.evaluate("strokeWidth", localTimeSeconds);
+        const op = evaluator.evaluate("opacity", localTimeSeconds);
 
         if (!Number.isNaN(x1) || !Number.isNaN(y1) || !Number.isNaN(x2) || !Number.isNaN(y2)) {
           box = {
@@ -352,6 +357,10 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
     // audio clips are skipped — not rendered visually
   }
 
+  // Convert frame-based timeline time to seconds for the RenderFrame
+  // (compositor and keyframe evaluator expect seconds)
+  const timelineTimeSeconds = framesToSeconds(timelineTime, settings.fps);
+
   const frame = buildRenderFrame({
     mediaClips: mediaClipsForRender,
     textLayers,
@@ -359,7 +368,7 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
     lineLayers,
     tracks: renderTracks,
     trackIndexMap,
-    timelineTime,
+    timelineTime: timelineTimeSeconds,
     width: settings.width,
     height: settings.height,
     evaluatorManager,
@@ -376,15 +385,18 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
 }
 
 /**
- * Calculate source time for a clip given timeline time.
+ * Calculate source time (in seconds) for a clip given timeline frame.
+ * All clip fields are in frames. Returns seconds for video frame extraction.
  */
 export function calculateSourceTime(
-  timelineTime: number,
+  timelineFrame: number,
   clip: { startTime: number; inPoint: number; speed?: number },
+  fps: FrameRate,
 ): number {
-  const clipLocalTime = timelineTime - clip.startTime;
+  const clipLocalFrames = timelineFrame - clip.startTime;
   const speed = clip.speed ?? 1;
-  return clip.inPoint + clipLocalTime * speed;
+  const sourceFrames = clip.inPoint + clipLocalFrames * speed;
+  return framesToSeconds(sourceFrames, fps);
 }
 
 /**
@@ -403,24 +415,11 @@ export function getVisibleAssetIds(visibleClips: EditorClip[]): Set<string> {
 
 /**
  * Get all frames that need to be rendered for export.
- * Returns an array of { frameIndex, timelineTime } for each frame.
+ * @param durationFrames - Total project duration in frames
+ * @returns Array of frame indices
  */
-export function getExportFrames(
-  duration: number,
-  frameRate: number,
-): Array<{ frameIndex: number; timelineTime: number }> {
-  const frames: Array<{ frameIndex: number; timelineTime: number }> = [];
-  const frameDuration = 1 / frameRate;
-  const totalFrames = Math.ceil(duration * frameRate);
-
-  for (let i = 0; i < totalFrames; i++) {
-    frames.push({
-      frameIndex: i,
-      timelineTime: i * frameDuration,
-    });
-  }
-
-  return frames;
+export function getExportFrames(durationFrames: number): Array<{ frameIndex: number }> {
+  return Array.from({ length: durationFrames }, (_, i) => ({ frameIndex: i }));
 }
 
 /**
