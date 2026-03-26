@@ -121,18 +121,18 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
       return api.isFontLoaded(fontId);
     },
 
-    uploadBitmap(bitmap: ImageBitmap, textureId: string) {
+    async uploadBitmap(bitmap: ImageBitmap, textureId: string) {
       if (!api || !isReady) {
         bitmap.close();
         return;
       }
       // Transfer bitmap to worker (zero-copy)
-      void api.uploadBitmap(Comlink.transfer(bitmap, [bitmap]), textureId);
+      await api.uploadBitmap(Comlink.transfer(bitmap, [bitmap]), textureId);
     },
 
-    renderFrame(frame: RenderFrame) {
+    async renderFrame(frame: RenderFrame) {
       if (!api || !isReady) return;
-      return api.renderFrame(frame);
+      await api.renderFrame(frame);
     },
 
     async renderToPixels(frame: RenderFrame): Promise<Uint8Array> {
@@ -149,24 +149,24 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
       return api.captureThumbnail(frame, thumbWidth, thumbHeight);
     },
 
-    clearTexture(textureId: string) {
+    async clearTexture(textureId: string) {
       if (!api || !isReady) return;
-      return api.clearTexture(textureId);
+      await api.clearTexture(textureId);
     },
 
-    clearAllTextures() {
+    async clearAllTextures() {
       if (!api || !isReady) return;
-      return api.clearAllTextures();
+      await api.clearAllTextures();
     },
 
-    flush() {
+    async flush() {
       if (!api || !isReady) return;
-      return api.flush();
+      await api.flush();
     },
 
-    dispose() {
+    async dispose() {
       if (api) {
-        void api.dispose();
+        await api.dispose();
         api = null;
       }
       if (worker) {
