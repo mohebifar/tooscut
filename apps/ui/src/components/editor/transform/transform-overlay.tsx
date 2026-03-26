@@ -127,7 +127,7 @@ export function TransformOverlay({ displayWidth, displayHeight }: TransformOverl
       className="absolute inset-0"
       width={displayWidth}
       height={displayHeight}
-      style={{ pointerEvents: "auto" }}
+      overflow="visible"
       onMouseDown={(e) => {
         // Click on empty space deselects
         if (e.target === e.currentTarget) {

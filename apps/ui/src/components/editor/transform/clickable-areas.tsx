@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { DisplayBounds } from "./types";
 
 interface ClickableItem {
@@ -16,6 +16,10 @@ interface ClickableAreasProps {
 export function ClickableAreas({ items, selectedClipIds, onSelect }: ClickableAreasProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const selectedSet = new Set(selectedClipIds);
+
+  useEffect(() => {
+    setHoveredId(null);
+  }, [selectedClipIds]);
 
   return (
     <>

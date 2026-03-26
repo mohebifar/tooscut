@@ -837,20 +837,33 @@ export function PreviewPanel() {
   return (
     <div
       ref={containerRef}
-      className="flex h-full items-center justify-center bg-muted"
+      className="flex h-full items-center justify-center overflow-visible bg-muted"
+      onMouseDown={(e) => {
+        // Click on empty area (not on canvas or overlay) deselects all
+        if (e.target === e.currentTarget) {
+          useVideoEditorStore.getState().clearSelection();
+        }
+      }}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
       <div
-        className="relative"
+        className="relative overflow-visible"
         style={{
           width: canvasSize.width || "auto",
           height: canvasSize.height || "auto",
         }}
       >
-        <div className="relative p-3">
+        <div
+          className="relative overflow-visible p-3"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              useVideoEditorStore.getState().clearSelection();
+            }
+          }}
+        >
           {/* width/height intentionally omitted — after transferControlToOffscreen()
               the compositor worker owns the OffscreenCanvas dimensions via resize().
               Setting attributes on the placeholder canvas would resize + clear the
@@ -863,10 +876,10 @@ export function PreviewPanel() {
 
           {previewMode === "transform" && isInitialized && canvasSize.width > 0 && (
             <div className="absolute inset-3">
-              <TransformOverlay
-                displayWidth={canvasSize.width - 24}
-                displayHeight={((canvasSize.width - 24) * settings.height) / settings.width}
-              />
+            <TransformOverlay
+              displayWidth={canvasSize.width - 24}
+              displayHeight={((canvasSize.width - 24) * settings.height) / settings.width}
+            />
             </div>
           )}
 
