@@ -1,6 +1,17 @@
 "use client";
 
-import { secondsToFrames, type Transition, type CrossTransitionType } from "@tooscut/render-engine";
+import {
+  secondsToFrames,
+  type Transition,
+  type CrossTransitionType,
+  type TextStyle,
+  type TextBox,
+  type ShapeType,
+  type ShapeStyle,
+  type ShapeBox,
+  type LineStyle,
+  type LineBox,
+} from "@tooscut/render-engine";
 import { PlusIcon } from "lucide-react";
 import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 
@@ -741,8 +752,8 @@ export function CanvasTimeline() {
           defaultDuration: number;
           name: string;
           text: string;
-          style: Record<string, unknown>;
-          box: Record<string, unknown>;
+          style: TextStyle;
+          box: TextBox;
         };
         const trackIndex = d.findNearestVideoTrack(rawTrackIndex);
         if (trackIndex === null) return;
@@ -772,9 +783,9 @@ export function CanvasTimeline() {
         const template = JSON.parse(shapeTemplateData) as {
           defaultDuration: number;
           name: string;
-          shape: string;
-          style: Record<string, unknown>;
-          box: Record<string, unknown>;
+          shape: ShapeType;
+          style: ShapeStyle;
+          box: ShapeBox;
         };
         const trackIndex = d.findNearestVideoTrack(rawTrackIndex);
         if (trackIndex === null) return;
@@ -804,8 +815,8 @@ export function CanvasTimeline() {
         const template = JSON.parse(lineTemplateData) as {
           defaultDuration: number;
           name: string;
-          style: Record<string, unknown>;
-          box: Record<string, unknown>;
+          style: LineStyle;
+          box: LineBox;
         };
         const trackIndex = d.findNearestVideoTrack(rawTrackIndex);
         if (trackIndex === null) return;

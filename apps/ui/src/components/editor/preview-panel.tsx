@@ -387,12 +387,20 @@ export function PreviewPanel() {
         }
       }
 
-      void compositor.renderFrame(renderFrameData);
+      if (isPlayingRef.current) {
+        // During playback: fire-and-forget for maximum throughput.
+        // The tick loop naturally supersedes stale frames.
+        void compositor.renderFrame(renderFrameData);
+      } else {
+        // During scrub/drag: await so renders don't interleave.
+        // This prevents out-of-order frame display (jitter) when
+        // transform handles send rapid updates.
+        await compositor.renderFrame(renderFrameData);
+      }
     } finally {
       renderingRef.current = false;
 
       // If a render was requested while we were busy, process it now.
-      // Only when paused/scrubbing — during playback the tick loop retries naturally.
       if (pendingRenderRef.current && !isPlayingRef.current) {
         pendingRenderRef.current = false;
         requestAnimationFrame(() => {
@@ -671,17 +679,29 @@ export function PreviewPanel() {
     return Math.round(((canvasSize.width - 24) / settings.width) * 100);
   }, [canvasSize.width, settings.width]);
 
-  // CMD/CTRL + scroll to zoom
-  const handlePreviewWheel = useCallback(
-    (e: React.WheelEvent) => {
+  // CMD/CTRL + scroll (or pinch) to zoom preview.
+  // Must use native listener with { passive: false } to prevent browser zoom.
+  const previewZoomRef = useRef(previewZoom);
+  const effectiveZoomRef = useRef(effectiveZoomPercent);
+  previewZoomRef.current = previewZoom;
+  effectiveZoomRef.current = effectiveZoomPercent;
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleWheel = (e: WheelEvent) => {
       if (!e.metaKey && !e.ctrlKey) return;
       e.preventDefault();
       const delta = e.deltaY > 0 ? 0.9 : 1.1;
-      const current = previewZoom === "fit" ? effectiveZoomPercent : previewZoom;
+      const current =
+        previewZoomRef.current === "fit" ? effectiveZoomRef.current : previewZoomRef.current;
       setPreviewZoom(Math.max(10, Math.min(400, Math.round(current * delta))));
-    },
-    [previewZoom, effectiveZoomPercent, setPreviewZoom],
-  );
+    };
+
+    container.addEventListener("wheel", handleWheel, { passive: false });
+    return () => container.removeEventListener("wheel", handleWheel);
+  }, [setPreviewZoom]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -870,7 +890,6 @@ export function PreviewPanel() {
           useVideoEditorStore.getState().clearSelection();
         }
       }}
-      onWheel={handlePreviewWheel}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}

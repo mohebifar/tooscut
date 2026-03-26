@@ -7,7 +7,7 @@
  */
 
 import { KeyframeEvaluator, type Transform, type AnimatableProperty } from "@tooscut/render-engine";
-import { useRef, useEffect, useCallback, useMemo, useState } from "react";
+import { useRef, useEffect, useCallback, useState } from "react";
 
 import type { MediaAsset } from "../../timeline/use-asset-store";
 import type { DragState, HandlePosition, SnapGuide, SnapTarget } from "./types";
@@ -57,10 +57,10 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
   const rafIdRef = useRef<number | null>(null);
   const [activeGuides, setActiveGuides] = useState<SnapGuide[]>([]);
 
-  const ctx = useMemo(
-    () => ({ displayScale, settings, assetMap }),
-    [displayScale, settings, assetMap],
-  );
+  // Use a ref so drag handlers always see the latest values without recreating
+  const ctxRef = useRef({ displayScale, settings, assetMap });
+  ctxRef.current = { displayScale, settings, assetMap };
+  const ctx = ctxRef.current;
 
   /**
    * Get the evaluated (base + keyframe) transform for a clip at the current time.
@@ -561,6 +561,14 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
     [updateTransformProperty],
   );
 
+  // Store handlers in refs so the mouse-event effect doesn't re-run during drag
+  const handleMoveRef = useRef(handleMove);
+  const handleResizeRef = useRef(handleResize);
+  const handleRotateRef = useRef(handleRotate);
+  handleMoveRef.current = handleMove;
+  handleResizeRef.current = handleResize;
+  handleRotateRef.current = handleRotate;
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       const drag = dragStateRef.current;
@@ -578,11 +586,11 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
         if (!clip) return;
 
         if (d.dragType === "move") {
-          handleMove(e, d, clip);
+          handleMoveRef.current(e, d, clip);
         } else if (d.dragType === "resize") {
-          handleResize(e, d, clip);
+          handleResizeRef.current(e, d, clip);
         } else if (d.dragType === "rotate") {
-          handleRotate(e, d, clip);
+          handleRotateRef.current(e, d, clip);
         }
       });
     };
@@ -603,7 +611,8 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [handleMove, handleResize, handleRotate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handlers accessed via refs
+  }, []);
 
   return {
     activeGuides,

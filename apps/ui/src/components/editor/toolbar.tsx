@@ -51,7 +51,7 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
         void navigate({
           to: "/editor/$projectId",
           params: { projectId },
-          search: {} as Record<string, unknown>,
+          search: {} as any, // eslint-disable-line @typescript-eslint/no-unsafe-assignment
           replace: true,
         });
       }

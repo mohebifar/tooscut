@@ -91,7 +91,7 @@ function ProjectChooser() {
     void navigate({
       to: "/editor/$projectId",
       params: { projectId: id },
-      search: { new: true } as Record<string, unknown>,
+      search: { new: true } as any, // eslint-disable-line @typescript-eslint/no-unsafe-assignment
     });
   };
 
@@ -109,7 +109,7 @@ function ProjectChooser() {
     void navigate({
       to: "/editor/$projectId",
       params: { projectId },
-      search: { new: false } as Record<string, unknown>,
+      search: { new: false } as any, // eslint-disable-line @typescript-eslint/no-unsafe-assignment
     });
   };
 
