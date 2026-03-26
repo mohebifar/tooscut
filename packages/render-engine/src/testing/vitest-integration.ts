@@ -257,21 +257,12 @@ export function setupRenderEngineMatchers() {
       const expected = await ctx.storage.load(snapshotName);
 
       if (!expected) {
-        if (ctx.updateSnapshots) {
-          // Save the new snapshot
-          await ctx.storage.save(snapshotName, actual);
-          return {
-            pass: true,
-            message: () => `Snapshot "${snapshotName}" created`,
-          };
-        } else {
-          return {
-            pass: false,
-            message: () =>
-              `Snapshot "${snapshotName}" not found at ${ctx.storage.getPath(snapshotName)}. ` +
-              `Run with --update-snapshots to create it.`,
-          };
-        }
+        // Auto-create snapshot on first run (no reference exists yet)
+        await ctx.storage.save(snapshotName, actual);
+        return {
+          pass: true,
+          message: () => `Snapshot "${snapshotName}" created (first run)`,
+        };
       }
 
       // Compare

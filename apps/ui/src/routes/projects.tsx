@@ -87,7 +87,11 @@ function ProjectChooser() {
     };
 
     await db.projects.add(project);
-    void navigate({ to: "/editor/$projectId", params: { projectId: id } });
+    void navigate({
+      to: "/editor/$projectId",
+      params: { projectId: id },
+      search: { new: true } as any,
+    });
   };
 
   const handleConfirmDelete = async () => {
@@ -101,7 +105,11 @@ function ProjectChooser() {
   };
 
   const handleOpenProject = (projectId: string) => {
-    void navigate({ to: "/editor/$projectId", params: { projectId } });
+    void navigate({
+      to: "/editor/$projectId",
+      params: { projectId },
+      search: { new: false } as any,
+    });
   };
 
   if (projects === undefined) {

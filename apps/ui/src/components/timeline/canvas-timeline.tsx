@@ -11,6 +11,7 @@ import {
   addAssetsToStores,
 } from "./use-asset-store";
 import { TRACK_HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT } from "./constants";
+import { secondsToFrames } from "@tooscut/render-engine";
 import { PlusIcon } from "lucide-react";
 
 /**
@@ -832,16 +833,19 @@ export function CanvasTimeline() {
           transform = { scale_x: scale, scale_y: scale };
         }
 
+        // Convert asset duration from seconds (asset store) to frames (clip store)
+        const durationFrames = secondsToFrames(asset.duration, d.settings.fps);
+
         // Image clips don't set assetDuration since they have no inherent duration limit
         const clipId = d.addClipToTrack({
           type: clipType,
           trackId: track.fullId,
           startTime,
-          duration: asset.duration,
+          duration: durationFrames,
           name: asset.name,
           assetId: asset.id,
           speed: 1,
-          assetDuration: clipType === "image" ? undefined : asset.duration,
+          assetDuration: clipType === "image" ? undefined : durationFrames,
           transform,
         });
 
@@ -852,11 +856,11 @@ export function CanvasTimeline() {
               type: "audio",
               trackId: audioTrack.fullId,
               startTime,
-              duration: asset.duration,
+              duration: durationFrames,
               name: `${asset.name} (Audio)`,
               assetId: asset.id,
               speed: 1,
-              assetDuration: asset.duration,
+              assetDuration: durationFrames,
             });
             d.linkClipPair(clipId, audioClipId);
           }
@@ -911,15 +915,17 @@ export function CanvasTimeline() {
             transform = { scale_x: scale, scale_y: scale };
           }
 
+          const fileDurationFrames = secondsToFrames(asset.duration, d.settings.fps);
+
           const newClipId = d.addClipToTrack({
             type: clipType,
             trackId: track.fullId,
             startTime: dropStartTime,
-            duration: asset.duration,
+            duration: fileDurationFrames,
             name: asset.name,
             assetId: asset.id,
             speed: 1,
-            assetDuration: clipType === "image" ? undefined : asset.duration,
+            assetDuration: clipType === "image" ? undefined : fileDurationFrames,
             transform,
           });
 
@@ -930,11 +936,11 @@ export function CanvasTimeline() {
                 type: "audio",
                 trackId: audioTrack.fullId,
                 startTime: dropStartTime,
-                duration: asset.duration,
+                duration: fileDurationFrames,
                 name: `${asset.name} (Audio)`,
                 assetId: asset.id,
                 speed: 1,
-                assetDuration: asset.duration,
+                assetDuration: fileDurationFrames,
               });
               d.linkClipPair(newClipId, audioClipId);
             }

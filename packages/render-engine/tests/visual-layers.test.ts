@@ -42,7 +42,6 @@ describe("visual layers", () => {
   });
 
   afterEach(async () => {
-    // Capture screenshot after each test for visual verification
     await tester.captureScreenshot();
   });
 

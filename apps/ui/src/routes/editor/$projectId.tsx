@@ -23,10 +23,14 @@ export const Route = createFileRoute("/editor/$projectId")({
   component: EditorPage,
   ssr: false,
   pendingComponent: EditorSkeleton,
+  validateSearch: (search: Record<string, unknown>) => ({
+    new: search.new === true || search.new === "true",
+  }),
 });
 
 function EditorPage() {
   const { projectId } = Route.useParams();
+  const { new: isNewProject } = Route.useSearch();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -129,7 +133,7 @@ function EditorPage() {
   return (
     <>
       <VideoEditorLayout
-        toolbar={<Toolbar />}
+        toolbar={<Toolbar showSettingsOnMount={isNewProject} />}
         assetPanel={<AssetPanel />}
         previewPanel={<PreviewPanel />}
         propertiesPanel={<PropertiesPanel />}

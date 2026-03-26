@@ -13,7 +13,7 @@
  * - ImageBitmaps transferred (not copied) to worker
  */
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { EvaluatorManager, VideoFrameLoaderManager } from "@tooscut/render-engine";
+import { EvaluatorManager, VideoFrameLoaderManager, secondsToFrames } from "@tooscut/render-engine";
 import { useVideoEditorStore, type VideoClip } from "../../state/video-editor-store";
 import { useAssetStore, type MediaAsset } from "../timeline/use-asset-store";
 import { useFontStore } from "../../state/font-store";
@@ -763,12 +763,15 @@ export function PreviewPanel() {
 
     let targetTrack: (typeof candidateTracks)[number] | null = candidateTracks[0] ?? null;
 
+    // Convert asset duration from seconds (asset store) to frames
+    const dropDurationFrames = secondsToFrames(asset.duration, store.settings.fps);
+
     // Check if the frontmost track is occupied at the playhead position (all in frames)
     if (targetTrack) {
       const occupied = clips.some(
         (c) =>
           c.trackId === targetTrack!.id &&
-          c.startTime < currentFrame + asset.duration &&
+          c.startTime < currentFrame + dropDurationFrames &&
           c.startTime + c.duration > currentFrame,
       );
       if (occupied) {
@@ -804,11 +807,11 @@ export function PreviewPanel() {
       type: clipType,
       trackId,
       startTime: currentFrame,
-      duration: asset.duration,
+      duration: dropDurationFrames,
       name: asset.name,
       assetId: asset.id,
       speed: 1,
-      assetDuration: clipType === "image" ? undefined : asset.duration,
+      assetDuration: clipType === "image" ? undefined : dropDurationFrames,
       transform,
     });
 
@@ -820,11 +823,11 @@ export function PreviewPanel() {
           type: "audio",
           trackId: pairedAudioTrackId,
           startTime: currentFrame,
-          duration: asset.duration,
+          duration: dropDurationFrames,
           name: `${asset.name} (Audio)`,
           assetId: asset.id,
           speed: 1,
-          assetDuration: asset.duration,
+          assetDuration: dropDurationFrames,
         });
         linkClipPair(clipId, audioClipId);
       }

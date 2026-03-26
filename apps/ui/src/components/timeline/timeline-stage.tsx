@@ -2,17 +2,7 @@
 
 import Konva from "konva";
 import { useCallback, useMemo, useRef, useState } from "react";
-import {
-  Group,
-  Image as KonvaImage,
-  Label,
-  Layer,
-  Line,
-  Rect,
-  Stage,
-  Tag,
-  Text,
-} from "react-konva";
+import { Group, Label, Layer, Line, Rect, Shape, Stage, Tag, Text } from "react-konva";
 import { useVideoEditorStore } from "../../state/video-editor-store";
 import {
   CLIP_PADDING,
@@ -25,6 +15,7 @@ import {
   TRACK_HEIGHT,
 } from "./constants";
 import { findSnapTargets, snapFrame } from "./snap-utils";
+import { framesToSeconds } from "@tooscut/render-engine";
 import {
   KonvaEyeIcon,
   KonvaEyeOffIcon,
@@ -253,6 +244,8 @@ export function TimelineStage({
     clipId: string;
     startTime: number;
     duration: number;
+    /** Updated inPoint for left-trim preview (frames) */
+    inPoint?: number;
     // Linked clip preview
     linkedClipId?: string;
     linkedTrackIndex?: number;
@@ -262,6 +255,7 @@ export function TimelineStage({
       clipId: string;
       startTime: number;
       duration: number;
+      inPoint?: number;
       trackIndex: number;
       linkedClipId?: string;
       linkedTrackIndex?: number;
@@ -1079,6 +1073,7 @@ export function TimelineStage({
                 clipId: mc.clipId,
                 startTime: clipNewStart,
                 duration: clipNewDuration,
+                inPoint: mc.originalInPoint + (clipNewStart - mc.originalStartTime) * mc.speed,
                 trackIndex: clipTrackIndex,
                 linkedClipId: mc.linkedClipId,
                 linkedTrackIndex: mc.linkedTrackIndex,
@@ -1091,6 +1086,7 @@ export function TimelineStage({
                 clipId,
                 startTime: anchorNewStart,
                 duration: anchorNewDuration,
+                inPoint: originalInPoint + (anchorNewStart - originalStartTime) * speed,
                 linkedClipId,
                 linkedTrackIndex,
                 isMulti: true,
@@ -1170,10 +1166,12 @@ export function TimelineStage({
             const newDuration = originalStartTime + originalDuration - newStartTime;
 
             if (newDuration >= 0.1) {
+              const newInPoint = originalInPoint + (newStartTime - originalStartTime) * speed;
               setTrimPreview({
                 clipId,
                 startTime: newStartTime,
                 duration: newDuration,
+                inPoint: newInPoint,
                 linkedClipId,
                 linkedTrackIndex,
               });
@@ -1874,23 +1872,48 @@ export function TimelineStage({
             >
               {thumbnails.map((thumb) => {
                 if (!thumb.image) return null;
-                // Calculate slot width and scale thumbnail to fit height
                 const slotWidth = clipWidth / thumbnails.length;
-                const thumbAspect = thumb.image.width / thumb.image.height;
-                const thumbHeight = clipHeight - 4;
-                const thumbWidth = thumbHeight * thumbAspect;
-                // Position relative to clip's current x (not stale thumb.x from hook)
                 const slotX = x + thumb.slotIndex * slotWidth;
-                const thumbX = slotX + (slotWidth - thumbWidth) / 2;
+                const slotHeight = clipHeight - 4;
+                const slotY = y + 2;
+
+                // Crop-to-fill: scale image to cover the slot, clip overflow
+                const imgAspect = thumb.image.width / thumb.image.height;
+                const slotAspect = slotWidth / slotHeight;
+
+                let drawW: number;
+                let drawH: number;
+                let drawX: number;
+                let drawY: number;
+
+                if (imgAspect > slotAspect) {
+                  drawH = slotHeight;
+                  drawW = slotHeight * imgAspect;
+                  drawX = slotX + (slotWidth - drawW) / 2;
+                  drawY = slotY;
+                } else {
+                  drawW = slotWidth;
+                  drawH = slotWidth / imgAspect;
+                  drawX = slotX;
+                  drawY = slotY + (slotHeight - drawH) / 2;
+                }
+
+                const img = thumb.image;
                 return (
-                  <KonvaImage
+                  <Shape
                     key={thumb.key}
-                    image={thumb.image}
-                    x={thumbX}
-                    y={y + 2}
-                    width={thumbWidth}
-                    height={thumbHeight}
-                    opacity={baseOpacity * 0.9}
+                    sceneFunc={(context) => {
+                      const ctx = context._context;
+                      ctx.save();
+                      ctx.beginPath();
+                      ctx.rect(slotX, slotY, slotWidth, slotHeight);
+                      ctx.clip();
+                      ctx.imageSmoothingEnabled = true;
+                      ctx.imageSmoothingQuality = "high";
+                      ctx.globalAlpha = baseOpacity;
+                      ctx.drawImage(img, drawX, drawY, drawW, drawH);
+                      ctx.restore();
+                    }}
                     listening={false}
                   />
                 );
@@ -1905,7 +1928,9 @@ export function TimelineStage({
             (() => {
               const wf = clipWaveformMap?.get(clip.assetId);
               if (!wf) return null;
-              const outPoint = clip.inPoint + clip.duration * clip.speed;
+              // Convert frame-based clip values to seconds to match waveform data
+              const inPointSec = framesToSeconds(clip.inPoint, fps);
+              const outPointSec = inPointSec + framesToSeconds(clip.duration, fps) * clip.speed;
               return (
                 <Group
                   clipFunc={(ctx) => {
@@ -1934,8 +1959,8 @@ export function TimelineStage({
                     width={clipWidth}
                     height={clipHeight}
                     waveformData={wf.data}
-                    inPoint={clip.inPoint}
-                    outPoint={outPoint}
+                    inPoint={inPointSec}
+                    outPoint={outPointSec}
                     duration={wf.duration}
                   />
                 </Group>
@@ -2205,8 +2230,13 @@ export function TimelineStage({
           if (trimPreview?.isMulti && trimPreview.multiClips) {
             const mc = trimPreview.multiClips.find((m) => m.clipId === clip.id);
             if (mc) {
+              const mcOverrides = {
+                startTime: mc.startTime,
+                duration: mc.duration,
+                ...(mc.inPoint !== undefined ? { inPoint: mc.inPoint } : {}),
+              };
               return renderClip(
-                { ...clip, startTime: mc.startTime, duration: mc.duration },
+                { ...clip, ...mcOverrides },
                 mc.trackIndex >= 0 ? mc.trackIndex : trackIndex,
                 false,
                 undefined,
@@ -2221,8 +2251,13 @@ export function TimelineStage({
             if (linkedMc && linkedMc.linkedTrackIndex !== undefined) {
               const linkedTrack = allTracks[linkedMc.linkedTrackIndex];
               const linkedIsLocked = linkedTrack?.locked ?? false;
+              const linkedOverrides = {
+                startTime: linkedMc.startTime,
+                duration: linkedMc.duration,
+                ...(linkedMc.inPoint !== undefined ? { inPoint: linkedMc.inPoint } : {}),
+              };
               return renderClip(
-                { ...clip, startTime: linkedMc.startTime, duration: linkedMc.duration },
+                { ...clip, ...linkedOverrides },
                 linkedMc.linkedTrackIndex,
                 false,
                 undefined,
@@ -2233,10 +2268,15 @@ export function TimelineStage({
               );
             }
           } else if (trimPreview) {
-            // Single-clip trim
+            // Single-clip trim — apply startTime, duration, and inPoint (for left-trim)
+            const trimOverrides = {
+              startTime: trimPreview.startTime,
+              duration: trimPreview.duration,
+              ...(trimPreview.inPoint !== undefined ? { inPoint: trimPreview.inPoint } : {}),
+            };
             if (trimPreview.clipId === clip.id) {
               return renderClip(
-                { ...clip, startTime: trimPreview.startTime, duration: trimPreview.duration },
+                { ...clip, ...trimOverrides },
                 trackIndex,
                 false,
                 undefined,
@@ -2253,7 +2293,7 @@ export function TimelineStage({
               const linkedTrack = allTracks[trimPreview.linkedTrackIndex];
               const linkedIsLocked = linkedTrack?.locked ?? false;
               return renderClip(
-                { ...clip, startTime: trimPreview.startTime, duration: trimPreview.duration },
+                { ...clip, ...trimOverrides },
                 trimPreview.linkedTrackIndex,
                 false,
                 undefined,
