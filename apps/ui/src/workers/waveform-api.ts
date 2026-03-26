@@ -3,6 +3,7 @@
  */
 
 import * as Comlink from "comlink";
+
 import type { WaveformWorkerApi, WaveformResult } from "./waveform.worker";
 
 let workerInstance: Comlink.Remote<WaveformWorkerApi> | null = null;

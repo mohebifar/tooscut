@@ -6,11 +6,13 @@
  * Updates the store on every mousemove via requestAnimationFrame throttle.
  */
 
-import { useRef, useEffect, useCallback, useState } from "react";
 import { KeyframeEvaluator, type Transform, type AnimatableProperty } from "@tooscut/render-engine";
-import { useVideoEditorStore, type EditorClip } from "../../../state/video-editor-store";
+import { useRef, useEffect, useCallback, useState } from "react";
+
 import type { MediaAsset } from "../../timeline/use-asset-store";
 import type { DragState, HandlePosition, SnapGuide, SnapTarget } from "./types";
+
+import { useVideoEditorStore, type EditorClip } from "../../../state/video-editor-store";
 import { getClipDisplayBounds, getEvaluatedLineBox, getEvaluatedShapeBox } from "./bounds";
 import { collectSnapTargets, findSnap } from "./snap";
 
@@ -29,6 +31,20 @@ const OPPOSITE_NORMALIZED: Record<string, [number, number]> = {
   w: [1, 0.5],
 };
 
+/**
+ * Map from AnimatableProperty names (camelCase) to Transform field names (snake_case).
+ * Keyframe property names use camelCase, but the Transform interface uses snake_case.
+ */
+const PROPERTY_TO_TRANSFORM_FIELD: Record<string, keyof Transform> = {
+  x: "x",
+  y: "y",
+  scaleX: "scale_x",
+  scaleY: "scale_y",
+  rotation: "rotation",
+  anchorX: "anchor_x",
+  anchorY: "anchor_y",
+};
+
 interface UseTransformDragOptions {
   displayScale: number;
   settings: { width: number; height: number };
@@ -41,7 +57,10 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
   const rafIdRef = useRef<number | null>(null);
   const [activeGuides, setActiveGuides] = useState<SnapGuide[]>([]);
 
-  const ctx = { displayScale, settings, assetMap };
+  // Use a ref so drag handlers always see the latest values without recreating
+  const ctxRef = useRef({ displayScale, settings, assetMap });
+  ctxRef.current = { displayScale, settings, assetMap };
+  const ctx = ctxRef.current;
 
   /**
    * Get the evaluated (base + keyframe) transform for a clip at the current time.
@@ -65,20 +84,6 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
     if (!clip.keyframes?.tracks) return false;
     return clip.keyframes.tracks.some((t) => t.property === property);
   }, []);
-
-  /**
-   * Map from AnimatableProperty names (camelCase) to Transform field names (snake_case).
-   * Keyframe property names use camelCase, but the Transform interface uses snake_case.
-   */
-  const PROPERTY_TO_TRANSFORM_FIELD: Record<string, keyof Transform> = {
-    x: "x",
-    y: "y",
-    scaleX: "scale_x",
-    scaleY: "scale_y",
-    rotation: "rotation",
-    anchorX: "anchor_x",
-    anchorY: "anchor_y",
-  };
 
   /**
    * Update a clip's transform property, using addKeyframe if keyframed.
@@ -261,6 +266,309 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
     [ctx, getEvaluatedTransform],
   );
 
+  const handleMove = useCallback(
+    (e: MouseEvent, drag: DragState, clip: EditorClip) => {
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+
+      if (drag.clipType === "line") {
+        const pctDx = (dx / displayScale / settings.width) * 100;
+        const pctDy = (dy / displayScale / settings.height) * 100;
+
+        const startBox = drag.startLineBox!;
+        updateLineBoxProperty(clip, "x1", startBox.x1 + pctDx);
+        updateLineBoxProperty(clip, "y1", startBox.y1 + pctDy);
+        updateLineBoxProperty(clip, "x2", startBox.x2 + pctDx);
+        updateLineBoxProperty(clip, "y2", startBox.y2 + pctDy);
+        return;
+      }
+
+      if (drag.clipType === "text" || drag.clipType === "shape") {
+        // Convert screen delta to percentage
+        const pctDx = (dx / displayScale / settings.width) * 100;
+        const pctDy = (dy / displayScale / settings.height) * 100;
+
+        const startBox = drag.startPercentageBox!;
+        let newX = startBox.x + pctDx;
+        let newY = startBox.y + pctDy;
+
+        // Snap for text/shape: convert current edges to project space, snap, convert back
+        const projLeft = (newX / 100) * settings.width;
+        const projTop = (newY / 100) * settings.height;
+        const projRight = projLeft + (startBox.width / 100) * settings.width;
+        const projBottom = projTop + (startBox.height / 100) * settings.height;
+        const projCenterX = (projLeft + projRight) / 2;
+        const projCenterY = (projTop + projBottom) / 2;
+
+        const snap = findSnap(
+          {
+            left: projLeft,
+            right: projRight,
+            top: projTop,
+            bottom: projBottom,
+            centerX: projCenterX,
+            centerY: projCenterY,
+          },
+          snapTargetsRef.current,
+          displayScale,
+        );
+
+        newX += (snap.x / settings.width) * 100;
+        newY += (snap.y / settings.height) * 100;
+        setActiveGuides(snap.guides);
+
+        if (clip.type === "text") {
+          const store = useVideoEditorStore.getState();
+          store.updateClipTextBox(clip.id, { x: newX, y: newY });
+        } else if (clip.type === "shape") {
+          updateShapeBoxProperty(clip, "x", newX);
+          updateShapeBoxProperty(clip, "y", newY);
+        }
+      } else {
+        // Media clip (video/image) — update transform x/y
+        const projectDx = dx / displayScale;
+        const projectDy = dy / displayScale;
+
+        let newX = (drag.startTransform.x ?? settings.width / 2) + projectDx;
+        let newY = (drag.startTransform.y ?? settings.height / 2) + projectDy;
+
+        // Get current edges for snapping
+        const asset = assetMap.get((clip as { assetId: string }).assetId);
+        if (asset?.width && asset?.height) {
+          const scaleX = drag.startTransform.scale_x ?? 1;
+          const scaleY = drag.startTransform.scale_y ?? 1;
+          const anchorX = drag.startTransform.anchor_x ?? 0.5;
+          const anchorY = drag.startTransform.anchor_y ?? 0.5;
+          const layerW = asset.width * scaleX;
+          const layerH = asset.height * scaleY;
+
+          const left = newX - anchorX * layerW;
+          const top = newY - anchorY * layerH;
+          const right = left + layerW;
+          const bottom = top + layerH;
+          const centerX = (left + right) / 2;
+          const centerY = (top + bottom) / 2;
+
+          const snap = findSnap(
+            { left, right, top, bottom, centerX, centerY },
+            snapTargetsRef.current,
+            displayScale,
+          );
+
+          newX += snap.x;
+          newY += snap.y;
+          setActiveGuides(snap.guides);
+        }
+
+        updateTransformProperty(clip, "x", newX);
+        updateTransformProperty(clip, "y", newY);
+      }
+    },
+    [
+      displayScale,
+      settings,
+      assetMap,
+      updateLineBoxProperty,
+      updateShapeBoxProperty,
+      updateTransformProperty,
+    ],
+  );
+
+  const handleResize = useCallback(
+    (e: MouseEvent, drag: DragState, clip: EditorClip) => {
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+      const handle = drag.handle!;
+
+      if (drag.clipType === "line" && (handle === "p1" || handle === "p2")) {
+        const pctDx = (dx / displayScale / settings.width) * 100;
+        const pctDy = (dy / displayScale / settings.height) * 100;
+        const startBox = drag.startLineBox!;
+
+        if (handle === "p1") {
+          updateLineBoxProperty(clip, "x1", startBox.x1 + pctDx);
+          updateLineBoxProperty(clip, "y1", startBox.y1 + pctDy);
+        } else {
+          updateLineBoxProperty(clip, "x2", startBox.x2 + pctDx);
+          updateLineBoxProperty(clip, "y2", startBox.y2 + pctDy);
+        }
+        return;
+      }
+
+      if (drag.clipType === "text" || drag.clipType === "shape") {
+        const startBox = drag.startPercentageBox!;
+        const pctDx = (dx / displayScale / settings.width) * 100;
+        const pctDy = (dy / displayScale / settings.height) * 100;
+
+        let newX = startBox.x;
+        let newY = startBox.y;
+        let newW = startBox.width;
+        let newH = startBox.height;
+
+        // Horizontal resize
+        if (handle.includes("w")) {
+          newX = startBox.x + pctDx;
+          newW = startBox.width - pctDx;
+        } else if (handle.includes("e")) {
+          newW = startBox.width + pctDx;
+        }
+
+        // Vertical resize
+        if (handle.includes("n")) {
+          newY = startBox.y + pctDy;
+          newH = startBox.height - pctDy;
+        } else if (handle.includes("s")) {
+          newH = startBox.height + pctDy;
+        }
+
+        // Enforce minimum size
+        if (newW < 1) {
+          newW = 1;
+          newX = startBox.x + startBox.width - 1;
+        }
+        if (newH < 1) {
+          newH = 1;
+          newY = startBox.y + startBox.height - 1;
+        }
+
+        if (clip.type === "text") {
+          const store = useVideoEditorStore.getState();
+          store.updateClipTextBox(clip.id, { x: newX, y: newY, width: newW, height: newH });
+        } else if (clip.type === "shape") {
+          updateShapeBoxProperty(clip, "x", newX);
+          updateShapeBoxProperty(clip, "y", newY);
+          updateShapeBoxProperty(clip, "width", newW);
+          updateShapeBoxProperty(clip, "height", newH);
+        }
+      } else {
+        // Media clip — update scale + position to keep opposite edge/corner fixed
+        const asset = assetMap.get((clip as { assetId: string }).assetId);
+        if (!asset?.width || !asset?.height) return;
+
+        const startScaleX = drag.startTransform.scale_x ?? 1;
+        const startScaleY = drag.startTransform.scale_y ?? 1;
+
+        // Convert screen dx/dy to scale delta
+        const scaleDx = dx / displayScale / asset.width;
+        const scaleDy = dy / displayScale / asset.height;
+
+        let newScaleX = startScaleX;
+        let newScaleY = startScaleY;
+
+        if (handle.includes("e")) {
+          newScaleX = startScaleX + scaleDx;
+        } else if (handle.includes("w")) {
+          newScaleX = startScaleX - scaleDx;
+        }
+
+        if (handle.includes("s")) {
+          newScaleY = startScaleY + scaleDy;
+        } else if (handle.includes("n")) {
+          newScaleY = startScaleY - scaleDy;
+        }
+
+        // Shift constrains aspect ratio
+        if (e.shiftKey) {
+          const avgScale = (newScaleX + newScaleY) / 2;
+          const ratio = startScaleX / startScaleY;
+          if (handle === "n" || handle === "s") {
+            newScaleX = newScaleY * ratio;
+          } else if (handle === "e" || handle === "w") {
+            newScaleY = newScaleX / ratio;
+          } else {
+            // Corner handle
+            newScaleX = avgScale * Math.sqrt(ratio);
+            newScaleY = avgScale / Math.sqrt(ratio);
+          }
+        }
+
+        // Enforce minimum scale
+        newScaleX = Math.max(0.01, newScaleX);
+        newScaleY = Math.max(0.01, newScaleY);
+
+        // Compute position adjustment to keep the opposite edge/corner fixed.
+        // The compositor transform chain: anchor-to-origin → scale → rotate → translate.
+        // To keep the opposite point stationary after scale change, we solve for the
+        // new position that places it at the same canvas location.
+        const anchorX = drag.startTransform.anchor_x ?? 0.5;
+        const anchorY = drag.startTransform.anchor_y ?? 0.5;
+        const opposite = OPPOSITE_NORMALIZED[handle];
+        // Distance from anchor to fixed point in raw asset pixels
+        const fpRelX = (opposite[0] - anchorX) * asset.width;
+        const fpRelY = (opposite[1] - anchorY) * asset.height;
+
+        const rotRad = (drag.startRotation * Math.PI) / 180;
+        const cosR = Math.cos(rotRad);
+        const sinR = Math.sin(rotRad);
+
+        const dsx = newScaleX - startScaleX;
+        const dsy = newScaleY - startScaleY;
+
+        const startPosX = drag.startTransform.x ?? settings.width / 2;
+        const startPosY = drag.startTransform.y ?? settings.height / 2;
+
+        // Position offset derived from: fixed_point_canvas = pos + R * S * (fp - anchor)
+        // Setting equal before/after: new_pos = old_pos + R * (old_S - new_S) * (fp - anchor)
+        const newPosX = startPosX - cosR * dsx * fpRelX - sinR * dsy * fpRelY;
+        const newPosY = startPosY + sinR * dsx * fpRelX - cosR * dsy * fpRelY;
+
+        updateTransformProperty(clip, "scaleX", newScaleX);
+        updateTransformProperty(clip, "scaleY", newScaleY);
+        updateTransformProperty(clip, "x", newPosX);
+        updateTransformProperty(clip, "y", newPosY);
+      }
+    },
+    [
+      displayScale,
+      settings,
+      assetMap,
+      updateLineBoxProperty,
+      updateShapeBoxProperty,
+      updateTransformProperty,
+    ],
+  );
+
+  const handleRotate = useCallback(
+    (e: MouseEvent, drag: DragState, _clip: EditorClip) => {
+      const bounds = drag.startBox;
+      const centerX = bounds.x + bounds.width / 2;
+      const centerY = bounds.y + bounds.height / 2;
+
+      const svg = document.querySelector("[data-transform-overlay]");
+      const svgRect = svg?.getBoundingClientRect();
+      if (!svgRect) return;
+
+      const mouseDisplayX = e.clientX - svgRect.left;
+      const mouseDisplayY = e.clientY - svgRect.top;
+      const currentAngle = Math.atan2(mouseDisplayY - centerY, mouseDisplayX - centerX);
+
+      const deltaAngle = currentAngle - drag.startAngle;
+      // Convert radians to degrees. Negate because atan2 is CCW-positive
+      // but the compositor convention is clockwise-positive.
+      let newRotation = drag.startRotation - (deltaAngle * 180) / Math.PI;
+
+      // Shift snaps to 15-degree increments
+      if (e.shiftKey) {
+        newRotation = Math.round(newRotation / 15) * 15;
+      }
+
+      const store = useVideoEditorStore.getState();
+      const clip = store.clips.find((c) => c.id === drag.clipId);
+      if (!clip) return;
+
+      updateTransformProperty(clip, "rotation", newRotation);
+    },
+    [updateTransformProperty],
+  );
+
+  // Store handlers in refs so the mouse-event effect doesn't re-run during drag
+  const handleMoveRef = useRef(handleMove);
+  const handleResizeRef = useRef(handleResize);
+  const handleRotateRef = useRef(handleRotate);
+  handleMoveRef.current = handleMove;
+  handleResizeRef.current = handleResize;
+  handleRotateRef.current = handleRotate;
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       const drag = dragStateRef.current;
@@ -278,11 +586,11 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
         if (!clip) return;
 
         if (d.dragType === "move") {
-          handleMove(e, d, clip);
+          handleMoveRef.current(e, d, clip);
         } else if (d.dragType === "resize") {
-          handleResize(e, d, clip);
+          handleResizeRef.current(e, d, clip);
         } else if (d.dragType === "rotate") {
-          handleRotate(e, d, clip);
+          handleRotateRef.current(e, d, clip);
         }
       });
     };
@@ -303,279 +611,8 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [displayScale, settings, assetMap]);
-
-  const handleMove = (e: MouseEvent, drag: DragState, clip: EditorClip) => {
-    const dx = e.clientX - drag.startX;
-    const dy = e.clientY - drag.startY;
-
-    if (drag.clipType === "line") {
-      const pctDx = (dx / displayScale / settings.width) * 100;
-      const pctDy = (dy / displayScale / settings.height) * 100;
-
-      const startBox = drag.startLineBox!;
-      updateLineBoxProperty(clip, "x1", startBox.x1 + pctDx);
-      updateLineBoxProperty(clip, "y1", startBox.y1 + pctDy);
-      updateLineBoxProperty(clip, "x2", startBox.x2 + pctDx);
-      updateLineBoxProperty(clip, "y2", startBox.y2 + pctDy);
-      return;
-    }
-
-    if (drag.clipType === "text" || drag.clipType === "shape") {
-      // Convert screen delta to percentage
-      const pctDx = (dx / displayScale / settings.width) * 100;
-      const pctDy = (dy / displayScale / settings.height) * 100;
-
-      const startBox = drag.startPercentageBox!;
-      let newX = startBox.x + pctDx;
-      let newY = startBox.y + pctDy;
-
-      // Snap for text/shape: convert current edges to project space, snap, convert back
-      const projLeft = (newX / 100) * settings.width;
-      const projTop = (newY / 100) * settings.height;
-      const projRight = projLeft + (startBox.width / 100) * settings.width;
-      const projBottom = projTop + (startBox.height / 100) * settings.height;
-      const projCenterX = (projLeft + projRight) / 2;
-      const projCenterY = (projTop + projBottom) / 2;
-
-      const snap = findSnap(
-        {
-          left: projLeft,
-          right: projRight,
-          top: projTop,
-          bottom: projBottom,
-          centerX: projCenterX,
-          centerY: projCenterY,
-        },
-        snapTargetsRef.current,
-        displayScale,
-      );
-
-      newX += (snap.x / settings.width) * 100;
-      newY += (snap.y / settings.height) * 100;
-      setActiveGuides(snap.guides);
-
-      if (clip.type === "text") {
-        const store = useVideoEditorStore.getState();
-        store.updateClipTextBox(clip.id, { x: newX, y: newY });
-      } else if (clip.type === "shape") {
-        updateShapeBoxProperty(clip, "x", newX);
-        updateShapeBoxProperty(clip, "y", newY);
-      }
-    } else {
-      // Media clip (video/image) — update transform x/y
-      const projectDx = dx / displayScale;
-      const projectDy = dy / displayScale;
-
-      let newX = (drag.startTransform.x ?? settings.width / 2) + projectDx;
-      let newY = (drag.startTransform.y ?? settings.height / 2) + projectDy;
-
-      // Get current edges for snapping
-      const asset = assetMap.get((clip as { assetId: string }).assetId);
-      if (asset?.width && asset?.height) {
-        const scaleX = drag.startTransform.scale_x ?? 1;
-        const scaleY = drag.startTransform.scale_y ?? 1;
-        const anchorX = drag.startTransform.anchor_x ?? 0.5;
-        const anchorY = drag.startTransform.anchor_y ?? 0.5;
-        const layerW = asset.width * scaleX;
-        const layerH = asset.height * scaleY;
-
-        const left = newX - anchorX * layerW;
-        const top = newY - anchorY * layerH;
-        const right = left + layerW;
-        const bottom = top + layerH;
-        const centerX = (left + right) / 2;
-        const centerY = (top + bottom) / 2;
-
-        const snap = findSnap(
-          { left, right, top, bottom, centerX, centerY },
-          snapTargetsRef.current,
-          displayScale,
-        );
-
-        newX += snap.x;
-        newY += snap.y;
-        setActiveGuides(snap.guides);
-      }
-
-      updateTransformProperty(clip, "x", newX);
-      updateTransformProperty(clip, "y", newY);
-    }
-  };
-
-  const handleResize = (e: MouseEvent, drag: DragState, clip: EditorClip) => {
-    const dx = e.clientX - drag.startX;
-    const dy = e.clientY - drag.startY;
-    const handle = drag.handle!;
-
-    if (drag.clipType === "line" && (handle === "p1" || handle === "p2")) {
-      const pctDx = (dx / displayScale / settings.width) * 100;
-      const pctDy = (dy / displayScale / settings.height) * 100;
-      const startBox = drag.startLineBox!;
-
-      if (handle === "p1") {
-        updateLineBoxProperty(clip, "x1", startBox.x1 + pctDx);
-        updateLineBoxProperty(clip, "y1", startBox.y1 + pctDy);
-      } else {
-        updateLineBoxProperty(clip, "x2", startBox.x2 + pctDx);
-        updateLineBoxProperty(clip, "y2", startBox.y2 + pctDy);
-      }
-      return;
-    }
-
-    if (drag.clipType === "text" || drag.clipType === "shape") {
-      const startBox = drag.startPercentageBox!;
-      const pctDx = (dx / displayScale / settings.width) * 100;
-      const pctDy = (dy / displayScale / settings.height) * 100;
-
-      let newX = startBox.x;
-      let newY = startBox.y;
-      let newW = startBox.width;
-      let newH = startBox.height;
-
-      // Horizontal resize
-      if (handle.includes("w")) {
-        newX = startBox.x + pctDx;
-        newW = startBox.width - pctDx;
-      } else if (handle.includes("e")) {
-        newW = startBox.width + pctDx;
-      }
-
-      // Vertical resize
-      if (handle.includes("n")) {
-        newY = startBox.y + pctDy;
-        newH = startBox.height - pctDy;
-      } else if (handle.includes("s")) {
-        newH = startBox.height + pctDy;
-      }
-
-      // Enforce minimum size
-      if (newW < 1) {
-        newW = 1;
-        newX = startBox.x + startBox.width - 1;
-      }
-      if (newH < 1) {
-        newH = 1;
-        newY = startBox.y + startBox.height - 1;
-      }
-
-      if (clip.type === "text") {
-        const store = useVideoEditorStore.getState();
-        store.updateClipTextBox(clip.id, { x: newX, y: newY, width: newW, height: newH });
-      } else if (clip.type === "shape") {
-        updateShapeBoxProperty(clip, "x", newX);
-        updateShapeBoxProperty(clip, "y", newY);
-        updateShapeBoxProperty(clip, "width", newW);
-        updateShapeBoxProperty(clip, "height", newH);
-      }
-    } else {
-      // Media clip — update scale + position to keep opposite edge/corner fixed
-      const asset = assetMap.get((clip as { assetId: string }).assetId);
-      if (!asset?.width || !asset?.height) return;
-
-      const startScaleX = drag.startTransform.scale_x ?? 1;
-      const startScaleY = drag.startTransform.scale_y ?? 1;
-
-      // Convert screen dx/dy to scale delta
-      const scaleDx = dx / displayScale / asset.width;
-      const scaleDy = dy / displayScale / asset.height;
-
-      let newScaleX = startScaleX;
-      let newScaleY = startScaleY;
-
-      if (handle.includes("e")) {
-        newScaleX = startScaleX + scaleDx;
-      } else if (handle.includes("w")) {
-        newScaleX = startScaleX - scaleDx;
-      }
-
-      if (handle.includes("s")) {
-        newScaleY = startScaleY + scaleDy;
-      } else if (handle.includes("n")) {
-        newScaleY = startScaleY - scaleDy;
-      }
-
-      // Shift constrains aspect ratio
-      if (e.shiftKey) {
-        const avgScale = (newScaleX + newScaleY) / 2;
-        const ratio = startScaleX / startScaleY;
-        if (handle === "n" || handle === "s") {
-          newScaleX = newScaleY * ratio;
-        } else if (handle === "e" || handle === "w") {
-          newScaleY = newScaleX / ratio;
-        } else {
-          // Corner handle
-          newScaleX = avgScale * Math.sqrt(ratio);
-          newScaleY = avgScale / Math.sqrt(ratio);
-        }
-      }
-
-      // Enforce minimum scale
-      newScaleX = Math.max(0.01, newScaleX);
-      newScaleY = Math.max(0.01, newScaleY);
-
-      // Compute position adjustment to keep the opposite edge/corner fixed.
-      // The compositor transform chain: anchor-to-origin → scale → rotate → translate.
-      // To keep the opposite point stationary after scale change, we solve for the
-      // new position that places it at the same canvas location.
-      const anchorX = drag.startTransform.anchor_x ?? 0.5;
-      const anchorY = drag.startTransform.anchor_y ?? 0.5;
-      const opposite = OPPOSITE_NORMALIZED[handle];
-      // Distance from anchor to fixed point in raw asset pixels
-      const fpRelX = (opposite[0] - anchorX) * asset.width;
-      const fpRelY = (opposite[1] - anchorY) * asset.height;
-
-      const rotRad = (drag.startRotation * Math.PI) / 180;
-      const cosR = Math.cos(rotRad);
-      const sinR = Math.sin(rotRad);
-
-      const dsx = newScaleX - startScaleX;
-      const dsy = newScaleY - startScaleY;
-
-      const startPosX = drag.startTransform.x ?? settings.width / 2;
-      const startPosY = drag.startTransform.y ?? settings.height / 2;
-
-      // Position offset derived from: fixed_point_canvas = pos + R * S * (fp - anchor)
-      // Setting equal before/after: new_pos = old_pos + R * (old_S - new_S) * (fp - anchor)
-      const newPosX = startPosX - cosR * dsx * fpRelX - sinR * dsy * fpRelY;
-      const newPosY = startPosY + sinR * dsx * fpRelX - cosR * dsy * fpRelY;
-
-      updateTransformProperty(clip, "scaleX", newScaleX);
-      updateTransformProperty(clip, "scaleY", newScaleY);
-      updateTransformProperty(clip, "x", newPosX);
-      updateTransformProperty(clip, "y", newPosY);
-    }
-  };
-
-  const handleRotate = (e: MouseEvent, drag: DragState, _clip: EditorClip) => {
-    const bounds = drag.startBox;
-    const centerX = bounds.x + bounds.width / 2;
-    const centerY = bounds.y + bounds.height / 2;
-
-    const svg = document.querySelector("[data-transform-overlay]");
-    const svgRect = svg?.getBoundingClientRect();
-    if (!svgRect) return;
-
-    const mouseDisplayX = e.clientX - svgRect.left;
-    const mouseDisplayY = e.clientY - svgRect.top;
-    const currentAngle = Math.atan2(mouseDisplayY - centerY, mouseDisplayX - centerX);
-
-    const deltaAngle = currentAngle - drag.startAngle;
-    // Convert radians to degrees. Negate because atan2 is CCW-positive
-    // but the compositor convention is clockwise-positive.
-    let newRotation = drag.startRotation - (deltaAngle * 180) / Math.PI;
-
-    // Shift snaps to 15-degree increments
-    if (e.shiftKey) {
-      newRotation = Math.round(newRotation / 15) * 15;
-    }
-
-    const store = useVideoEditorStore.getState();
-    const clip = store.clips.find((c) => c.id === drag.clipId);
-    if (!clip) return;
-
-    updateTransformProperty(clip, "rotation", newRotation);
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handlers accessed via refs
+  }, []);
 
   return {
     activeGuides,

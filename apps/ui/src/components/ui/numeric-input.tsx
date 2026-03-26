@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useCallback, useRef, useState, useEffect } from "react";
+
 import { cn } from "../../lib/utils";
 
 export interface NumericInputProps {
@@ -214,7 +215,7 @@ export const NumericInput = React.forwardRef<HTMLDivElement, NumericInputProps>(
             className="w-full bg-transparent text-center outline-none"
           />
         ) : (
-          <span className="select-none tabular-nums">
+          <span className="tabular-nums select-none">
             {formatValue(value)}
             {suffix && <span className="ml-0.5 text-muted-foreground">{suffix}</span>}
           </span>

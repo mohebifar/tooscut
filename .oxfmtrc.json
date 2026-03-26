@@ -1,12 +1,20 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": [
-    ".output",
-    ".turbo",
-    ".vinxi",
-    ".nitro",
-    "dist",
-    "**/public/wasm",
-    "*.gen.ts"
-  ]
+  "ignorePatterns": [".output", ".turbo", ".vinxi", ".nitro", "dist", "**/public/wasm", "*.gen.ts"],
+  "sortTailwindcss": {
+    "stylesheet": "./apps/ui/src/styles.css",
+    "functions": ["clsx", "cn"],
+    "preserveWhitespace": true
+  },
+  "sortImports": {
+    "groups": [
+      "type-import",
+      ["value-builtin", "value-external"],
+      "type-internal",
+      "value-internal",
+      ["type-parent", "type-sibling", "type-index"],
+      ["value-parent", "value-sibling", "value-index"],
+      "unknown"
+    ]
+  }
 }

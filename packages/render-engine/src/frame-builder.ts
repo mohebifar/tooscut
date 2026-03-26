@@ -20,8 +20,9 @@ import type {
   ShapeLayerData,
   LineLayerData,
 } from "./types.js";
-import { DEFAULT_TRANSFORM, DEFAULT_EFFECTS } from "./types.js";
+
 import { KeyframeEvaluator } from "./keyframe-evaluator.js";
+import { DEFAULT_TRANSFORM, DEFAULT_EFFECTS } from "./types.js";
 
 /**
  * Minimal clip interface for visibility checks.

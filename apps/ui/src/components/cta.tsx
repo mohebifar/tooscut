@@ -1,17 +1,18 @@
-import { FullWidthDivider } from "@/components/ui/full-width-divider";
-import { Button } from "@/components/ui/button";
-import { ArrowRightIcon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import { ArrowRightIcon } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { FullWidthDivider } from "@/components/ui/full-width-divider";
 
 export function CallToAction() {
   return (
     <div className="relative mx-auto flex w-full max-w-3xl flex-col justify-between border-x">
       <FullWidthDivider className="-top-px" />
       <div className="border-b px-2 py-8">
-        <h2 className="text-center font-semibold text-lg md:text-2xl">
+        <h2 className="text-center text-lg font-semibold md:text-2xl">
           Ready to cut your next project?
         </h2>
-        <p className="text-balance text-center text-muted-foreground text-sm md:text-base">
+        <p className="text-center text-sm text-balance text-muted-foreground md:text-base">
           No downloads, no sign-ups. Just open your browser and start editing.
         </p>
       </div>

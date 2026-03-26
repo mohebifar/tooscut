@@ -110,3 +110,19 @@ code {
     @apply bg-background text-foreground;
   }
 }
+
+.preview-scroll::-webkit-scrollbar {
+  @apply h-2 w-2;
+}
+.preview-scroll::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+.preview-scroll::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-muted-foreground/50;
+}
+.preview-scroll::-webkit-scrollbar-thumb:hover {
+  @apply bg-muted-foreground/80;
+}
+.preview-scroll::-webkit-scrollbar-corner {
+  @apply bg-transparent;
+}

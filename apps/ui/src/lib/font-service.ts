@@ -35,7 +35,7 @@ export async function fetchFontCatalog(): Promise<FontsourceFontEntry[]> {
     if (!res.ok) {
       throw new Error(`Failed to fetch font catalog: ${res.status}`);
     }
-    const data: FontsourceFontEntry[] = await res.json();
+    const data = (await res.json()) as FontsourceFontEntry[];
     catalogCache = data;
     return data;
   })();

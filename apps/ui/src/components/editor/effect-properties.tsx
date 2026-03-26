@@ -1,6 +1,7 @@
+import type { Effects } from "@tooscut/render-engine";
+
 import { KeyframeInput } from "./keyframe-input";
 import { PropertySection, PropertyRow } from "./property-shared";
-import type { Effects } from "@tooscut/render-engine";
 
 interface EffectPropertiesProps {
   clipId: string;

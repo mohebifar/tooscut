@@ -3,6 +3,7 @@
  */
 
 import type { KeyframeTracks, AnimatableProperty, Keyframe } from "@tooscut/render-engine";
+
 import { KeyframeEvaluator } from "@tooscut/render-engine";
 
 /** Threshold in seconds for detecting if playhead is at a keyframe */

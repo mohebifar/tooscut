@@ -1,5 +1,6 @@
-import { Shape } from "react-konva";
 import type Konva from "konva";
+
+import { Shape } from "react-konva";
 
 interface WaveformDisplayProps {
   x: number;

@@ -9,8 +9,9 @@
  * - LRU caching: reuses already-loaded thumbnails
  */
 
-import { useEffect, useRef, useState, useCallback } from "react";
 import { VideoFrameLoaderManager, framesToSeconds } from "@tooscut/render-engine";
+import { useEffect, useRef, useState, useCallback } from "react";
+
 import { useVideoEditorStore } from "../../state/video-editor-store";
 import { getCachedBitmap, setCachedBitmap, clearThumbnailCache } from "./thumbnail-cache";
 import { useAssetStore } from "./use-asset-store";
@@ -147,7 +148,7 @@ export function useClipThumbnails({
 
       return slots;
     },
-    [zoom],
+    [zoom, fps],
   );
 
   // Prioritize slots: visible first, then buffer before, then buffer after.

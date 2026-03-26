@@ -1,5 +1,7 @@
-import Dexie, { type Table } from "dexie";
 import type { EditableTrack, CrossTransitionRef } from "@tooscut/render-engine";
+
+import Dexie, { type Table } from "dexie";
+
 import type { EditorClip, MediaAsset, ProjectSettings } from "./video-editor-store";
 
 export interface LocalProject {
@@ -47,7 +49,7 @@ class EditorDatabase extends Dexie {
         return tx
           .table("projects")
           .toCollection()
-          .modify((project: any) => {
+          .modify((project: LocalProject) => {
             if (typeof project.settings?.fps === "number") {
               project.settings.fps = {
                 numerator: project.settings.fps,
@@ -67,7 +69,7 @@ class EditorDatabase extends Dexie {
         return tx
           .table("projects")
           .toCollection()
-          .modify((project: any) => {
+          .modify((project: LocalProject) => {
             const fps = project.settings?.fps;
             if (!fps?.numerator) return;
 

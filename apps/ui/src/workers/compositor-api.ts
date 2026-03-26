@@ -10,8 +10,10 @@
  * - No data copied back (rendering visible directly on canvas)
  */
 
-import * as Comlink from "comlink";
 import type { RenderFrame } from "@tooscut/render-engine";
+
+import * as Comlink from "comlink";
+
 import type { CompositorWorkerApi } from "./compositor.worker";
 
 export interface CompositorApiConfig {
@@ -30,9 +32,9 @@ export interface CompositorApi {
   /** Check if a font is loaded */
   isFontLoaded(fontId: string): Promise<boolean>;
   /** Upload an ImageBitmap texture */
-  uploadBitmap(bitmap: ImageBitmap, textureId: string): void;
+  uploadBitmap(bitmap: ImageBitmap, textureId: string): Promise<void>;
   /** Render a frame */
-  renderFrame(frame: RenderFrame): void;
+  renderFrame(frame: RenderFrame): Promise<void>;
   /** Render a frame and return pixel data (RGBA) */
   renderToPixels(frame: RenderFrame): Promise<Uint8Array>;
   /** Render a frame and return a downscaled JPEG thumbnail as ArrayBuffer */
@@ -42,13 +44,13 @@ export interface CompositorApi {
     thumbHeight: number,
   ): Promise<ArrayBuffer>;
   /** Clear a specific texture */
-  clearTexture(textureId: string): void;
+  clearTexture(textureId: string): Promise<void>;
   /** Clear all textures */
-  clearAllTextures(): void;
+  clearAllTextures(): Promise<void>;
   /** Flush pending GPU operations */
-  flush(): void;
+  flush(): Promise<void>;
   /** Dispose the compositor and worker */
-  dispose(): void;
+  dispose(): Promise<void>;
   /** Whether the compositor is ready */
   isReady: boolean;
 }
@@ -119,18 +121,18 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
       return api.isFontLoaded(fontId);
     },
 
-    uploadBitmap(bitmap: ImageBitmap, textureId: string) {
+    async uploadBitmap(bitmap: ImageBitmap, textureId: string) {
       if (!api || !isReady) {
         bitmap.close();
         return;
       }
       // Transfer bitmap to worker (zero-copy)
-      void api.uploadBitmap(Comlink.transfer(bitmap, [bitmap]), textureId);
+      await api.uploadBitmap(Comlink.transfer(bitmap, [bitmap]), textureId);
     },
 
-    renderFrame(frame: RenderFrame) {
+    async renderFrame(frame: RenderFrame) {
       if (!api || !isReady) return;
-      return api.renderFrame(frame);
+      await api.renderFrame(frame);
     },
 
     async renderToPixels(frame: RenderFrame): Promise<Uint8Array> {
@@ -147,24 +149,24 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
       return api.captureThumbnail(frame, thumbWidth, thumbHeight);
     },
 
-    clearTexture(textureId: string) {
+    async clearTexture(textureId: string) {
       if (!api || !isReady) return;
-      return api.clearTexture(textureId);
+      await api.clearTexture(textureId);
     },
 
-    clearAllTextures() {
+    async clearAllTextures() {
       if (!api || !isReady) return;
-      return api.clearAllTextures();
+      await api.clearAllTextures();
     },
 
-    flush() {
+    async flush() {
       if (!api || !isReady) return;
-      return api.flush();
+      await api.flush();
     },
 
-    dispose() {
+    async dispose() {
       if (api) {
-        void api.dispose();
+        await api.dispose();
         api = null;
       }
       if (worker) {

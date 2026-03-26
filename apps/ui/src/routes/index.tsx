@@ -1,25 +1,26 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Header } from "../components/header";
-import { HeroSection } from "../components/hero";
+
 import { FeatureSection } from "../components/feature-section";
 import { Footer } from "../components/footer";
+import { Header } from "../components/header";
+import { HeroSection } from "../components/hero";
 
 export const Route = createFileRoute("/")({ component: LandingPage });
 
 function LandingPage() {
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="flex min-h-screen flex-col bg-background">
       <Header />
 
       <main className="flex-1">
         <HeroSection />
 
-        <section className="py-20 px-4">
-          <div className="mx-auto max-w-5xl mb-12 text-center">
-            <h2 className="font-semibold text-2xl md:text-3xl text-foreground">
+        <section className="px-4 py-20">
+          <div className="mx-auto mb-12 max-w-5xl text-center">
+            <h2 className="text-2xl font-semibold text-foreground md:text-3xl">
               Everything you need to edit
             </h2>
-            <p className="mt-2 text-muted-foreground text-sm md:text-base max-w-lg mx-auto">
+            <p className="mx-auto mt-2 max-w-lg text-sm text-muted-foreground md:text-base">
               Built on WebGPU and Rust/WASM for performance that rivals native apps.
             </p>
           </div>

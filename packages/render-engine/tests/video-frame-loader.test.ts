@@ -10,8 +10,9 @@
  */
 
 import { beforeAll, describe, expect, it } from "vitest";
-import { VideoFrameLoader, VideoFrameLoaderManager } from "../src/video-frame-loader.js";
+
 import { Compositor } from "../src/compositor.js";
+import { VideoFrameLoader, VideoFrameLoaderManager } from "../src/video-frame-loader.js";
 
 describe("VideoFrameLoader", () => {
   let testVideoBlob: Blob;
@@ -40,7 +41,9 @@ describe("VideoFrameLoader", () => {
     it("throws on invalid blob", async () => {
       const invalidBlob = new Blob(["not a video"], { type: "text/plain" });
 
-      await expect(VideoFrameLoader.fromBlob(invalidBlob)).rejects.toThrow();
+      await expect(VideoFrameLoader.fromBlob(invalidBlob)).rejects.toThrow(
+        /not supported|no video|invalid|error|failed/i,
+      );
     });
   });
 
@@ -460,6 +463,8 @@ describe("VideoFrameLoader", () => {
 
       console.log(`Random seek: avg=${avgTime.toFixed(2)}ms, max=${maxTime.toFixed(2)}ms`);
 
+      expect(avgTime).toBeGreaterThan(0);
+
       loader.dispose();
     });
   });
@@ -583,14 +588,12 @@ describe("VideoFrameLoader + Compositor integration", () => {
       height: 240,
     });
 
-    // Verify render happened (canvas should have non-transparent pixels)
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      const imageData = ctx.getImageData(160, 120, 1, 1);
-      // Center pixel should be red (from test video)
-      expect(imageData.data[0]).toBeGreaterThan(200); // R
-      expect(imageData.data[3]).toBe(255); // A
-    }
+    // Canvas was used by WebGPU, so getContext("2d") returns null.
+    // Verify the render completed without errors (compositor.renderFrame didn't throw).
+    // Pixel-level verification requires reading back from the GPU, which is covered
+    // by the visual snapshot tests in visual-layers.test.ts.
+    expect(canvas.width).toBe(320);
+    expect(canvas.height).toBe(240);
 
     // Cleanup
     loader.dispose();

@@ -27,6 +27,7 @@ import {
   type FrameRate,
   EvaluatorManager,
 } from "@tooscut/render-engine";
+
 import type {
   EditorClip,
   VideoClip,
@@ -224,7 +225,7 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
 
     const type = c.type;
     if (type === "video" || type === "image") {
-      const mc = c as VideoClip | ImageClip;
+      const mc = c;
       visibleMediaClips.push(mc);
       // When a clip is in a cross transition, use its clip ID as texture key
       // so that two clips from the same asset get separate textures.
@@ -248,7 +249,7 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
         crossTransition: activeCrossTransition,
       });
     } else if (type === "text") {
-      const tc = c as TextClip;
+      const tc = c;
       visibleTextClips.push(tc);
       textLayers.push({
         id: tc.id,
@@ -261,7 +262,7 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
         transition_out: computeTransitionOut(tc, timelineTime),
       });
     } else if (type === "shape") {
-      const sc = c as ShapeClip;
+      const sc = c;
       visibleShapeClips.push(sc);
 
       let box = sc.shapeBox;
@@ -311,7 +312,7 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
         transition_out: computeTransitionOut(sc, timelineTime),
       });
     } else if (type === "line") {
-      const lc = c as LineClip;
+      const lc = c;
       visibleLineClips.push(lc);
 
       let box: LineBox = lc.lineBox;

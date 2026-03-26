@@ -1,15 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
+import { addTrackPair, type EditableTrack } from "@tooscut/render-engine";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Plus, Trash2, Film, Clock, Monitor, TriangleAlert, Smartphone } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+
+import { LogoIcon } from "../components/logo";
 import { Button } from "../components/ui/button";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "../components/ui/empty";
 import {
   Dialog,
   DialogContent,
@@ -18,11 +15,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../components/ui/dialog";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "../components/ui/empty";
 import { db, type LocalProject } from "../state/db";
-import { addTrackPair, type EditableTrack } from "@tooscut/render-engine";
-import { useState, useRef, useEffect } from "react";
-import { LogoIcon } from "../components/logo";
-import { Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/projects")({ component: ProjectChooser });
 
@@ -90,7 +91,7 @@ function ProjectChooser() {
     void navigate({
       to: "/editor/$projectId",
       params: { projectId: id },
-      search: { new: true } as any,
+      search: { new: true } as any, // eslint-disable-line @typescript-eslint/no-unsafe-assignment
     });
   };
 
@@ -108,13 +109,13 @@ function ProjectChooser() {
     void navigate({
       to: "/editor/$projectId",
       params: { projectId },
-      search: { new: false } as any,
+      search: { new: false } as any, // eslint-disable-line @typescript-eslint/no-unsafe-assignment
     });
   };
 
   if (projects === undefined) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="size-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
       </div>
     );
@@ -122,14 +123,14 @@ function ProjectChooser() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+      <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur-sm">
+        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
           <Link to="/" className="flex items-center gap-2.5">
             <LogoIcon className="size-5" />
-            <span className="font-semibold text-foreground tracking-tight">Tooscut</span>
+            <span className="font-semibold tracking-tight text-foreground">Tooscut</span>
           </Link>
           {projects.length > 0 && (
-            <Button onClick={handleCreateProject} size="sm">
+            <Button onClick={() => void handleCreateProject()} size="sm">
               <Plus className="size-3.5" />
               New Project
             </Button>
@@ -137,10 +138,10 @@ function ProjectChooser() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-10">
+      <main className="mx-auto max-w-5xl px-6 py-10">
         {showMobileWarning && (
           <div className="mb-4 flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
-            <Smartphone className="size-4 shrink-0 mt-0.5 text-yellow-400" />
+            <Smartphone className="mt-0.5 size-4 shrink-0 text-yellow-400" />
             <div className="flex-1">
               <p className="font-medium text-yellow-100">Designed for desktop</p>
               <p className="mt-0.5 text-yellow-300/80">
@@ -151,7 +152,7 @@ function ProjectChooser() {
             <button
               type="button"
               onClick={() => setShowMobileWarning(false)}
-              className="shrink-0 text-yellow-400 hover:text-yellow-200 transition-colors"
+              className="shrink-0 text-yellow-400 transition-colors hover:text-yellow-200"
             >
               &times;
             </button>
@@ -160,7 +161,7 @@ function ProjectChooser() {
 
         {showBrowserWarning && (
           <div className="mb-6 flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
-            <TriangleAlert className="size-4 shrink-0 mt-0.5 text-yellow-400" />
+            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-yellow-400" />
             <div className="flex-1">
               <p className="font-medium text-yellow-100">Browser not fully supported</p>
               <p className="mt-0.5 text-yellow-300/80">
@@ -171,7 +172,7 @@ function ProjectChooser() {
             <button
               type="button"
               onClick={() => setShowBrowserWarning(false)}
-              className="shrink-0 text-yellow-400 hover:text-yellow-200 transition-colors"
+              className="shrink-0 text-yellow-400 transition-colors hover:text-yellow-200"
             >
               &times;
             </button>
@@ -181,7 +182,7 @@ function ProjectChooser() {
         {projects.length > 0 && (
           <div className="mb-6">
             <h1 className="text-lg font-semibold text-foreground">Projects</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
+            <p className="mt-0.5 text-sm text-muted-foreground">
               {projects.length} project{projects.length === 1 ? "" : "s"}
             </p>
           </div>
@@ -200,7 +201,7 @@ function ProjectChooser() {
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
-                <Button onClick={handleCreateProject}>
+                <Button onClick={() => void handleCreateProject()}>
                   <Plus className="size-4" />
                   New Project
                 </Button>
@@ -208,7 +209,7 @@ function ProjectChooser() {
             </Empty>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {projects.map((project) => (
               <ProjectCard
                 key={project.id}
@@ -233,7 +234,7 @@ function ProjectChooser() {
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleConfirmDelete}>
+            <Button variant="destructive" onClick={() => void handleConfirmDelete()}>
               Delete
             </Button>
           </DialogFooter>
@@ -255,9 +256,9 @@ function ProjectCard({
   return (
     <div
       onClick={() => onOpen(project.id)}
-      className="group relative rounded-xl border border-border bg-card overflow-hidden cursor-pointer transition-all hover:border-ring hover:shadow-md"
+      className="group relative cursor-pointer overflow-hidden rounded-xl border border-border bg-card transition-all hover:border-ring hover:shadow-md"
     >
-      <div className="aspect-video bg-muted relative flex items-center justify-center overflow-hidden">
+      <div className="relative flex aspect-video items-center justify-center overflow-hidden bg-muted">
         {project.thumbnailDataUrl ? (
           <img
             src={project.thumbnailDataUrl}
@@ -272,7 +273,7 @@ function ProjectCard({
         <Button
           variant="secondary"
           size="icon"
-          className="absolute top-2 right-2 size-7 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+          className="absolute top-2 right-2 size-7 opacity-0 shadow-sm transition-opacity group-hover:opacity-100"
           onClick={(e) => {
             e.stopPropagation();
             onDelete(project);
@@ -284,7 +285,7 @@ function ProjectCard({
 
       <div className="px-3.5 py-3">
         <ProjectName project={project} />
-        <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+        <div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1">
             <Clock className="size-3" />
             {formatDate(project.updatedAt)}
@@ -324,7 +325,7 @@ function ProjectName({ project }: { project: LocalProject }) {
     return (
       <input
         ref={inputRef}
-        className="font-medium text-sm text-foreground bg-transparent border-b border-ring outline-none w-full"
+        className="w-full border-b border-ring bg-transparent text-sm font-medium text-foreground outline-none"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={commit}
@@ -342,7 +343,7 @@ function ProjectName({ project }: { project: LocalProject }) {
 
   return (
     <h3
-      className="font-medium text-sm text-foreground truncate"
+      className="truncate text-sm font-medium text-foreground"
       onDoubleClick={(e) => {
         e.stopPropagation();
         setValue(project.name);

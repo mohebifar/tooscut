@@ -5,15 +5,17 @@
  * Supports cubic bezier handle editing for precise easing control.
  */
 
-import type React from "react";
+import type { AnimatableProperty, CubicBezier } from "@tooscut/render-engine";
 import type Konva from "konva";
+import type React from "react";
+
+import { CUBIC_BEZIER_PRESETS, evaluateCubicBezier } from "@tooscut/render-engine";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Layer, Line, Rect, Stage, Text, Circle } from "react-konva";
-import { ChevronDown, ChevronRight } from "lucide-react";
-import { useVideoEditorStore } from "../../state/video-editor-store";
-import type { AnimatableProperty, CubicBezier } from "@tooscut/render-engine";
-import { CUBIC_BEZIER_PRESETS, evaluateCubicBezier } from "@tooscut/render-engine";
+
 import { getKeyframesForProperty } from "../../lib/keyframe-utils";
+import { useVideoEditorStore } from "../../state/video-editor-store";
 import { TRACK_HEADER_WIDTH } from "./constants";
 
 interface KeyframeCurveEditorProps {
@@ -293,7 +295,10 @@ function PropertyGraph({
   const updateKeyframe = useVideoEditorStore((s) => s.updateKeyframe);
 
   const clip = clips.find((c) => c.id === clipId);
-  const keyframes = clip ? getKeyframesForProperty(clip.keyframes, property) : [];
+  const keyframes = useMemo(
+    () => (clip ? getKeyframesForProperty(clip.keyframes, property) : []),
+    [clip, property],
+  );
 
   // Compute value range from keyframe values with 50% padding
   const [baseRange, setBaseRange] = useState({ min: config.min, max: config.max });
@@ -447,7 +452,6 @@ function PropertyGraph({
       keyframes,
       clipId,
       property,
-      config,
       xToFrame,
       yToValue,
       frameToX,
@@ -772,7 +776,7 @@ export function KeyframeCurveEditor({ width, clipId, properties }: KeyframeCurve
             {/* Property header */}
             <button
               type="button"
-              className="flex h-7 w-full items-center gap-2 bg-neutral-800 px-2 hover:bg-neutral-750 transition-colors"
+              className="hover:bg-neutral-750 flex h-7 w-full items-center gap-2 bg-neutral-800 px-2 transition-colors"
               onClick={() => toggleProperty(property)}
             >
               {isExpanded ? (

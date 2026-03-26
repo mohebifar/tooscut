@@ -1,14 +1,5 @@
-/**
- * Main video editor state store using render-engine clip operations.
- *
- * This store manages the editor state including tracks, clips, and assets.
- * All clip operations use the immutable functions from @tooscut/render-engine.
- */
-import { create } from "zustand";
-import { subscribeWithSelector } from "zustand/middleware";
-import { temporal } from "zundo";
 import type { TemporalState } from "zundo";
-import { useStore } from "zustand";
+
 import {
   type EditableClip,
   type EditableTrack,
@@ -50,6 +41,16 @@ import {
   type TimelineClip as RenderTimelineClip,
   type Track as RenderTrack,
 } from "@tooscut/render-engine";
+import { temporal } from "zundo";
+/**
+ * Main video editor state store using render-engine clip operations.
+ *
+ * This store manages the editor state including tracks, clips, and assets.
+ * All clip operations use the immutable functions from @tooscut/render-engine.
+ */
+import { create } from "zustand";
+import { useStore } from "zustand";
+import { subscribeWithSelector } from "zustand/middleware";
 
 // ============================================================================
 // Types
@@ -203,6 +204,8 @@ interface VideoEditorState {
   scrollY: number;
   activeTool: "select" | "razor";
   previewMode: "view" | "transform";
+  /** Preview canvas zoom: "fit" auto-fills container, or a percentage (e.g. 50, 100) */
+  previewZoom: "fit" | number;
 
   // Assets
   assets: MediaAsset[];
@@ -232,6 +235,7 @@ interface VideoEditorState {
   setScrollY: (scrollY: number) => void;
   setActiveTool: (tool: "select" | "razor") => void;
   setPreviewMode: (mode: "view" | "transform") => void;
+  setPreviewZoom: (zoom: "fit" | number) => void;
 
   // Actions - Selection
   setSelectedClipIds: (ids: string[]) => void;
@@ -665,6 +669,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
         scrollY: 0,
         activeTool: "select" as const,
         previewMode: "transform" as const,
+        previewZoom: "fit",
 
         assets: [],
 
@@ -729,6 +734,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
         setScrollY: (scrollY) => set({ scrollY: Math.max(0, scrollY) }),
         setActiveTool: (activeTool) => set({ activeTool }),
         setPreviewMode: (previewMode) => set({ previewMode }),
+        setPreviewZoom: (previewZoom) => set({ previewZoom }),
 
         // Selection actions
         setSelectedClipIds: (ids) =>
@@ -1290,7 +1296,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
           set((state) => ({
             clips: state.clips.map((clip) => {
               if (clip.id !== clipId || clip.type !== "audio") return clip;
-              const audioClip = clip as AudioClip;
+              const audioClip = clip;
               const currentEffects = audioClip.audioEffects ?? {};
               const currentEffect = currentEffects[effectType] ?? {};
               return {
@@ -1307,7 +1313,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
           set((state) => ({
             clips: state.clips.map((clip) => {
               if (clip.id !== clipId || clip.type !== "audio") return clip;
-              const audioClip = clip as AudioClip;
+              const audioClip = clip;
               const currentEffects = audioClip.audioEffects ?? {};
               if (enabled) {
                 // Enable with defaults (empty object = all defaults via serde)

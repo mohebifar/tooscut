@@ -1,8 +1,9 @@
+import { secondsToFrames } from "@tooscut/render-engine";
 /**
  * Asset store for managing imported media files.
  */
 import { create } from "zustand";
-import { secondsToFrames } from "@tooscut/render-engine";
+
 import { db } from "../../state/db";
 import {
   useVideoEditorStore,
@@ -176,7 +177,8 @@ async function generateThumbnail(file: File, type: "video" | "image"): Promise<s
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Failed to get canvas context");
 
-  const thumbnailSize = 120;
+  const dpr = typeof window !== "undefined" ? window.devicePixelRatio : 2;
+  const thumbnailSize = Math.round(200 * dpr);
 
   if (type === "image") {
     const img = new Image();
@@ -189,7 +191,7 @@ async function generateThumbnail(file: File, type: "video" | "image"): Promise<s
         canvas.height = img.height * scale;
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         URL.revokeObjectURL(url);
-        resolve(canvas.toDataURL("image/jpeg", 0.7));
+        resolve(canvas.toDataURL("image/png"));
       };
       img.onerror = () => {
         URL.revokeObjectURL(url);
@@ -199,22 +201,41 @@ async function generateThumbnail(file: File, type: "video" | "image"): Promise<s
     });
   }
 
-  // Video thumbnail
+  // Video thumbnail — use createImageBitmap for high-quality capture
   const video = document.createElement("video");
+  video.preload = "auto";
+  video.muted = true;
+  video.playsInline = true;
   const url = URL.createObjectURL(file);
 
   return new Promise((resolve, reject) => {
-    video.onloadeddata = () => {
+    video.onloadedmetadata = () => {
       video.currentTime = Math.min(1, video.duration / 2);
     };
 
-    video.onseeked = () => {
-      const scale = Math.min(thumbnailSize / video.videoWidth, thumbnailSize / video.videoHeight);
-      canvas.width = video.videoWidth * scale;
-      canvas.height = video.videoHeight * scale;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL("image/jpeg", 0.7));
+    video.onseeked = async () => {
+      try {
+        // Wait for the frame to be fully decoded
+        if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+          await new Promise<void>((r) => {
+            video.addEventListener("canplay", () => r(), { once: true });
+          });
+        }
+        // Use createImageBitmap for full-resolution capture, then resize
+        const fullBitmap = await createImageBitmap(video);
+        const scale = Math.min(thumbnailSize / fullBitmap.width, thumbnailSize / fullBitmap.height);
+        canvas.width = Math.round(fullBitmap.width * scale);
+        canvas.height = Math.round(fullBitmap.height * scale);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(fullBitmap, 0, 0, canvas.width, canvas.height);
+        fullBitmap.close();
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL("image/png"));
+      } catch (err) {
+        URL.revokeObjectURL(url);
+        reject(err instanceof Error ? err : new Error("Failed to generate thumbnail"));
+      }
     };
 
     video.onerror = () => {
@@ -329,10 +350,11 @@ const ACCEPT_MAP: Record<string, string[]> = {
 export async function importFilesWithPicker(
   accept = "video/*,audio/*,image/*",
 ): Promise<MediaAsset[]> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- File System Access API not in TS lib
-  const picker = (window as any).showOpenFilePicker as
-    | ((options: Record<string, unknown>) => Promise<FileSystemFileHandle[]>)
-    | undefined;
+  const picker = (
+    window as unknown as {
+      showOpenFilePicker?: (options: Record<string, unknown>) => Promise<FileSystemFileHandle[]>;
+    }
+  ).showOpenFilePicker;
 
   if (!picker) {
     // Fall back to regular file picker (no handles → assets won't persist)
@@ -414,8 +436,9 @@ export async function hydrateAssets(assets: StoreMediaAsset[]): Promise<{
         continue;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- queryPermission not in TS lib
-      const handle = stored.handle as any;
+      const handle = stored.handle as FileSystemFileHandle & {
+        queryPermission: (opts: { mode: string }) => Promise<string>;
+      };
       const permission: string = await handle.queryPermission({ mode: "read" });
 
       if (permission === "granted") {
@@ -455,8 +478,9 @@ export async function requestPermissionAndHydrate(
       const stored = await db.fileHandles.get(assetId);
       if (!stored) continue;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- requestPermission not in TS lib
-      const handle = stored.handle as any;
+      const handle = stored.handle as FileSystemFileHandle & {
+        requestPermission: (opts: { mode: string }) => Promise<string>;
+      };
       const result: string = await handle.requestPermission({ mode: "read" });
 
       if (result === "granted") {
@@ -492,7 +516,9 @@ export function handleNativeFileDrop(
       .filter((item) => item.kind === "file")
       .map((item) =>
         (
-          item as unknown as { getAsFileSystemHandle(): Promise<FileSystemHandle> }
+          item as unknown as {
+            getAsFileSystemHandle(): Promise<FileSystemHandle>;
+          }
         ).getAsFileSystemHandle(),
       );
 

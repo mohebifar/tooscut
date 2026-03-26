@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils";
 import type React from "react";
+
 import {
   ZapIcon,
   LayersIcon,
@@ -7,6 +7,8 @@ import {
   MonitorIcon,
   WandSparklesIcon,
 } from "lucide-react";
+
+import { cn } from "@/lib/utils";
 
 const features = [
   {
@@ -65,17 +67,17 @@ function FeatureCard({ children, className }: { children: React.ReactNode; class
 }
 
 function FeatureTitle({ className, ...props }: React.ComponentProps<"h3">) {
-  return <h3 className={cn("font-medium text-foreground text-lg", className)} {...props} />;
+  return <h3 className={cn("text-lg font-medium text-foreground", className)} {...props} />;
 }
 
 function FeatureDescription({ className, ...props }: React.ComponentProps<"p">) {
-  return <p className={cn("text-muted-foreground text-sm", className)} {...props} />;
+  return <p className={cn("text-sm text-muted-foreground", className)} {...props} />;
 }
 
 function GpuRenderingVisual() {
   return (
     <>
-      <div className="relative mx-auto flex size-32 items-center justify-center rounded-full border-4 border-dashed bg-background shadow-xs outline outline-border outline-offset-4">
+      <div className="relative mx-auto flex size-32 items-center justify-center rounded-full border-4 border-dashed bg-background shadow-xs outline outline-offset-4 outline-border">
         <div className="absolute inset-0 z-10 scale-120 bg-radial from-foreground/20 via-foreground/5 to-transparent blur-xl" />
         <ZapIcon className="size-14 text-primary/90" />
       </div>
@@ -94,7 +96,7 @@ function GpuRenderingVisual() {
 function TimelineVisual() {
   return (
     <>
-      <div className="relative mx-auto flex size-32 items-center justify-center rounded-full border bg-background shadow-xs outline outline-border outline-offset-4">
+      <div className="relative mx-auto flex size-32 items-center justify-center rounded-full border bg-background shadow-xs outline outline-offset-4 outline-border">
         <LayersIcon className="size-14 text-primary/90" />
         <div className="absolute inset-0 scale-120 bg-radial from-foreground/15 via-foreground/5 to-transparent blur-xl" />
       </div>
@@ -113,7 +115,7 @@ function TimelineVisual() {
 function KeyframeVisual() {
   return (
     <>
-      <div className="min-h-32 flex items-center justify-center">
+      <div className="flex min-h-32 items-center justify-center">
         <KeyframeCurveSvg className="w-full max-w-xs" />
       </div>
       <div className="relative z-10 mt-8 space-y-1.5 text-center">
@@ -131,7 +133,7 @@ function EffectsVisual() {
   return (
     <div className="grid h-full sm:grid-cols-2">
       <div className="relative z-10 space-y-6 py-0 pe-2">
-        <div className="flex size-12 items-center justify-center rounded-full border bg-card shadow-xs outline outline-border/80 outline-offset-2">
+        <div className="flex size-12 items-center justify-center rounded-full border bg-card shadow-xs outline outline-offset-2 outline-border/80">
           <WandSparklesIcon className="size-5 text-primary/80" />
         </div>
         <div className="space-y-2">
@@ -142,8 +144,8 @@ function EffectsVisual() {
           </FeatureDescription>
         </div>
       </div>
-      <div className="relative flex items-center justify-center mt-4 sm:mt-0">
-        <div className="grid grid-cols-2 gap-2 w-full max-w-48">
+      <div className="relative mt-4 flex items-center justify-center sm:mt-0">
+        <div className="grid w-full max-w-48 grid-cols-2 gap-2">
           {[
             { name: "Brightness", value: 72, color: "bg-amber-500/40" },
             { name: "Contrast", value: 58, color: "bg-blue-500/40" },
@@ -151,7 +153,7 @@ function EffectsVisual() {
             { name: "Blur", value: 25, color: "bg-purple-500/40" },
           ].map((effect) => (
             <div key={effect.name} className="rounded-lg border bg-card p-2.5">
-              <div className="text-[10px] text-muted-foreground mb-1">{effect.name}</div>
+              <div className="mb-1 text-[10px] text-muted-foreground">{effect.name}</div>
               <div className="h-1.5 rounded-full bg-neutral-800">
                 <div
                   className={cn("h-1.5 rounded-full", effect.color)}
@@ -170,7 +172,7 @@ function BrowserVisual() {
   return (
     <div className="grid h-full sm:grid-cols-2">
       <div className="space-y-6 pb-4 sm:pb-0">
-        <div className="flex size-12 items-center justify-center rounded-full border bg-card shadow-xs outline outline-border/80 outline-offset-2">
+        <div className="flex size-12 items-center justify-center rounded-full border bg-card shadow-xs outline outline-offset-2 outline-border/80">
           <MonitorIcon className="size-5 text-primary/80" />
         </div>
         <div className="space-y-2">
@@ -182,9 +184,9 @@ function BrowserVisual() {
         </div>
       </div>
       <div className="relative flex items-center justify-center">
-        <div className="relative w-full max-w-48 aspect-square">
-          <div className="absolute inset-0 rounded-full border-2 border-dashed border-muted-foreground/20 animate-[spin_20s_linear_infinite]" />
-          <div className="absolute inset-4 rounded-full border border-muted-foreground/10 animate-[spin_15s_linear_infinite_reverse]" />
+        <div className="relative aspect-square w-full max-w-48">
+          <div className="absolute inset-0 animate-[spin_20s_linear_infinite] rounded-full border-2 border-dashed border-muted-foreground/20" />
+          <div className="absolute inset-4 animate-[spin_15s_linear_infinite_reverse] rounded-full border border-muted-foreground/10" />
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="flex flex-col items-center gap-1">
               <SlidersHorizontalIcon className="size-6 text-muted-foreground/60" />
@@ -206,7 +208,7 @@ function BrowserVisual() {
                 transform: "translate(-50%, -50%)",
               }}
             >
-              <div className="rounded-full border bg-card px-2 py-0.5 text-[9px] text-muted-foreground shadow-sm whitespace-nowrap">
+              <div className="rounded-full border bg-card px-2 py-0.5 text-[9px] whitespace-nowrap text-muted-foreground shadow-sm">
                 {item.label}
               </div>
             </div>

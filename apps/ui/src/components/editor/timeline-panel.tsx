@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import type { AnimatableProperty } from "@tooscut/render-engine";
+
 import { ChevronDown, ChevronUp, GripHorizontal } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { useVideoEditorStore } from "../../state/video-editor-store";
 import { CanvasTimeline } from "../timeline/canvas-timeline";
 import { KeyframeCurveEditor } from "../timeline/keyframe-curve-editor";
 import { TimelineToolbar } from "../timeline/timeline-toolbar";
-import { useVideoEditorStore } from "../../state/video-editor-store";
 import { Button } from "../ui/button";
-import type { AnimatableProperty } from "@tooscut/render-engine";
 
 const CURVE_EDITOR_MIN_HEIGHT = 80;
 const CURVE_EDITOR_DEFAULT_HEIGHT = 200;
@@ -94,7 +96,7 @@ export function TimelinePanel() {
       <TimelineToolbar />
 
       {/* Main timeline area */}
-      <div className="relative flex-1 min-h-0">
+      <div className="relative min-h-0 flex-1">
         <CanvasTimeline />
       </div>
 
@@ -136,7 +138,7 @@ export function TimelinePanel() {
         >
           {/* Resize handle */}
           <div
-            className="flex h-2 cursor-row-resize items-center justify-center bg-neutral-800 hover:bg-neutral-700 transition-colors"
+            className="flex h-2 cursor-row-resize items-center justify-center bg-neutral-800 transition-colors hover:bg-neutral-700"
             onMouseDown={handleResizeMouseDown}
           >
             <GripHorizontal className="h-3 w-3 text-neutral-500" />

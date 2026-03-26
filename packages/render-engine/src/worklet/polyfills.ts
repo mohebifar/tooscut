@@ -12,7 +12,7 @@ if (typeof globalThis.TextDecoder === "undefined") {
       if (!input || input.length === 0) return "";
       let result = "";
       for (let i = 0; i < input.length; i++) {
-        result += String.fromCharCode(input[i]!);
+        result += String.fromCharCode(input[i]);
       }
       // Handle UTF-8 multibyte sequences
       try {

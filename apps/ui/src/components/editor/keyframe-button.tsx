@@ -10,17 +10,19 @@
  * Use the curve editor in the timeline to adjust easing.
  */
 
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
-import { cn } from "../../lib/utils";
-import { Button } from "../ui/button";
-import { useVideoEditorStore } from "../../state/video-editor-store";
 import type { AnimatableProperty } from "@tooscut/render-engine";
+
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
+
 import {
   isAtKeyframe,
   isPropertyKeyframed,
   getAdjacentKeyframeTimes,
   getKeyframeIndexAtTime,
 } from "../../lib/keyframe-utils";
+import { cn } from "../../lib/utils";
+import { useVideoEditorStore } from "../../state/video-editor-store";
+import { Button } from "../ui/button";
 
 interface KeyframeButtonProps {
   clipId: string;

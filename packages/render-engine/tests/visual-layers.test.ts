@@ -12,6 +12,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+
 import {
   SnapshotTester,
   PixelAsserter,
@@ -392,7 +393,7 @@ describe("visual layers", () => {
         tester.addRawTexture(textureId, rgbaData.width, rgbaData.height, rgbaData.data);
       }
 
-      const actualTimestamp = rgbaData.timestamp;
+      const actualTimestamp = (rgbaData as { timestamp?: number }).timestamp;
       loader.dispose();
 
       return { width: targetWidth, height: targetHeight, actualTimestamp };
@@ -1366,6 +1367,7 @@ describe("visual layers", () => {
     });
 
     // CJK fonts not embedded (too large ~16MB). Load via loadFont() if needed.
+    // eslint-disable-next-line jest/no-disabled-tests
     it.skip("renders Chinese text (CJK)", async () => {
       const renderFrame = frame(400, 300, {
         textLayers: [
@@ -1808,10 +1810,9 @@ describe("visual layers", () => {
 
       // Overlap area should have mixed colors
       // Both red and blue should contribute
-      if (pixels.hasVisiblePixels()) {
-        const [r, , b] = pixels.getPixelPercent(55, 50);
-        expect(r + b).toBeGreaterThan(0);
-      }
+      expect(pixels.hasVisiblePixels()).toBe(true);
+      const [r, , b] = pixels.getPixelPercent(55, 50);
+      expect(r + b).toBeGreaterThan(0);
     });
 
     it("renders lines with transparency", async () => {
@@ -2015,6 +2016,7 @@ describe("visual layers", () => {
     });
 
     // CJK fonts not embedded (too large ~16MB). Load via loadFont() if needed.
+    // eslint-disable-next-line jest/no-disabled-tests
     it.skip("renders Chinese text (CJK)", async () => {
       const renderFrame = frame(400, 300, {
         textLayers: [

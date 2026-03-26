@@ -6,6 +6,11 @@
  * mixes audio using Web Audio API, and muxes everything into MP4.
  */
 
+import { EvaluatorManager, framesToSeconds, type AudioTimelineState } from "@tooscut/render-engine";
+import initAudioWasm, {
+  AudioEngine as WasmAudioEngine,
+} from "@tooscut/render-engine/wasm/audio-engine/audio_engine.js";
+import audioWasmUrl from "@tooscut/render-engine/wasm/audio-engine/audio_engine_bg.wasm?url";
 import {
   AudioBufferSource,
   BufferTarget,
@@ -15,18 +20,15 @@ import {
   QUALITY_HIGH,
 } from "mediabunny";
 import { useCallback, useRef, useState } from "react";
-import { EvaluatorManager, framesToSeconds, type AudioTimelineState } from "@tooscut/render-engine";
-import initAudioWasm, {
-  AudioEngine as WasmAudioEngine,
-} from "@tooscut/render-engine/wasm/audio-engine/audio_engine.js";
-import audioWasmUrl from "@tooscut/render-engine/wasm/audio-engine/audio_engine_bg.wasm?url";
-import { useVideoEditorStore, type TextClip } from "../state/video-editor-store";
+
+import type { RenderFrameTask } from "../workers/frame-renderer.worker";
+
 import { useAssetStore } from "../components/timeline/use-asset-store";
-import { useFontStore } from "../state/font-store";
+import { downloadAllSubsets, findNearestWeight } from "../lib/font-service";
 import { FrameRendererPool } from "../lib/frame-renderer-pool";
 import { buildLayersForTime, calculateSourceTime, getExportFrames } from "../lib/layer-builder";
-import { downloadAllSubsets, findNearestWeight } from "../lib/font-service";
-import type { RenderFrameTask } from "../workers/frame-renderer.worker";
+import { useFontStore } from "../state/font-store";
+import { useVideoEditorStore, type TextClip } from "../state/video-editor-store";
 
 // ===================== TYPES =====================
 
@@ -621,7 +623,7 @@ export function useMp4Export(): Mp4ExportHandle {
       await output.finalize();
 
       // Get result
-      const target = output.target as BufferTarget;
+      const target = output.target;
       const buffer = target.buffer;
       const mimeType = await output.getMimeType();
 

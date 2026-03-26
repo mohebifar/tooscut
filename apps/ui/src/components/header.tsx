@@ -1,16 +1,17 @@
-import { cn } from "@/lib/utils";
+import { Link } from "@tanstack/react-router";
+import { GithubIcon } from "lucide-react";
+
 import { LogoIcon } from "@/components/logo";
 import { Button } from "@/components/ui/button";
-import { Link } from "@tanstack/react-router";
 import { useScroll } from "@/hooks/use-scroll";
-import { GithubIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export function Header() {
   const scrolled = useScroll(10);
 
   return (
     <header
-      className={cn("sticky top-0 z-50 w-full border-transparent border-b", {
+      className={cn("sticky top-0 z-50 w-full border-b border-transparent", {
         "border-border bg-background/95 backdrop-blur-sm supports-backdrop-filter:bg-background/90":
           scrolled,
       })}

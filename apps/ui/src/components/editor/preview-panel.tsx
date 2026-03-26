@@ -1,3 +1,4 @@
+import { EvaluatorManager, VideoFrameLoaderManager, secondsToFrames } from "@tooscut/render-engine";
 /**
  * Preview panel component that renders the current frame.
  *
@@ -13,16 +14,16 @@
  * - ImageBitmaps transferred (not copied) to worker
  */
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { EvaluatorManager, VideoFrameLoaderManager, secondsToFrames } from "@tooscut/render-engine";
-import { useVideoEditorStore, type VideoClip } from "../../state/video-editor-store";
-import { useAssetStore, type MediaAsset } from "../timeline/use-asset-store";
+
+import { buildLayersForTime, calculateSourceTime } from "../../lib/layer-builder";
 import { useFontStore } from "../../state/font-store";
+import { useVideoEditorStore, type VideoClip } from "../../state/video-editor-store";
 import {
   createCompositorApi,
   setSharedCompositor,
   type CompositorApi,
 } from "../../workers/compositor-api";
-import { buildLayersForTime, calculateSourceTime } from "../../lib/layer-builder";
+import { useAssetStore, type MediaAsset } from "../timeline/use-asset-store";
 import { TransformOverlay } from "./transform/transform-overlay";
 
 // Image element entry for the pool
@@ -180,7 +181,7 @@ export function PreviewPanel() {
       useFontStore.getState().clearCompositorFunctions();
       setSharedCompositor(null);
       if (compositorRef.current) {
-        compositorRef.current.dispose();
+        void compositorRef.current.dispose();
         compositorRef.current = null;
       }
     };
@@ -229,13 +230,15 @@ export function PreviewPanel() {
       getOrCreateImageElement(asset);
     }
 
+    const imageElements = imageElementsRef.current;
+    const uploadedTextures = uploadedTexturesRef.current;
     return () => {
       const currentAssetIds = new Set(assets.map((a) => a.id));
-      for (const [assetId, entry] of imageElementsRef.current) {
+      for (const [assetId, entry] of imageElements) {
         if (!currentAssetIds.has(assetId)) {
           URL.revokeObjectURL(entry.objectUrl);
-          imageElementsRef.current.delete(assetId);
-          uploadedTexturesRef.current.delete(assetId);
+          imageElements.delete(assetId);
+          uploadedTextures.delete(assetId);
         }
       }
     };
@@ -248,161 +251,166 @@ export function PreviewPanel() {
    * During playback: extracts frames from playing video elements.
    * During scrubbing: seeks and extracts frames.
    */
-  const renderFrame = useCallback(
-    async (frame: number) => {
-      const compositor = compositorRef.current;
-      if (!compositor?.isReady) return;
+  const renderFrame = useCallback(async (frame: number) => {
+    const compositor = compositorRef.current;
+    if (!compositor?.isReady) return;
 
-      // Serialise render calls: if a previous render is still in-flight,
-      // skip this frame.  This prevents interleaved texture-upload +
-      // renderFrame messages that cause stale-texture flashes.
-      if (renderingRef.current) {
-        // Mark that a render was requested so it's retried after the
-        // current one completes (only matters when paused/scrubbing —
-        // during playback the tick loop naturally retries).
-        pendingRenderRef.current = true;
-        return;
-      }
-      renderingRef.current = true;
+    // Serialise render calls: if a previous render is still in-flight,
+    // skip this frame.  This prevents interleaved texture-upload +
+    // renderFrame messages that cause stale-texture flashes.
+    if (renderingRef.current) {
+      // Mark that a render was requested so it's retried after the
+      // current one completes (only matters when paused/scrubbing —
+      // during playback the tick loop naturally retries).
+      pendingRenderRef.current = true;
+      return;
+    }
+    renderingRef.current = true;
 
-      try {
-        const state = useVideoEditorStore.getState();
-        const currentClips = state.clips;
-        const currentTracks = state.tracks;
-        const currentSettings = state.settings;
-        const currentCrossTransitions = state.crossTransitions;
-        const currentFps = currentSettings.fps;
+    try {
+      const state = useVideoEditorStore.getState();
+      const currentClips = state.clips;
+      const currentTracks = state.tracks;
+      const currentSettings = state.settings;
+      const currentCrossTransitions = state.crossTransitions;
+      const currentFps = currentSettings.fps;
 
-        // Pass frame number to layer-builder — it converts to seconds internally
-        const {
-          frame: renderFrameData,
-          visibleMediaClips,
-          crossTransitionTextureMap,
-        } = buildLayersForTime({
-          clips: currentClips,
-          tracks: currentTracks,
-          crossTransitions: currentCrossTransitions,
-          settings: currentSettings,
-          timelineTime: frame,
-          evaluatorManager: evaluatorManagerRef.current,
-        });
+      // Pass frame number to layer-builder — it converts to seconds internally
+      const {
+        frame: renderFrameData,
+        visibleMediaClips,
+        crossTransitionTextureMap,
+      } = buildLayersForTime({
+        clips: currentClips,
+        tracks: currentTracks,
+        crossTransitions: currentCrossTransitions,
+        settings: currentSettings,
+        timelineTime: frame,
+        evaluatorManager: evaluatorManagerRef.current,
+      });
 
-        const loaderManager = loaderManagerRef.current;
+      const loaderManager = loaderManagerRef.current;
 
-        // Process video clips - upload textures
-        for (const clip of visibleMediaClips) {
-          if (clip.type !== "video") continue;
+      // Process video clips - upload textures
+      for (const clip of visibleMediaClips) {
+        if (clip.type !== "video") continue;
 
-          const assetId = clip.assetId || clip.id;
-          const textureId = crossTransitionTextureMap.get(clip.id) ?? assetId;
-          const asset = assetMapRef.current.get(assetId);
-          if (!asset?.file) continue;
+        const assetId = clip.assetId || clip.id;
+        const textureId = crossTransitionTextureMap.get(clip.id) ?? assetId;
+        const asset = assetMapRef.current.get(assetId);
+        if (!asset?.file) continue;
 
-          // Use a per-clip loader key for cross-transition clips so each clip
-          // gets its own HTMLVideoElement — two clips of the same asset can't
-          // share one video element during a cross-fade.
-          const isInCrossTransition = crossTransitionTextureMap.has(clip.id);
-          const loaderKey = isInCrossTransition ? `${assetId}:${clip.id}` : assetId;
+        // Use a per-clip loader key for cross-transition clips so each clip
+        // gets its own HTMLVideoElement — two clips of the same asset can't
+        // share one video element during a cross-fade.
+        const isInCrossTransition = crossTransitionTextureMap.has(clip.id);
+        const loaderKey = isInCrossTransition ? `${assetId}:${clip.id}` : assetId;
 
-          const sourceTime = calculateSourceTime(frame, clip, currentFps);
+        const sourceTime = calculateSourceTime(frame, clip, currentFps);
 
-          try {
-            const loader = await loaderManager.getLoader(loaderKey, asset.file);
-            const videoElement = loader.getVideoElement();
+        try {
+          const loader = await loaderManager.getLoader(loaderKey, asset.file);
+          const videoElement = loader.getVideoElement();
 
-            if (videoElement) {
-              if (isPlayingRef.current) {
-                const alreadyStarted = playingVideoAssetsRef.current.has(loaderKey);
+          if (videoElement) {
+            if (isPlayingRef.current) {
+              const alreadyStarted = playingVideoAssetsRef.current.has(loaderKey);
 
-                if (videoElement.paused && !alreadyStarted) {
-                  // Video element is paused but playback is active — this clip
-                  // just became visible (e.g. incoming clip of a cross-fade).
-                  // Start it playing so frames advance naturally.
-                  playingVideoAssetsRef.current.add(loaderKey);
-                  videoElement.currentTime = sourceTime;
-                  videoElement.play().catch(() => {});
-                  // Use seek-based extraction for the first frame to ensure
-                  // the compositor has a valid texture while play() resolves.
-                  const bitmap = await loader.getImageBitmap(sourceTime);
-                  compositor.uploadBitmap(bitmap, textureId);
-                } else {
-                  let drifted = false;
-                  if (!videoElement.paused) {
-                    // Video is playing — check drift to handle clip boundaries
-                    // where a different clip of the same asset starts at a
-                    // different inPoint (e.g. after a cross-transition ends and
-                    // the incoming clip switches from per-clip to shared loader).
-                    const drift = Math.abs(videoElement.currentTime - sourceTime);
-                    if (drift > 0.15) {
-                      drifted = true;
-                    }
-                  }
-
-                  if (drifted) {
-                    // Video drifted — use seek-based extraction to avoid
-                    // uploading a stale frame from the old position.
-                    const bitmap = await loader.getImageBitmap(sourceTime);
-                    compositor.uploadBitmap(bitmap, textureId);
-                    // Resume playing from the corrected position
-                    videoElement.currentTime = sourceTime;
-                    videoElement.play().catch(() => {});
-                  } else if (videoElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-                    // Extract frame from current position (video is playing or
-                    // play() is resolving — avoid slow seek path)
-                    const bitmap = await createImageBitmap(videoElement);
-                    compositor.uploadBitmap(bitmap, textureId);
+              if (videoElement.paused && !alreadyStarted) {
+                // Video element is paused but playback is active — this clip
+                // just became visible (e.g. incoming clip of a cross-fade).
+                // Start it playing so frames advance naturally.
+                playingVideoAssetsRef.current.add(loaderKey);
+                videoElement.currentTime = sourceTime;
+                videoElement.play().catch(() => {});
+                // Use seek-based extraction for the first frame to ensure
+                // the compositor has a valid texture while play() resolves.
+                const bitmap = await loader.getImageBitmap(sourceTime);
+                void compositor.uploadBitmap(bitmap, textureId);
+              } else {
+                let drifted = false;
+                if (!videoElement.paused) {
+                  // Video is playing — check drift to handle clip boundaries
+                  // where a different clip of the same asset starts at a
+                  // different inPoint (e.g. after a cross-transition ends and
+                  // the incoming clip switches from per-clip to shared loader).
+                  const drift = Math.abs(videoElement.currentTime - sourceTime);
+                  if (drift > 0.15) {
+                    drifted = true;
                   }
                 }
-              } else {
-                // Scrubbing or paused - seek to exact time
-                const bitmap = await loader.getImageBitmap(sourceTime);
-                compositor.uploadBitmap(bitmap, textureId);
+
+                if (drifted) {
+                  // Video drifted — use seek-based extraction to avoid
+                  // uploading a stale frame from the old position.
+                  const bitmap = await loader.getImageBitmap(sourceTime);
+                  void compositor.uploadBitmap(bitmap, textureId);
+                  // Resume playing from the corrected position
+                  videoElement.currentTime = sourceTime;
+                  videoElement.play().catch(() => {});
+                } else if (videoElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+                  // Extract frame from current position (video is playing or
+                  // play() is resolving — avoid slow seek path)
+                  const bitmap = await createImageBitmap(videoElement);
+                  void compositor.uploadBitmap(bitmap, textureId);
+                }
               }
-            }
-          } catch {
-            // Ignore frame extraction errors
-          }
-        }
-
-        // Process image clips - upload textures
-        for (const clip of visibleMediaClips) {
-          if (clip.type !== "image") continue;
-
-          const assetId = clip.assetId || clip.id;
-          const textureId = crossTransitionTextureMap.get(clip.id) ?? assetId;
-
-          if (!uploadedTexturesRef.current.has(textureId)) {
-            const entry = imageElementsRef.current.get(assetId);
-            if (entry?.isReady) {
-              try {
-                const bitmap = await createImageBitmap(entry.element);
-                compositor.uploadBitmap(bitmap, textureId);
-                uploadedTexturesRef.current.add(textureId);
-              } catch {
-                // Ignore
-              }
+            } else {
+              // Scrubbing or paused - seek to exact time
+              const bitmap = await loader.getImageBitmap(sourceTime);
+              void compositor.uploadBitmap(bitmap, textureId);
             }
           }
-        }
-
-        compositor.renderFrame(renderFrameData);
-      } finally {
-        renderingRef.current = false;
-
-        // If a render was requested while we were busy, process it now.
-        // Only when paused/scrubbing — during playback the tick loop retries naturally.
-        if (pendingRenderRef.current && !isPlayingRef.current) {
-          pendingRenderRef.current = false;
-          requestAnimationFrame(() => {
-            if (!isPlayingRef.current) {
-              void renderFrameRef.current?.(useVideoEditorStore.getState().currentFrame);
-            }
-          });
+        } catch {
+          // Ignore frame extraction errors
         }
       }
-    },
-    [isInitialized],
-  );
+
+      // Process image clips - upload textures
+      for (const clip of visibleMediaClips) {
+        if (clip.type !== "image") continue;
+
+        const assetId = clip.assetId || clip.id;
+        const textureId = crossTransitionTextureMap.get(clip.id) ?? assetId;
+
+        if (!uploadedTexturesRef.current.has(textureId)) {
+          const entry = imageElementsRef.current.get(assetId);
+          if (entry?.isReady) {
+            try {
+              const bitmap = await createImageBitmap(entry.element);
+              void compositor.uploadBitmap(bitmap, textureId);
+              uploadedTexturesRef.current.add(textureId);
+            } catch {
+              // Ignore
+            }
+          }
+        }
+      }
+
+      if (isPlayingRef.current) {
+        // During playback: fire-and-forget for maximum throughput.
+        // The tick loop naturally supersedes stale frames.
+        void compositor.renderFrame(renderFrameData);
+      } else {
+        // During scrub/drag: await so renders don't interleave.
+        // This prevents out-of-order frame display (jitter) when
+        // transform handles send rapid updates.
+        await compositor.renderFrame(renderFrameData);
+      }
+    } finally {
+      renderingRef.current = false;
+
+      // If a render was requested while we were busy, process it now.
+      if (pendingRenderRef.current && !isPlayingRef.current) {
+        pendingRenderRef.current = false;
+        requestAnimationFrame(() => {
+          if (!isPlayingRef.current) {
+            void renderFrameRef.current?.(useVideoEditorStore.getState().currentFrame);
+          }
+        });
+      }
+    }
+  }, []);
 
   const renderFrameRef = useRef(renderFrame);
   useEffect(() => {
@@ -628,46 +636,83 @@ export function PreviewPanel() {
     };
   }, [isInitialized, isPlaying, renderFrame]);
 
-  // Calculate canvas size to fit container while maintaining aspect ratio
-  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  // Preview zoom from store
+  const previewZoom = useVideoEditorStore((s) => s.previewZoom);
+  const setPreviewZoom = useVideoEditorStore((s) => s.setPreviewZoom);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+
+  // Track container size
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const update = () => {
+      const rect = container.getBoundingClientRect();
+      setContainerSize({ width: rect.width, height: rect.height });
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
+
+  // Calculate canvas size based on zoom mode
+  const canvasSize = useMemo(() => {
+    const aspectRatio = settings.width / settings.height;
+    if (previewZoom === "fit") {
+      const containerAspect = containerSize.width / containerSize.height;
+      if (containerAspect > aspectRatio) {
+        const h = containerSize.height;
+        return { width: h * aspectRatio, height: h };
+      }
+      const w = containerSize.width;
+      return { width: w, height: w / aspectRatio };
+    }
+    // Fixed percentage zoom: 100% = project resolution
+    const scale = previewZoom / 100;
+    return { width: settings.width * scale, height: settings.height * scale };
+  }, [previewZoom, containerSize, settings.width, settings.height]);
+
+  // The effective zoom percentage (for display in the control)
+  const effectiveZoomPercent = useMemo(() => {
+    if (canvasSize.width === 0) return 100;
+    // Subtract padding (p-3 = 12px each side = 24px)
+    return Math.round(((canvasSize.width - 24) / settings.width) * 100);
+  }, [canvasSize.width, settings.width]);
+
+  // CMD/CTRL + scroll (or pinch) to zoom preview.
+  // Must use native listener with { passive: false } to prevent browser zoom.
+  const previewZoomRef = useRef(previewZoom);
+  const effectiveZoomRef = useRef(effectiveZoomPercent);
+  previewZoomRef.current = previewZoom;
+  effectiveZoomRef.current = effectiveZoomPercent;
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const updateSize = () => {
-      const containerRect = container.getBoundingClientRect();
-      const aspectRatio = settings.width / settings.height;
-      const containerAspectRatio = containerRect.width / containerRect.height;
-
-      let width: number;
-      let height: number;
-
-      if (containerAspectRatio > aspectRatio) {
-        height = containerRect.height;
-        width = height * aspectRatio;
-      } else {
-        width = containerRect.width;
-        height = width / aspectRatio;
-      }
-
-      setCanvasSize({ width, height });
+    const handleWheel = (e: WheelEvent) => {
+      if (!e.metaKey && !e.ctrlKey) return;
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      const current =
+        previewZoomRef.current === "fit" ? effectiveZoomRef.current : previewZoomRef.current;
+      setPreviewZoom(Math.max(10, Math.min(400, Math.round(current * delta))));
     };
 
-    updateSize();
-    const resizeObserver = new ResizeObserver(updateSize);
-    resizeObserver.observe(container);
-    return () => resizeObserver.disconnect();
-  }, [settings.width, settings.height]);
+    container.addEventListener("wheel", handleWheel, { passive: false });
+    return () => container.removeEventListener("wheel", handleWheel);
+  }, [setPreviewZoom]);
 
   // Cleanup on unmount
   useEffect(() => {
+    const imageElements = imageElementsRef.current;
+    const loaderManager = loaderManagerRef.current;
     return () => {
-      for (const [, entry] of imageElementsRef.current) {
+      for (const [, entry] of imageElements) {
         URL.revokeObjectURL(entry.objectUrl);
       }
-      imageElementsRef.current.clear();
-      loaderManagerRef.current.disposeAll();
+      imageElements.clear();
+      loaderManager.disposeAll();
     };
   }, []);
 
@@ -834,68 +879,91 @@ export function PreviewPanel() {
     }
   }, []);
 
+  const isFit = previewZoom === "fit";
+
   return (
     <div
       ref={containerRef}
-      className="flex h-full items-center justify-center bg-muted"
+      className="relative h-full bg-muted"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) {
+          useVideoEditorStore.getState().clearSelection();
+        }
+      }}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
+      {/* Fit: flex-center. Zoomed: grid+scroll with styled scrollbars (preview-scroll class). */}
       <div
-        className="relative"
-        style={{
-          width: canvasSize.width || "auto",
-          height: canvasSize.height || "auto",
-        }}
+        className={
+          isFit
+            ? "flex h-full items-center justify-center overflow-visible"
+            : "preview-scroll h-full overflow-auto"
+        }
       >
-        <div className="relative p-3">
-          {/* width/height intentionally omitted — after transferControlToOffscreen()
-              the compositor worker owns the OffscreenCanvas dimensions via resize().
-              Setting attributes on the placeholder canvas would resize + clear the
-              OffscreenCanvas bitmap, causing frame flashes. */}
-          <canvas
-            ref={canvasRef}
-            className="size-full bg-background"
-            style={{ imageRendering: "auto" }}
-          />
-
-          {previewMode === "transform" && isInitialized && canvasSize.width > 0 && (
-            <div className="absolute inset-3">
-              <TransformOverlay
-                displayWidth={canvasSize.width - 24}
-                displayHeight={((canvasSize.width - 24) * settings.height) / settings.width}
+        <div
+          className={isFit ? "" : "inline-flex min-h-full min-w-full items-center justify-center"}
+        >
+          <div
+            className="relative shrink-0 overflow-visible"
+            style={{
+              width: canvasSize.width || "auto",
+              height: canvasSize.height || "auto",
+            }}
+          >
+            <div
+              className="relative overflow-visible p-3"
+              onMouseDown={(e) => {
+                if (e.target === e.currentTarget) {
+                  useVideoEditorStore.getState().clearSelection();
+                }
+              }}
+            >
+              <canvas
+                ref={canvasRef}
+                className="size-full bg-background"
+                style={{ imageRendering: "auto" }}
               />
-            </div>
-          )}
 
-          {error && (
-            <div className="absolute inset-0 flex items-center justify-center bg-background/80">
-              <div className="text-center text-foreground">
-                <div className="text-lg font-medium text-destructive">GPU Error</div>
-                <div className="mt-2 text-sm text-muted-foreground">{error}</div>
-                <div className="mt-4 text-xs text-muted-foreground">
-                  WebGPU may not be supported in your browser
+              {previewMode === "transform" && isInitialized && canvasSize.width > 0 && (
+                <div className="absolute inset-3">
+                  <TransformOverlay
+                    displayWidth={canvasSize.width - 24}
+                    displayHeight={((canvasSize.width - 24) * settings.height) / settings.width}
+                  />
                 </div>
-              </div>
-            </div>
-          )}
+              )}
 
-          {!isInitialized && !error && (
-            <div className="absolute inset-0 flex items-center justify-center bg-background">
-              <div className="text-center text-muted-foreground">
-                <div className="text-sm">Initializing GPU...</div>
-              </div>
+              {error && (
+                <div className="absolute inset-0 flex items-center justify-center bg-background/80">
+                  <div className="text-center text-foreground">
+                    <div className="text-lg font-medium text-destructive">GPU Error</div>
+                    <div className="mt-2 text-sm text-muted-foreground">{error}</div>
+                    <div className="mt-4 text-xs text-muted-foreground">
+                      WebGPU may not be supported in your browser
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!isInitialized && !error && (
+                <div className="absolute inset-0 flex items-center justify-center bg-background">
+                  <div className="text-center text-muted-foreground">
+                    <div className="text-sm">Initializing GPU...</div>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
 
       {/* Drop overlay */}
       {isDragOver && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/60 pointer-events-none">
-          <div className="text-sm font-medium text-primary border-2 border-dashed border-primary rounded-lg px-4 py-2">
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-background/60">
+          <div className="rounded-lg border-2 border-dashed border-primary px-4 py-2 text-sm font-medium text-primary">
             Drop to add at playhead
           </div>
         </div>

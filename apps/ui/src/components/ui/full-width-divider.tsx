@@ -21,7 +21,7 @@ export function FullWidthDivider({
         // contained
         "data-[contained=true]:inset-x-0 data-[contained=true]:w-full",
         // position
-        position && "data-[position=top]:-top-px data-[position=bottom]:-bottom-px",
+        position && "data-[position=bottom]:-bottom-px data-[position=top]:-top-px",
         className,
       )}
       data-contained={contained}

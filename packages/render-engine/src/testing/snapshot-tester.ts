@@ -6,6 +6,8 @@
  * where WebGPU is available.
  */
 
+import { page, commands } from "@vitest/browser/context";
+
 import type {
   RenderFrame,
   MediaLayerData,
@@ -21,6 +23,8 @@ import type {
   TransitionType,
   Easing,
 } from "../types.js";
+
+import { Compositor, initCompositorWasm } from "../compositor.js";
 import {
   DEFAULT_TRANSFORM,
   DEFAULT_EFFECTS,
@@ -29,8 +33,6 @@ import {
   DEFAULT_LINE_STYLE,
   DEFAULT_EASING,
 } from "../types.js";
-import { page, commands } from "@vitest/browser/context";
-import { Compositor, initCompositorWasm } from "../compositor.js";
 
 // ============================================================================
 // Types

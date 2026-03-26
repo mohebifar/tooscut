@@ -1,9 +1,11 @@
-import { useCallback } from "react";
-import { KeyframeInput } from "./keyframe-input";
-import { NumericInput } from "../ui/numeric-input";
-import { PropertyRow } from "./property-shared";
-import { Button } from "../ui/button";
 import type { AudioEffectsParams } from "@tooscut/render-engine";
+
+import { useCallback } from "react";
+
+import { Button } from "../ui/button";
+import { NumericInput } from "../ui/numeric-input";
+import { KeyframeInput } from "./keyframe-input";
+import { PropertyRow } from "./property-shared";
 
 interface AudioEffectsPropertiesProps {
   clipId: string;

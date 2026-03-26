@@ -4,13 +4,15 @@
  */
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
+
+import type { EditorClip } from "./video-editor-store";
+
 import {
   fetchFontCatalog,
   downloadAllSubsets,
   findNearestWeight,
   type FontsourceFontEntry,
 } from "../lib/font-service";
-import type { EditorClip } from "./video-editor-store";
 
 type FontVariantStatus = "idle" | "loading" | "loaded" | "error";
 

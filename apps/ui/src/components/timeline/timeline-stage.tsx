@@ -1,8 +1,10 @@
 "use client";
 
+import { framesToSeconds } from "@tooscut/render-engine";
 import Konva from "konva";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Group, Label, Layer, Line, Rect, Shape, Stage, Tag, Text } from "react-konva";
+
 import { useVideoEditorStore } from "../../state/video-editor-store";
 import {
   CLIP_PADDING,
@@ -14,8 +16,6 @@ import {
   TRACK_HEADER_WIDTH,
   TRACK_HEIGHT,
 } from "./constants";
-import { findSnapTargets, snapFrame } from "./snap-utils";
-import { framesToSeconds } from "@tooscut/render-engine";
 import {
   KonvaEyeIcon,
   KonvaEyeOffIcon,
@@ -24,6 +24,7 @@ import {
   KonvaVolume2Icon,
   KonvaVolumeIcon,
 } from "./konva-icons";
+import { findSnapTargets, snapFrame } from "./snap-utils";
 import {
   getThumbnailsForClip,
   useClipThumbnails,
@@ -1625,6 +1626,7 @@ export function TimelineStage({
       setSelectedClipIds,
       setScrollX,
       setScrollY,
+      setCrossTransitionResizePreview,
     ],
   );
 
@@ -1758,6 +1760,7 @@ export function TimelineStage({
     setClipTransitionOut,
     updateCrossTransitionDuration,
     setSelectedClipIds,
+    setCrossTransitionResizePreview,
   ]);
 
   // Get clip color based on type
@@ -1870,54 +1873,83 @@ export function TimelineStage({
                 ctx.closePath();
               }}
             >
-              {thumbnails.map((thumb) => {
-                if (!thumb.image) return null;
-                const slotWidth = clipWidth / thumbnails.length;
-                const slotX = x + thumb.slotIndex * slotWidth;
-                const slotHeight = clipHeight - 4;
-                const slotY = y + 2;
+              <Shape
+                listening={false}
+                sceneFunc={(context) => {
+                  const ctx = context._context;
+                  // Collect loaded thumbnails sorted by timestamp for binary search
+                  const sorted: Array<{ timestamp: number; image: ImageBitmap }> = [];
+                  for (const t of thumbnails) {
+                    if (t.image) sorted.push({ timestamp: t.timestamp, image: t.image });
+                  }
+                  if (sorted.length === 0) return;
+                  sorted.sort((a, b) => a.timestamp - b.timestamp);
 
-                // Crop-to-fill: scale image to cover the slot, clip overflow
-                const imgAspect = thumb.image.width / thumb.image.height;
-                const slotAspect = slotWidth / slotHeight;
+                  const SLOT_PX = 80;
+                  const slotHeight = clipHeight - 4;
+                  const slotY = y + 2;
+                  const slotCount = Math.max(1, Math.ceil(clipWidth / SLOT_PX));
+                  const slotW = clipWidth / slotCount;
+                  const speed = clip.speed ?? 1;
+                  const inPtSec = framesToSeconds(clip.inPoint, fps);
+                  const durSec = framesToSeconds(clip.duration, fps);
 
-                let drawW: number;
-                let drawH: number;
-                let drawX: number;
-                let drawY: number;
+                  ctx.save();
+                  ctx.imageSmoothingEnabled = true;
+                  ctx.imageSmoothingQuality = "high";
+                  ctx.globalAlpha = baseOpacity;
 
-                if (imgAspect > slotAspect) {
-                  drawH = slotHeight;
-                  drawW = slotHeight * imgAspect;
-                  drawX = slotX + (slotWidth - drawW) / 2;
-                  drawY = slotY;
-                } else {
-                  drawW = slotWidth;
-                  drawH = slotWidth / imgAspect;
-                  drawX = slotX;
-                  drawY = slotY + (slotHeight - drawH) / 2;
-                }
+                  for (let i = 0; i < slotCount; i++) {
+                    const srcTime = inPtSec + ((i + 0.5) / slotCount) * durSec * speed;
 
-                const img = thumb.image;
-                return (
-                  <Shape
-                    key={thumb.key}
-                    sceneFunc={(context) => {
-                      const ctx = context._context;
-                      ctx.save();
-                      ctx.beginPath();
-                      ctx.rect(slotX, slotY, slotWidth, slotHeight);
-                      ctx.clip();
-                      ctx.imageSmoothingEnabled = true;
-                      ctx.imageSmoothingQuality = "high";
-                      ctx.globalAlpha = baseOpacity;
-                      ctx.drawImage(img, drawX, drawY, drawW, drawH);
-                      ctx.restore();
-                    }}
-                    listening={false}
-                  />
-                );
-              })}
+                    // Binary search for nearest loaded thumbnail
+                    let lo = 0;
+                    let hi = sorted.length - 1;
+                    while (lo < hi) {
+                      const mid = (lo + hi) >>> 1;
+                      if (sorted[mid].timestamp < srcTime) lo = mid + 1;
+                      else hi = mid;
+                    }
+                    // Check lo and lo-1 for closest
+                    let best = lo;
+                    if (
+                      lo > 0 &&
+                      Math.abs(sorted[lo - 1].timestamp - srcTime) <
+                        Math.abs(sorted[lo].timestamp - srcTime)
+                    ) {
+                      best = lo - 1;
+                    }
+
+                    const img = sorted[best].image;
+                    const slotX = x + i * slotW;
+
+                    // Crop-to-fill
+                    const imgAspect = img.width / img.height;
+                    const slotAspect = slotW / slotHeight;
+                    let dw: number, dh: number, dx: number, dy: number;
+                    if (imgAspect > slotAspect) {
+                      dh = slotHeight;
+                      dw = slotHeight * imgAspect;
+                      dx = slotX + (slotW - dw) / 2;
+                      dy = slotY;
+                    } else {
+                      dw = slotW;
+                      dh = slotW / imgAspect;
+                      dx = slotX;
+                      dy = slotY + (slotHeight - dh) / 2;
+                    }
+
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.rect(slotX, slotY, slotW, slotHeight);
+                    ctx.clip();
+                    ctx.drawImage(img, dx, dy, dw, dh);
+                    ctx.restore();
+                  }
+
+                  ctx.restore();
+                }}
+              />
             </Group>
           )}
 
@@ -2154,6 +2186,7 @@ export function TimelineStage({
       transitionResizePreview,
       transitionHover,
       selectedTransition,
+      fps,
     ],
   );
 

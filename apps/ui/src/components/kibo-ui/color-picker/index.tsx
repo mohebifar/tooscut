@@ -15,6 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -182,7 +183,7 @@ export const ColorPickerSelection = memo(({ className, ...props }: ColorPickerSe
       {...props}
     >
       <div
-        className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute h-4 w-4 rounded-full border-2 border-white"
+        className="pointer-events-none absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white"
         style={{
           left: `${positionX * 100}%`,
           top: `${positionY * 100}%`,
@@ -212,7 +213,7 @@ export const ColorPickerHue = ({ className, ...props }: ColorPickerHueProps) => 
       <Slider.Track className="relative my-0.5 h-3 w-full grow rounded-full bg-[linear-gradient(90deg,#FF0000,#FFFF00,#00FF00,#00FFFF,#0000FF,#FF00FF,#FF0000)]">
         <Slider.Range className="absolute h-full" />
       </Slider.Track>
-      <Slider.Thumb className="block h-4 w-4 rounded-full border border-primary/50 bg-background shadow transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50" />
+      <Slider.Thumb className="block h-4 w-4 rounded-full border border-primary/50 bg-background shadow transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50" />
     </Slider.Root>
   );
 };
@@ -235,7 +236,7 @@ export const ColorPickerAlpha = ({ className, ...props }: ColorPickerAlphaProps)
         <div className="absolute inset-0 rounded-full bg-gradient-to-r from-transparent to-black/50 dark:to-white/50" />
         <Slider.Range className="absolute h-full rounded-full bg-transparent" />
       </Slider.Track>
-      <Slider.Thumb className="block h-4 w-4 rounded-full border border-primary/50 bg-background shadow transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50" />
+      <Slider.Thumb className="block h-4 w-4 rounded-full border border-primary/50 bg-background shadow transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50" />
     </Slider.Root>
   );
 };
@@ -247,7 +248,6 @@ export const ColorPickerEyeDropper = ({ className, ...props }: ColorPickerEyeDro
 
   const handleEyeDropper = async () => {
     try {
-      // @ts-expect-error - EyeDropper API is experimental
       const eyeDropper = new EyeDropper();
       const result = await eyeDropper.open();
       const color = Color(result.sRGBHex);
@@ -265,7 +265,7 @@ export const ColorPickerEyeDropper = ({ className, ...props }: ColorPickerEyeDro
   return (
     <Button
       className={cn("shrink-0 text-muted-foreground", className)}
-      onClick={handleEyeDropper}
+      onClick={() => void handleEyeDropper()}
       size="icon"
       type="button"
       variant="outline"
@@ -313,7 +313,7 @@ const PercentageInput = ({ className, ...props }: PercentageInputProps) => {
           className,
         )}
       />
-      <span className="-translate-y-1/2 absolute top-1/2 right-2 text-muted-foreground text-xs">
+      <span className="absolute top-1/2 right-2 -translate-y-1/2 text-xs text-muted-foreground">
         %
       </span>
     </div>
@@ -332,7 +332,7 @@ export const ColorPickerFormat = ({ className, ...props }: ColorPickerFormatProp
     return (
       <div
         className={cn(
-          "-space-x-px relative flex w-full items-center rounded-md shadow-sm",
+          "relative flex w-full items-center -space-x-px rounded-md shadow-sm",
           className,
         )}
         {...props}
@@ -356,7 +356,7 @@ export const ColorPickerFormat = ({ className, ...props }: ColorPickerFormatProp
 
     return (
       <div
-        className={cn("-space-x-px flex items-center rounded-md shadow-sm", className)}
+        className={cn("flex items-center -space-x-px rounded-md shadow-sm", className)}
         {...props}
       >
         {rgb.map((value, index) => (
@@ -404,7 +404,7 @@ export const ColorPickerFormat = ({ className, ...props }: ColorPickerFormatProp
 
     return (
       <div
-        className={cn("-space-x-px flex items-center rounded-md shadow-sm", className)}
+        className={cn("flex items-center -space-x-px rounded-md shadow-sm", className)}
         {...props}
       >
         {hsl.map((value, index) => (

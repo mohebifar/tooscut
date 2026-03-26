@@ -1,10 +1,11 @@
-import { useCallback } from "react";
 import { MousePointer2, Scissors, Minus, Plus } from "lucide-react";
-import { Toggle } from "../ui/toggle";
-import { Slider } from "../ui/slider";
-import { Button } from "../ui/button";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
+import { useCallback } from "react";
+
 import { useVideoEditorStore } from "../../state/video-editor-store";
+import { Button } from "../ui/button";
+import { Slider } from "../ui/slider";
+import { Toggle } from "../ui/toggle";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { MIN_ZOOM, MAX_ZOOM, TRACK_HEADER_WIDTH } from "./constants";
 
 /**
