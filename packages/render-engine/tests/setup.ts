@@ -13,7 +13,8 @@ setupRenderEngineMatchers();
 
 // Check for update snapshots flag (browser-compatible)
 const updateSnapshots =
-  typeof import.meta.env !== "undefined" && import.meta.env.UPDATE_SNAPSHOTS === "true";
+  typeof import.meta.env !== "undefined" &&
+  (import.meta.env as Record<string, string | undefined>).UPDATE_SNAPSHOTS === "true";
 
 // Configure snapshot storage
 configureRenderTests({

@@ -3,6 +3,7 @@
  * Main editor state will be in a separate video-editor-store.
  */
 import { create } from "zustand";
+
 import { DEFAULT_ZOOM } from "./constants";
 
 export interface TimelineClip {

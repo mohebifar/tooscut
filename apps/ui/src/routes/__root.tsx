@@ -27,7 +27,7 @@ export const Route = createRootRoute({
         ? {
             defer: true,
             src: "https://cloud.umami.is/script.js",
-            "data-website-id": import.meta.env.VITE_UMAMI_WEBSITE_ID,
+            "data-website-id": import.meta.env.VITE_UMAMI_WEBSITE_ID as string,
           }
         : undefined,
       import.meta.env.DEV

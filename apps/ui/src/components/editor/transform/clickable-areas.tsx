@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+
 import type { DisplayBounds } from "./types";
 
 interface ClickableItem {

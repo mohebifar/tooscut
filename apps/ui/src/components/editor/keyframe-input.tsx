@@ -8,16 +8,17 @@
  * - If not keyframed: updates base value via onChange
  */
 
-import { NumericInput } from "../ui/numeric-input";
-import { KeyframeButton } from "./keyframe-button";
-import { useVideoEditorStore } from "../../state/video-editor-store";
 import type { AnimatableProperty } from "@tooscut/render-engine";
+
 import {
   evaluateKeyframe,
   isAtKeyframe,
   isPropertyKeyframed,
   getKeyframeIndexAtTime,
 } from "../../lib/keyframe-utils";
+import { useVideoEditorStore } from "../../state/video-editor-store";
+import { NumericInput } from "../ui/numeric-input";
+import { KeyframeButton } from "./keyframe-button";
 
 interface KeyframeInputProps {
   clipId: string;

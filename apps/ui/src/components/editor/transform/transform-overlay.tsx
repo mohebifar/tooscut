@@ -8,16 +8,18 @@
  * - Move, resize, and rotate interactions
  */
 
-import { useCallback, useMemo } from "react";
 import { KeyframeEvaluator, type Transform } from "@tooscut/render-engine";
+import { useCallback, useMemo } from "react";
+
+import type { HandlePosition, DisplayBounds } from "./types";
+
 import { useVideoEditorStore, type EditorClip } from "../../../state/video-editor-store";
 import { useAssetStore, type MediaAsset } from "../../timeline/use-asset-store";
 import { getClipDisplayBounds } from "./bounds";
-import { HandleRenderer, LineHandleRenderer } from "./handle-renderer";
 import { ClickableAreas } from "./clickable-areas";
 import { GuideRenderer } from "./guide-renderer";
+import { HandleRenderer, LineHandleRenderer } from "./handle-renderer";
 import { useTransformDrag } from "./use-transform-drag";
-import type { HandlePosition, DisplayBounds } from "./types";
 
 interface TransformOverlayProps {
   displayWidth: number;

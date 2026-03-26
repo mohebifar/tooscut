@@ -1,8 +1,9 @@
+import { type FrameRate } from "@tooscut/render-engine";
+import { Play, Pause, SkipBack, SkipForward, ChevronsLeft, ChevronsRight } from "lucide-react";
+
+import { useVideoEditorStore } from "../../state/video-editor-store";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
-import { useVideoEditorStore } from "../../state/video-editor-store";
-import { Play, Pause, SkipBack, SkipForward, ChevronsLeft, ChevronsRight } from "lucide-react";
-import { type FrameRate } from "@tooscut/render-engine";
 
 /**
  * Format a frame number as timecode HH:MM:SS:FF

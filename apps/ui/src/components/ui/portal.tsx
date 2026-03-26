@@ -1,6 +1,7 @@
-import { cn } from "@/lib/utils";
 import React from "react";
 import { createPortal } from "react-dom";
+
+import { cn } from "@/lib/utils";
 
 function Portal({ className, ...props }: React.ComponentProps<"div">) {
   const [mounted, setMounted] = React.useState(false);
@@ -37,7 +38,7 @@ function PortalBackdrop({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 -z-1 bg-background/95 backdrop-blur-sm duration-500 data-[state=closed]:animate-out data-[state=open]:animate-in supports-backdrop-filter:bg-background/60",
+        "fixed inset-0 -z-1 bg-background/95 backdrop-blur-sm duration-500 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 supports-backdrop-filter:bg-background/60",
         className,
       )}
       {...props}

@@ -1,16 +1,19 @@
-import { useMemo, useCallback, useEffect } from "react";
+import type { Effects, TextStyle, TextBox } from "@tooscut/render-engine";
+
 import { Loader2, Italic, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
-import { NumericInput } from "../ui/numeric-input";
+import { useMemo, useCallback, useEffect } from "react";
+
+import type { TextClip } from "../../state/video-editor-store";
+
+import { getWeightName, findNearestWeight } from "../../lib/font-service";
+import { useFontStore } from "../../state/font-store";
 import { ColorInput } from "../ui/color-input";
+import { NumericInput } from "../ui/numeric-input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 import { Toggle } from "../ui/toggle";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
-import { useFontStore } from "../../state/font-store";
-import { getWeightName, findNearestWeight } from "../../lib/font-service";
 import { FontPicker } from "./font-picker";
 import { PropertySection, PropertyRow } from "./property-shared";
-import type { TextClip } from "../../state/video-editor-store";
-import type { Effects, TextStyle, TextBox } from "@tooscut/render-engine";
 
 interface TextPropertiesProps {
   clip: TextClip;

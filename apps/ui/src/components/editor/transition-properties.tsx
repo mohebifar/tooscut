@@ -1,9 +1,11 @@
+import type { Transition, TransitionType, EasingPreset } from "@tooscut/render-engine";
+
 import { useCallback } from "react";
+
+import { useVideoEditorStore } from "../../state/video-editor-store";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Slider } from "../ui/slider";
 import { PropertySection, PropertyRow } from "./property-shared";
-import { useVideoEditorStore } from "../../state/video-editor-store";
-import type { Transition, TransitionType, EasingPreset } from "@tooscut/render-engine";
 
 const TRANSITION_TYPES: { value: TransitionType; label: string }[] = [
   { value: "None", label: "None" },

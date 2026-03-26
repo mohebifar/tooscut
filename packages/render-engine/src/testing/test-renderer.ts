@@ -6,6 +6,7 @@
  */
 
 import type { RenderFrame, MediaLayerData, Transform, Effects } from "../types.js";
+
 import { DEFAULT_TRANSFORM, DEFAULT_EFFECTS } from "../types.js";
 
 // Legacy alias for backwards compatibility

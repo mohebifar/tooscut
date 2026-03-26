@@ -1,7 +1,8 @@
+import type { Effects } from "@tooscut/render-engine";
+
 import { NumericInput } from "../ui/numeric-input";
 import { KeyframeInput } from "./keyframe-input";
 import { PropertySection, PropertyRow } from "./property-shared";
-import type { Effects } from "@tooscut/render-engine";
 
 interface PicturePropertiesProps {
   clipId: string;

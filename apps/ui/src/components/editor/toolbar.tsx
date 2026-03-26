@@ -1,10 +1,14 @@
-import { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "../../state/db";
+import { Undo2, Redo2, MousePointer2, Scissors, DownloadIcon, ChevronLeft } from "lucide-react";
+import { useState, useCallback, useRef, useEffect } from "react";
+
 import { Route } from "../../routes/editor/$projectId";
+import { db } from "../../state/db";
+import { useVideoEditorStore, useTemporalStore } from "../../state/video-editor-store";
+import { importFilesWithPicker, addAssetsToStores } from "../timeline/use-asset-store";
 import { Button } from "../ui/button";
-import { Separator } from "../ui/separator";
 import {
   Menubar,
   MenubarContent,
@@ -14,14 +18,11 @@ import {
   MenubarShortcut,
   MenubarTrigger,
 } from "../ui/menubar";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
+import { Separator } from "../ui/separator";
 import { Toggle } from "../ui/toggle";
-import { Undo2, Redo2, MousePointer2, Scissors, DownloadIcon, ChevronLeft } from "lucide-react";
-import { Link } from "@tanstack/react-router";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { ExportDialog } from "./export-dialog";
 import { ProjectSettingsDialog } from "./project-settings-dialog";
-import { useVideoEditorStore, useTemporalStore } from "../../state/video-editor-store";
-import { importFilesWithPicker, addAssetsToStores } from "../timeline/use-asset-store";
 
 interface ToolbarProps {
   /** Open the settings dialog on mount (for new projects) */
@@ -50,7 +51,7 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
         void navigate({
           to: "/editor/$projectId",
           params: { projectId },
-          search: {} as any,
+          search: {} as Record<string, unknown>,
           replace: true,
         });
       }
@@ -127,7 +128,7 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
   ]);
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex items-center gap-1 px-2 py-1 bg-card border-b border-border">
+      <div className="flex items-center gap-1 border-b border-border bg-card px-2 py-1">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
@@ -144,17 +145,17 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
         <Separator orientation="vertical" className="mx-1 h-5" />
 
         {/* File/Edit/View menus */}
-        <Menubar className="border-none shadow-none bg-transparent h-auto p-0">
+        <Menubar className="h-auto border-none bg-transparent p-0 shadow-none">
           <MenubarMenu>
-            <MenubarTrigger className="text-xs h-7 px-2 py-1 data-[state=open]:bg-accent">
+            <MenubarTrigger className="h-7 px-2 py-1 text-xs data-[state=open]:bg-accent">
               File
             </MenubarTrigger>
             <MenubarContent>
-              <MenubarItem onClick={() => navigate({ to: "/projects" })}>
+              <MenubarItem onClick={() => void navigate({ to: "/projects" })}>
                 New Project
                 <MenubarShortcut>⌘N</MenubarShortcut>
               </MenubarItem>
-              <MenubarItem onClick={() => navigate({ to: "/projects" })}>
+              <MenubarItem onClick={() => void navigate({ to: "/projects" })}>
                 Open Project
                 <MenubarShortcut>⌘O</MenubarShortcut>
               </MenubarItem>
@@ -166,9 +167,11 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
               <MenubarItem disabled>Save As...</MenubarItem>
               <MenubarSeparator />
               <MenubarItem
-                onClick={async () => {
-                  const assets = await importFilesWithPicker();
-                  if (assets.length > 0) addAssetsToStores(assets);
+                onClick={() => {
+                  void (async () => {
+                    const assets = await importFilesWithPicker();
+                    if (assets.length > 0) addAssetsToStores(assets);
+                  })();
                 }}
               >
                 Import Media
@@ -186,7 +189,7 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
           </MenubarMenu>
 
           <MenubarMenu>
-            <MenubarTrigger className="text-xs h-7 px-2 py-1 data-[state=open]:bg-accent">
+            <MenubarTrigger className="h-7 px-2 py-1 text-xs data-[state=open]:bg-accent">
               Edit
             </MenubarTrigger>
             <MenubarContent>
@@ -230,7 +233,7 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
           </MenubarMenu>
 
           <MenubarMenu>
-            <MenubarTrigger className="text-xs h-7 px-2 py-1 data-[state=open]:bg-accent">
+            <MenubarTrigger className="h-7 px-2 py-1 text-xs data-[state=open]:bg-accent">
               View
             </MenubarTrigger>
             <MenubarContent>
@@ -326,8 +329,8 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
         {/* Export button */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="default" size="sm" className="text-xs h-7" onClick={handleExportClick}>
-              <DownloadIcon className="h-4 w-4 mr-1" />
+            <Button variant="default" size="sm" className="h-7 text-xs" onClick={handleExportClick}>
+              <DownloadIcon className="mr-1 h-4 w-4" />
               Export
             </Button>
           </TooltipTrigger>
@@ -375,7 +378,7 @@ function ToolbarProjectName() {
     return (
       <input
         ref={inputRef}
-        className="text-xs text-foreground bg-transparent border-b border-ring outline-none w-40"
+        className="w-40 border-b border-ring bg-transparent text-xs text-foreground outline-none"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={commit}
@@ -390,7 +393,7 @@ function ToolbarProjectName() {
   return (
     <button
       type="button"
-      className="text-xs text-muted-foreground hover:text-foreground transition-colors truncate max-w-48 cursor-text"
+      className="max-w-48 cursor-text truncate text-xs text-muted-foreground transition-colors hover:text-foreground"
       onClick={() => {
         setValue(project.name);
         setEditing(true);

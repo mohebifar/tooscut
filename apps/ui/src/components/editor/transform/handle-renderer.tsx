@@ -1,7 +1,8 @@
-import type { DisplayBounds, HandlePosition } from "./types";
 import type { LineClip } from "../../../state/video-editor-store";
-import { getLineEndpointDisplayPositions } from "./bounds";
 import type { MediaAsset } from "../../timeline/use-asset-store";
+import type { DisplayBounds, HandlePosition } from "./types";
+
+import { getLineEndpointDisplayPositions } from "./bounds";
 
 const HANDLE_SIZE = 8;
 const ROTATION_HANDLE_OFFSET = 24;

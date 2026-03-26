@@ -1,9 +1,11 @@
-import { NumericInput } from "../ui/numeric-input";
+import type { Effects, ShapeStyle, ShapeBox } from "@tooscut/render-engine";
+
+import type { ShapeClip } from "../../state/video-editor-store";
+
 import { ColorInput } from "../ui/color-input";
+import { NumericInput } from "../ui/numeric-input";
 import { KeyframeInput } from "./keyframe-input";
 import { PropertySection, PropertyRow } from "./property-shared";
-import type { ShapeClip } from "../../state/video-editor-store";
-import type { Effects, ShapeStyle, ShapeBox } from "@tooscut/render-engine";
 
 interface ShapePropertiesProps {
   clip: ShapeClip;

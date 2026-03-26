@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+
 import { extractWaveform } from "../../workers/waveform-api";
 import { useAssetStore } from "./use-asset-store";
 

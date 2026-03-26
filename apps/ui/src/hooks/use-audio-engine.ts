@@ -6,16 +6,17 @@
  * audio engine boundary.
  */
 
-import { useEffect, useRef, useCallback, useState } from "react";
 import {
   BrowserAudioEngine,
   framesToSeconds,
   type AudioTimelineState,
 } from "@tooscut/render-engine";
-import { useVideoEditorStore } from "../state/video-editor-store";
-import { useAssetStore } from "../components/timeline/use-asset-store";
-import audioWasmUrl from "@tooscut/render-engine/wasm/audio-engine/audio_engine_bg.wasm?url";
 import audioWorkletUrl from "@tooscut/render-engine/dist/worklet/audio-engine.worklet.iife.js?url";
+import audioWasmUrl from "@tooscut/render-engine/wasm/audio-engine/audio_engine_bg.wasm?url";
+import { useEffect, useRef, useCallback, useState } from "react";
+
+import { useAssetStore } from "../components/timeline/use-asset-store";
+import { useVideoEditorStore } from "../state/video-editor-store";
 
 /**
  * Hook to manage audio playback in the video editor
@@ -54,15 +55,16 @@ export function useAudioEngine() {
         setIsWasmReady(true);
         setError(null);
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         console.error("[useAudioEngine] Failed to initialize WASM:", err);
-        setError(err);
+        setError(err instanceof Error ? err : new Error(String(err)));
       });
 
+    const uploadedSources = uploadedSourcesRef.current;
     return () => {
       engine.dispose();
       engineRef.current = null;
-      uploadedSourcesRef.current.clear();
+      uploadedSources.clear();
     };
   }, []);
 

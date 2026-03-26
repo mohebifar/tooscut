@@ -1,8 +1,7 @@
-import { useRef, useCallback, useState, type DragEvent } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
-import { Button } from "../ui/button";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { X, Plus, Music, Video, Image, FolderOpen, Type, Shapes, Sparkles } from "lucide-react";
+import { useRef, useCallback, useState, type DragEvent } from "react";
+
+import { useVideoEditorStore } from "../../state/video-editor-store";
 import {
   useAssetStore,
   importFiles,
@@ -13,9 +12,11 @@ import {
   formatDuration,
   type MediaAsset,
 } from "../timeline/use-asset-store";
-import { useVideoEditorStore } from "../../state/video-editor-store";
-import { TextPanel } from "./text-panel";
+import { Button } from "../ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { ShapePanel } from "./shape-panel";
+import { TextPanel } from "./text-panel";
 import { TransitionPanel } from "./transition-panel";
 
 function AssetCard({ asset }: { asset: MediaAsset }) {
@@ -45,42 +46,42 @@ function AssetCard({ asset }: { asset: MediaAsset }) {
         img.src = asset.thumbnailUrl;
         dragImageRef.current = img;
       }
-      e.dataTransfer.setDragImage(dragImageRef.current!, 60, 34);
+      e.dataTransfer.setDragImage(dragImageRef.current, 60, 34);
     }
   };
 
   return (
     <div
-      className="group relative rounded-md border border-border bg-background overflow-hidden cursor-grab active:cursor-grabbing"
+      className="group relative cursor-grab overflow-hidden rounded-md border border-border bg-background active:cursor-grabbing"
       draggable
       onDragStart={handleDragStart}
     >
       {/* Thumbnail */}
-      <div className="aspect-video bg-muted flex items-center justify-center overflow-hidden">
+      <div className="flex aspect-video items-center justify-center overflow-hidden bg-muted">
         {asset.thumbnailUrl ? (
-          <img src={asset.thumbnailUrl} alt={asset.name} className="w-full h-full object-cover" />
+          <img src={asset.thumbnailUrl} alt={asset.name} className="h-full w-full object-cover" />
         ) : asset.type === "audio" ? (
-          <Music className="w-8 h-8 text-muted-foreground" />
+          <Music className="h-8 w-8 text-muted-foreground" />
         ) : (
-          <Video className="w-8 h-8 text-muted-foreground" />
+          <Video className="h-8 w-8 text-muted-foreground" />
         )}
 
         {/* Duration badge */}
         {asset.duration > 0 && (
-          <div className="absolute bottom-1 right-1 bg-muted/90 text-foreground text-[10px] px-1 rounded">
+          <div className="absolute right-1 bottom-1 rounded bg-muted/90 px-1 text-[10px] text-foreground">
             {formatDuration(asset.duration)}
           </div>
         )}
 
         {/* Type badge */}
-        <div className="absolute top-1 left-1 bg-muted/90 text-foreground text-[10px] px-1 rounded uppercase">
+        <div className="absolute top-1 left-1 rounded bg-muted/90 px-1 text-[10px] text-foreground uppercase">
           {asset.type}
         </div>
       </div>
 
       {/* Info */}
       <div className="p-2">
-        <div className="text-xs font-medium truncate" title={asset.name}>
+        <div className="truncate text-xs font-medium" title={asset.name}>
           {asset.name}
         </div>
         <div className="text-[10px] text-muted-foreground">
@@ -95,7 +96,7 @@ function AssetCard({ asset }: { asset: MediaAsset }) {
           <Button
             variant="destructive"
             size="icon"
-            className="absolute top-1 right-1 h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute top-1 right-1 h-5 w-5 opacity-0 transition-opacity group-hover:opacity-100"
             onClick={(e) => {
               e.stopPropagation();
               removeAsset(asset.id);
@@ -156,11 +157,11 @@ function ImportButton({
           accept={accept}
           multiple
           className="hidden"
-          onChange={handleChange}
+          onChange={(e) => void handleChange(e)}
         />
       )}
-      <Button variant="outline" size="lg" className="w-full" onClick={handleClick}>
-        <IconComponent className="w-4 h-4 mr-2" />
+      <Button variant="outline" size="lg" className="w-full" onClick={() => void handleClick()}>
+        <IconComponent className="mr-2 h-4 w-4" />
         {label || "Import"}
       </Button>
     </>
@@ -180,7 +181,7 @@ function AssetsContent() {
   const imageAssets = assets.filter((a) => a.type === "image");
 
   return (
-    <Tabs defaultValue="all" className="flex-1 flex flex-col overflow-hidden">
+    <Tabs defaultValue="all" className="flex flex-1 flex-col overflow-hidden">
       <TabsList className="mx-2 mt-2 w-auto">
         <TabsTrigger value="all" className="text-xs">
           All ({assets.length})
@@ -200,15 +201,15 @@ function AssetsContent() {
         <TabsContent value="all" className="m-0 space-y-2">
           <ImportButton accept="video/*,audio/*,image/*" onImport={handleImportedAssets} />
           {isLoading && (
-            <div className="text-center text-sm text-muted-foreground py-2">Loading...</div>
+            <div className="py-2 text-center text-sm text-muted-foreground">Loading...</div>
           )}
-          <div className="grid grid-cols-1 @[200px]:grid-cols-2 @[400px]:grid-cols-3 @[600px]:grid-cols-4 gap-2">
+          <div className="grid grid-cols-1 gap-2 @[200px]:grid-cols-2 @[400px]:grid-cols-3 @[600px]:grid-cols-4">
             {assets.map((asset) => (
               <AssetCard key={asset.id} asset={asset} />
             ))}
           </div>
           {assets.length === 0 && !isLoading && (
-            <div className="text-center text-sm text-muted-foreground py-4">
+            <div className="py-4 text-center text-sm text-muted-foreground">
               No assets imported yet
             </div>
           )}
@@ -221,13 +222,13 @@ function AssetsContent() {
             label="Import Video"
             icon={Video}
           />
-          <div className="grid grid-cols-1 @[200px]:grid-cols-2 @[400px]:grid-cols-3 @[600px]:grid-cols-4 gap-2">
+          <div className="grid grid-cols-1 gap-2 @[200px]:grid-cols-2 @[400px]:grid-cols-3 @[600px]:grid-cols-4">
             {videoAssets.map((asset) => (
               <AssetCard key={asset.id} asset={asset} />
             ))}
           </div>
           {videoAssets.length === 0 && (
-            <div className="text-center text-sm text-muted-foreground py-4">No video files</div>
+            <div className="py-4 text-center text-sm text-muted-foreground">No video files</div>
           )}
         </TabsContent>
 
@@ -238,13 +239,13 @@ function AssetsContent() {
             label="Import Audio"
             icon={Music}
           />
-          <div className="grid grid-cols-1 @[200px]:grid-cols-2 @[400px]:grid-cols-3 @[600px]:grid-cols-4 gap-2">
+          <div className="grid grid-cols-1 gap-2 @[200px]:grid-cols-2 @[400px]:grid-cols-3 @[600px]:grid-cols-4">
             {audioAssets.map((asset) => (
               <AssetCard key={asset.id} asset={asset} />
             ))}
           </div>
           {audioAssets.length === 0 && (
-            <div className="text-center text-sm text-muted-foreground py-4">No audio files</div>
+            <div className="py-4 text-center text-sm text-muted-foreground">No audio files</div>
           )}
         </TabsContent>
 
@@ -255,13 +256,13 @@ function AssetsContent() {
             label="Import Image"
             icon={Image}
           />
-          <div className="grid grid-cols-1 @[200px]:grid-cols-2 @[400px]:grid-cols-3 @[600px]:grid-cols-4 gap-2">
+          <div className="grid grid-cols-1 gap-2 @[200px]:grid-cols-2 @[400px]:grid-cols-3 @[600px]:grid-cols-4">
             {imageAssets.map((asset) => (
               <AssetCard key={asset.id} asset={asset} />
             ))}
           </div>
           {imageAssets.length === 0 && (
-            <div className="text-center text-sm text-muted-foreground py-4">No image files</div>
+            <div className="py-4 text-center text-sm text-muted-foreground">No image files</div>
           )}
         </TabsContent>
       </div>
@@ -328,7 +329,10 @@ export function AssetPanel() {
       dragCounterRef.current = 0;
       setIsDragOver(false);
       if (e.dataTransfer.types.includes("Files")) {
-        handleNativeFileDrop(e.nativeEvent, handleDropFiles);
+        handleNativeFileDrop(
+          e.nativeEvent,
+          (files, handles) => void handleDropFiles(files, handles),
+        );
         setActiveTab("assets");
       }
     },
@@ -355,8 +359,8 @@ export function AssetPanel() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 rounded-none gap-1.5 ${
-                  isActive ? "text-foreground border-b-2 border-primary" : "text-muted-foreground"
+                className={`flex-1 gap-1.5 rounded-none ${
+                  isActive ? "border-b-2 border-primary text-foreground" : "text-muted-foreground"
                 }`}
               >
                 <Icon className="h-3.5 w-3.5" />
@@ -387,7 +391,7 @@ export function AssetPanel() {
 
           {/* Drag-over overlay */}
           {isDragOver && (
-            <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 border-2 border-dashed border-primary m-2 rounded-lg pointer-events-none">
+            <div className="pointer-events-none absolute inset-0 z-50 m-2 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-background/80">
               <div className="text-sm font-medium text-primary">Drop files to import</div>
             </div>
           )}

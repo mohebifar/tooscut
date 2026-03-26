@@ -5,8 +5,12 @@
  * Supports resolution presets, frame rate, quality settings.
  */
 
-import { useState, useCallback, useEffect } from "react";
 import { DownloadIcon, XIcon } from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
+
+import { useMp4Export, type ExportOptions, type ExportResult } from "../../hooks/use-mp4-export";
+import { useVideoEditorStore } from "../../state/video-editor-store";
+import { Button } from "../ui/button";
 import {
   Dialog,
   DialogContent,
@@ -16,11 +20,8 @@ import {
   DialogPanel,
   DialogTitle,
 } from "../ui/dialog";
-import { Button } from "../ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Progress } from "../ui/progress";
-import { useMp4Export, type ExportOptions, type ExportResult } from "../../hooks/use-mp4-export";
-import { useVideoEditorStore } from "../../state/video-editor-store";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 
 // ===================== TYPES =====================
 
@@ -255,7 +256,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
               <Button variant="outline" onClick={handleClose}>
                 Cancel
               </Button>
-              <Button onClick={handleExport}>
+              <Button onClick={() => void handleExport()}>
                 <DownloadIcon className="mr-2 size-4" />
                 Export
               </Button>
@@ -286,7 +287,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
               <Button variant="outline" onClick={handleClose}>
                 Close
               </Button>
-              <Button onClick={handleExport}>Retry</Button>
+              <Button onClick={() => void handleExport()}>Retry</Button>
             </>
           )}
         </DialogFooter>

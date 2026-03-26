@@ -1,5 +1,10 @@
-import { useState, useCallback, useEffect } from "react";
+import { FRAME_RATE_PRESETS, type FrameRate } from "@tooscut/render-engine";
 import { Monitor, Smartphone, Square, RectangleHorizontal } from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
+
+import { db } from "../../state/db";
+import { useVideoEditorStore } from "../../state/video-editor-store";
+import { Button } from "../ui/button";
 import {
   Dialog,
   DialogContent,
@@ -9,12 +14,8 @@ import {
   DialogPanel,
   DialogTitle,
 } from "../ui/dialog";
-import { Button } from "../ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { NumericInput } from "../ui/numeric-input";
-import { useVideoEditorStore } from "../../state/video-editor-store";
-import { FRAME_RATE_PRESETS, type FrameRate } from "@tooscut/render-engine";
-import { db } from "../../state/db";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 
 interface ProjectSettingsDialogProps {
   open: boolean;
@@ -149,7 +150,7 @@ export function ProjectSettingsDialog({
             <div className="grid gap-2">
               <label className="text-sm font-medium">Project Name</label>
               <input
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Untitled Project"

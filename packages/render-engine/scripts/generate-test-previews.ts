@@ -11,6 +11,7 @@
 
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
+
 import {
   visualTestCases,
   generateSolidTexture,

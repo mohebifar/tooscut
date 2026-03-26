@@ -10,8 +10,9 @@
  * - Handles font and texture preloading across all workers
  */
 
-import * as Comlink from "comlink";
 import { VideoFrameLoader } from "@tooscut/render-engine";
+import * as Comlink from "comlink";
+
 import type {
   FrameRendererWorkerApi,
   RenderFrameTask,

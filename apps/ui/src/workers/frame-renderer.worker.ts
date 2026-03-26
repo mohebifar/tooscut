@@ -10,7 +10,6 @@
  * - Returns ImageBitmap for zero-copy transfer back to main thread
  */
 
-import * as Comlink from "comlink";
 import {
   Compositor,
   initCompositorWasm,
@@ -18,6 +17,7 @@ import {
   EvaluatorManager,
   type RenderFrame,
 } from "@tooscut/render-engine";
+import * as Comlink from "comlink";
 
 // ===================== TYPES =====================
 

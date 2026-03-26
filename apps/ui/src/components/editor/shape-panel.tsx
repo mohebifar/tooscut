@@ -6,6 +6,7 @@ import type {
   LineBox,
   Color,
 } from "@tooscut/render-engine";
+
 import { Square, Circle, Triangle, Minus, MoveRight } from "lucide-react";
 
 interface ShapeTemplate {
@@ -119,13 +120,13 @@ function TemplateCard({
 }) {
   return (
     <div
-      className="group rounded-md border border-border bg-background p-3 cursor-grab active:cursor-grabbing hover:border-primary/50 hover:bg-primary/5 transition-colors"
+      className="group cursor-grab rounded-md border border-border bg-background p-3 transition-colors hover:border-primary/50 hover:bg-primary/5 active:cursor-grabbing"
       draggable
       onDragStart={onDragStart}
     >
       <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-        <span className="text-sm font-medium truncate">{name}</span>
+        <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="truncate text-sm font-medium">{name}</span>
       </div>
       <div className="mt-1 text-[10px] text-muted-foreground">{subtitle}</div>
     </div>

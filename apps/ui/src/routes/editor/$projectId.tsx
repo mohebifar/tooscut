@@ -1,23 +1,25 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { VideoEditorLayout } from "../../components/editor/video-editor-layout";
+
+import type { MediaAsset } from "../../state/video-editor-store";
+
 import { AssetPanel } from "../../components/editor/asset-panel";
+import { PlaybackControls } from "../../components/editor/playback-controls";
 import { PreviewPanel } from "../../components/editor/preview-panel";
 import { PropertiesPanel } from "../../components/editor/properties-panel";
 import { TimelinePanel } from "../../components/editor/timeline-panel";
-import { PlaybackControls } from "../../components/editor/playback-controls";
 import { Toolbar } from "../../components/editor/toolbar";
-import { Button } from "../../components/ui/button";
-import { useAudioEngine } from "../../hooks/use-audio-engine";
-import { useAutoSave } from "../../hooks/use-auto-save";
-import { useVideoEditorStore } from "../../state/video-editor-store";
+import { VideoEditorLayout } from "../../components/editor/video-editor-layout";
 import {
   useAssetStore,
   hydrateAssets,
   requestPermissionAndHydrate,
 } from "../../components/timeline/use-asset-store";
+import { Button } from "../../components/ui/button";
+import { useAudioEngine } from "../../hooks/use-audio-engine";
+import { useAutoSave } from "../../hooks/use-auto-save";
 import { db } from "../../state/db";
-import type { MediaAsset } from "../../state/video-editor-store";
+import { useVideoEditorStore } from "../../state/video-editor-store";
 
 export const Route = createFileRoute("/editor/$projectId")({
   component: EditorPage,
@@ -143,27 +145,27 @@ function EditorPage() {
 
       {/* Permission prompt — must be triggered by user gesture */}
       {pendingPermissionIds.length > 0 && (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center">
-          <div className="bg-card border border-border rounded-lg p-6 max-w-md text-center shadow-lg">
-            <p className="text-foreground font-medium mb-2">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="max-w-md rounded-lg border border-border bg-card p-6 text-center shadow-lg">
+            <p className="mb-2 font-medium text-foreground">
               {pendingPermissionIds.length} file{pendingPermissionIds.length > 1 ? "s" : ""} need
               access permission
             </p>
-            <p className="text-muted-foreground text-sm mb-4">
+            <p className="mb-4 text-sm text-muted-foreground">
               Your browser requires you to re-grant access to local files after a reload.
             </p>
-            <Button onClick={handleGrantPermission}>Grant Access</Button>
+            <Button onClick={() => void handleGrantPermission()}>Grant Access</Button>
           </div>
         </div>
       )}
 
       {/* Overlay loading/error state so the canvas stays mounted (transferControlToOffscreen is one-shot) */}
       {(loading || error) && (
-        <div className="fixed inset-0 z-50 bg-background flex flex-col">
+        <div className="fixed inset-0 z-50 flex flex-col bg-background">
           {error ? (
-            <div className="flex-1 flex items-center justify-center flex-col gap-4">
-              <p className="text-destructive text-lg">{error}</p>
-              <Button variant="link" onClick={() => navigate({ to: "/projects" })}>
+            <div className="flex flex-1 flex-col items-center justify-center gap-4">
+              <p className="text-lg text-destructive">{error}</p>
+              <Button variant="link" onClick={() => void navigate({ to: "/projects" })}>
                 Back to projects
               </Button>
             </div>
@@ -184,7 +186,7 @@ function EditorSkeleton() {
   return (
     <div className="flex h-screen flex-col bg-background select-none">
       {/* Toolbar skeleton */}
-      <div className="shrink-0 h-10 border-b border-border bg-card flex items-center gap-2 px-3">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-card px-3">
         <SkeletonBlock className="h-5 w-5 rounded" />
         <SkeletonBlock className="h-5 w-20" />
         <div className="flex-1" />
@@ -192,12 +194,12 @@ function EditorSkeleton() {
       </div>
 
       {/* Main content area */}
-      <div className="flex flex-1 min-h-0">
+      <div className="flex min-h-0 flex-1">
         {/* Asset panel */}
-        <div className="w-62.5 border-r border-border bg-card p-3 flex flex-col gap-3">
+        <div className="flex w-62.5 flex-col gap-3 border-r border-border bg-card p-3">
           <SkeletonBlock className="h-5 w-24" />
           <SkeletonBlock className="h-8 w-full" />
-          <div className="grid grid-cols-2 gap-2 mt-1">
+          <div className="mt-1 grid grid-cols-2 gap-2">
             <SkeletonBlock className="aspect-video" />
             <SkeletonBlock className="aspect-video" />
             <SkeletonBlock className="aspect-video" />
@@ -206,20 +208,20 @@ function EditorSkeleton() {
         </div>
 
         {/* Preview panel */}
-        <div className="flex-1 flex flex-col bg-background">
-          <div className="flex-1 flex items-center justify-center p-6">
-            <SkeletonBlock className="w-full max-w-160 aspect-video" />
+        <div className="flex flex-1 flex-col bg-background">
+          <div className="flex flex-1 items-center justify-center p-6">
+            <SkeletonBlock className="aspect-video w-full max-w-160" />
           </div>
-          <div className="shrink-0 h-10 border-t border-border bg-card flex items-center justify-center gap-3 px-4">
+          <div className="flex h-10 shrink-0 items-center justify-center gap-3 border-t border-border bg-card px-4">
             <SkeletonBlock className="h-5 w-5 rounded-full" />
             <SkeletonBlock className="h-5 w-5 rounded-full" />
             <SkeletonBlock className="h-5 w-5 rounded-full" />
-            <SkeletonBlock className="h-4 w-24 ml-2" />
+            <SkeletonBlock className="ml-2 h-4 w-24" />
           </div>
         </div>
 
         {/* Properties panel */}
-        <div className="w-60 border-l border-border bg-card p-3 flex flex-col gap-3">
+        <div className="flex w-60 flex-col gap-3 border-l border-border bg-card p-3">
           <SkeletonBlock className="h-5 w-20" />
           <SkeletonBlock className="h-8 w-full" />
           <SkeletonBlock className="h-8 w-full" />
@@ -228,15 +230,15 @@ function EditorSkeleton() {
       </div>
 
       {/* Timeline skeleton */}
-      <div className="h-62.5 border-t border-border bg-card p-3 flex flex-col gap-2">
-        <div className="flex items-center gap-2 mb-1">
+      <div className="flex h-62.5 flex-col gap-2 border-t border-border bg-card p-3">
+        <div className="mb-1 flex items-center gap-2">
           <SkeletonBlock className="h-4 w-32" />
           <div className="flex-1" />
           <SkeletonBlock className="h-4 w-16" />
         </div>
         {/* Track rows */}
-        {[...Array(3)].map((_, i) => (
-          <div key={i} className="flex items-center gap-2 h-12">
+        {[...Array<undefined>(3)].map((_, i) => (
+          <div key={i} className="flex h-12 items-center gap-2">
             <SkeletonBlock className="h-full w-30 shrink-0" />
             <SkeletonBlock className="h-full flex-1" style={{ maxWidth: `${60 - i * 15}%` }} />
           </div>

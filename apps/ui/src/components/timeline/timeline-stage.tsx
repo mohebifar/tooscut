@@ -1,8 +1,10 @@
 "use client";
 
+import { framesToSeconds } from "@tooscut/render-engine";
 import Konva from "konva";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Group, Label, Layer, Line, Rect, Shape, Stage, Tag, Text } from "react-konva";
+
 import { useVideoEditorStore } from "../../state/video-editor-store";
 import {
   CLIP_PADDING,
@@ -14,8 +16,6 @@ import {
   TRACK_HEADER_WIDTH,
   TRACK_HEIGHT,
 } from "./constants";
-import { findSnapTargets, snapFrame } from "./snap-utils";
-import { framesToSeconds } from "@tooscut/render-engine";
 import {
   KonvaEyeIcon,
   KonvaEyeOffIcon,
@@ -24,6 +24,7 @@ import {
   KonvaVolume2Icon,
   KonvaVolumeIcon,
 } from "./konva-icons";
+import { findSnapTargets, snapFrame } from "./snap-utils";
 import {
   getThumbnailsForClip,
   useClipThumbnails,
@@ -1625,6 +1626,7 @@ export function TimelineStage({
       setSelectedClipIds,
       setScrollX,
       setScrollY,
+      setCrossTransitionResizePreview,
     ],
   );
 
@@ -1758,6 +1760,7 @@ export function TimelineStage({
     setClipTransitionOut,
     updateCrossTransitionDuration,
     setSelectedClipIds,
+    setCrossTransitionResizePreview,
   ]);
 
   // Get clip color based on type
@@ -2183,6 +2186,7 @@ export function TimelineStage({
       transitionResizePreview,
       transitionHover,
       selectedTransition,
+      fps,
     ],
   );
 

@@ -1,12 +1,5 @@
-import type { GPU } from "@webgpu/types";
-import type { RenderFrame } from "./src/types";
 import type { SnapshotOptions } from "./src/testing/snapshot-tester";
-
-declare global {
-  interface Navigator {
-    readonly gpu: GPU;
-  }
-}
+import type { RenderFrame } from "./src/types";
 
 declare module "vitest" {
   interface Assertion<T> {

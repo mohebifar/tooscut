@@ -1,18 +1,19 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback } from "react";
-import { TimelineStage } from "./timeline-stage";
-import { Button } from "../ui/button";
+import { secondsToFrames, type Transition, type CrossTransitionType } from "@tooscut/render-engine";
+import { PlusIcon } from "lucide-react";
+import { useRef, useEffect, useState, useCallback, useMemo } from "react";
+
 import { useVideoEditorStore, useTemporalStore } from "../../state/video-editor-store";
+import { Button } from "../ui/button";
+import { TRACK_HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT } from "./constants";
+import { TimelineStage } from "./timeline-stage";
 import {
   useAssetStore,
   importFiles,
   handleNativeFileDrop,
   addAssetsToStores,
 } from "./use-asset-store";
-import { TRACK_HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT } from "./constants";
-import { secondsToFrames } from "@tooscut/render-engine";
-import { PlusIcon } from "lucide-react";
 
 /**
  * Canvas-based timeline component.
@@ -262,24 +263,27 @@ export function CanvasTimeline() {
   const audioTracksFiltered = tracks
     .filter((t) => t.type === "audio")
     .sort((a, b) => a.index - b.index);
-  const allTracks = [
-    ...videoTracksFiltered.map((t) => ({
-      id: t.id,
-      fullId: t.id,
-      type: "video" as const,
-      name: t.name || `Video ${t.index + 1}`,
-      index: t.index,
-      pairedTrackId: t.pairedTrackId,
-    })),
-    ...audioTracksFiltered.map((t) => ({
-      id: t.id,
-      fullId: t.id,
-      type: "audio" as const,
-      name: t.name || `Audio ${t.index + 1}`,
-      index: t.index,
-      pairedTrackId: t.pairedTrackId,
-    })),
-  ];
+  const allTracks = useMemo(
+    () => [
+      ...videoTracksFiltered.map((t) => ({
+        id: t.id,
+        fullId: t.id,
+        type: "video" as const,
+        name: t.name || `Video ${t.index + 1}`,
+        index: t.index,
+        pairedTrackId: t.pairedTrackId,
+      })),
+      ...audioTracksFiltered.map((t) => ({
+        id: t.id,
+        fullId: t.id,
+        type: "audio" as const,
+        name: t.name || `Audio ${t.index + 1}`,
+        index: t.index,
+        pairedTrackId: t.pairedTrackId,
+      })),
+    ],
+    [videoTracksFiltered, audioTracksFiltered],
+  );
 
   // Convert screen coordinates to timeline coordinates
   const xToFrame = useCallback(
@@ -692,7 +696,7 @@ export function CanvasTimeline() {
         const hit = d.getClipAtScreenPosition(e.clientX, e.clientY);
         if (!hit) return;
 
-        const transition = JSON.parse(transitionData);
+        const transition = JSON.parse(transitionData) as Transition;
         if (hit.edge === "in") {
           d.setClipTransitionIn(hit.clip.id, transition);
         } else {
@@ -708,7 +712,10 @@ export function CanvasTimeline() {
         const boundary = d.getAdjacentClipBoundary(e.clientX, e.clientY);
         if (!boundary) return;
 
-        const data = JSON.parse(crossTransitionData);
+        const data = JSON.parse(crossTransitionData) as {
+          type: CrossTransitionType;
+          duration: number;
+        };
         d.addCrossTransitionBetween(
           boundary.outgoing.id,
           boundary.incoming.id,
@@ -730,7 +737,13 @@ export function CanvasTimeline() {
       // Handle text template drop
       const textTemplateData = e.dataTransfer!.getData("application/x-text-template");
       if (textTemplateData) {
-        const template = JSON.parse(textTemplateData);
+        const template = JSON.parse(textTemplateData) as {
+          defaultDuration: number;
+          name: string;
+          text: string;
+          style: Record<string, unknown>;
+          box: Record<string, unknown>;
+        };
         const trackIndex = d.findNearestVideoTrack(rawTrackIndex);
         if (trackIndex === null) return;
 
@@ -756,7 +769,13 @@ export function CanvasTimeline() {
       // Handle shape template drop
       const shapeTemplateData = e.dataTransfer!.getData("application/x-shape-template");
       if (shapeTemplateData) {
-        const template = JSON.parse(shapeTemplateData);
+        const template = JSON.parse(shapeTemplateData) as {
+          defaultDuration: number;
+          name: string;
+          shape: string;
+          style: Record<string, unknown>;
+          box: Record<string, unknown>;
+        };
         const trackIndex = d.findNearestVideoTrack(rawTrackIndex);
         if (trackIndex === null) return;
 
@@ -782,7 +801,12 @@ export function CanvasTimeline() {
       // Handle line template drop
       const lineTemplateData = e.dataTransfer!.getData("application/x-line-template");
       if (lineTemplateData) {
-        const template = JSON.parse(lineTemplateData);
+        const template = JSON.parse(lineTemplateData) as {
+          defaultDuration: number;
+          name: string;
+          style: Record<string, unknown>;
+          box: Record<string, unknown>;
+        };
         const trackIndex = d.findNearestVideoTrack(rawTrackIndex);
         if (trackIndex === null) return;
 
@@ -872,81 +896,83 @@ export function CanvasTimeline() {
 
       // Handle file drop from OS (Finder / Explorer)
       if (e.dataTransfer!.files.length > 0) {
-        handleNativeFileDrop(e, async (files, handles) => {
-          const imported = await importFiles(files, handles);
+        handleNativeFileDrop(e, (files, handles) => {
+          void (async () => {
+            const imported = await importFiles(files, handles);
 
-          let asset: (typeof imported)[number] | undefined;
-          if (imported.length > 0) {
-            addAssetsToStores(imported);
-            asset = imported[0];
-          } else {
-            // File was already imported (dedup) — find existing asset by name+size
-            const file = files[0];
-            asset = useAssetStore
-              .getState()
-              .assets.find((a) => a.name === file.name && a.size === file.size);
-          }
-          if (!asset) return;
-          const rect = el.getBoundingClientRect();
-
-          const x = e.clientX - rect.left;
-          const y = e.clientY - rect.top;
-          const d = dropHandlerDepsRef.current;
-          const dropStartTime = d.clips.length === 0 ? 0 : d.xToFrame(x);
-          const rawIdx = d.yToTrackIndex(y);
-
-          const isAudio = asset.type === "audio";
-          const requiredTrackType = isAudio ? "audio" : "video";
-          const trackIndex = isAudio ? rawIdx : d.findNearestVideoTrack(rawIdx);
-          if (trackIndex === null) return;
-          if (trackIndex < 0 || trackIndex >= d.allTracks.length) return;
-
-          const track = d.allTracks[trackIndex];
-          if (track.type !== requiredTrackType) return;
-
-          const clipType =
-            asset.type === "audio" ? "audio" : asset.type === "image" ? "image" : "video";
-
-          let transform: { scale_x: number; scale_y: number } | undefined;
-          if ((asset.type === "video" || asset.type === "image") && asset.width && asset.height) {
-            const scaleX = d.settings.width / asset.width;
-            const scaleY = d.settings.height / asset.height;
-            const scale = Math.min(scaleX, scaleY);
-            transform = { scale_x: scale, scale_y: scale };
-          }
-
-          const fileDurationFrames = secondsToFrames(asset.duration, d.settings.fps);
-
-          const newClipId = d.addClipToTrack({
-            type: clipType,
-            trackId: track.fullId,
-            startTime: dropStartTime,
-            duration: fileDurationFrames,
-            name: asset.name,
-            assetId: asset.id,
-            speed: 1,
-            assetDuration: clipType === "image" ? undefined : fileDurationFrames,
-            transform,
-          });
-
-          if (asset.type === "video" && track.pairedTrackId) {
-            const audioTrack = d.allTracks.find((t) => t.fullId === track.pairedTrackId);
-            if (audioTrack) {
-              const audioClipId = d.addClipToTrack({
-                type: "audio",
-                trackId: audioTrack.fullId,
-                startTime: dropStartTime,
-                duration: fileDurationFrames,
-                name: `${asset.name} (Audio)`,
-                assetId: asset.id,
-                speed: 1,
-                assetDuration: fileDurationFrames,
-              });
-              d.linkClipPair(newClipId, audioClipId);
+            let asset: (typeof imported)[number] | undefined;
+            if (imported.length > 0) {
+              addAssetsToStores(imported);
+              asset = imported[0];
+            } else {
+              // File was already imported (dedup) — find existing asset by name+size
+              const file = files[0];
+              asset = useAssetStore
+                .getState()
+                .assets.find((a) => a.name === file.name && a.size === file.size);
             }
-          }
+            if (!asset) return;
+            const rect = el.getBoundingClientRect();
 
-          d.setSelectedClipIds([newClipId]);
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            const d = dropHandlerDepsRef.current;
+            const dropStartTime = d.clips.length === 0 ? 0 : d.xToFrame(x);
+            const rawIdx = d.yToTrackIndex(y);
+
+            const isAudio = asset.type === "audio";
+            const requiredTrackType = isAudio ? "audio" : "video";
+            const trackIndex = isAudio ? rawIdx : d.findNearestVideoTrack(rawIdx);
+            if (trackIndex === null) return;
+            if (trackIndex < 0 || trackIndex >= d.allTracks.length) return;
+
+            const track = d.allTracks[trackIndex];
+            if (track.type !== requiredTrackType) return;
+
+            const clipType =
+              asset.type === "audio" ? "audio" : asset.type === "image" ? "image" : "video";
+
+            let transform: { scale_x: number; scale_y: number } | undefined;
+            if ((asset.type === "video" || asset.type === "image") && asset.width && asset.height) {
+              const scaleX = d.settings.width / asset.width;
+              const scaleY = d.settings.height / asset.height;
+              const scale = Math.min(scaleX, scaleY);
+              transform = { scale_x: scale, scale_y: scale };
+            }
+
+            const fileDurationFrames = secondsToFrames(asset.duration, d.settings.fps);
+
+            const newClipId = d.addClipToTrack({
+              type: clipType,
+              trackId: track.fullId,
+              startTime: dropStartTime,
+              duration: fileDurationFrames,
+              name: asset.name,
+              assetId: asset.id,
+              speed: 1,
+              assetDuration: clipType === "image" ? undefined : fileDurationFrames,
+              transform,
+            });
+
+            if (asset.type === "video" && track.pairedTrackId) {
+              const audioTrack = d.allTracks.find((t) => t.fullId === track.pairedTrackId);
+              if (audioTrack) {
+                const audioClipId = d.addClipToTrack({
+                  type: "audio",
+                  trackId: audioTrack.fullId,
+                  startTime: dropStartTime,
+                  duration: fileDurationFrames,
+                  name: `${asset.name} (Audio)`,
+                  assetId: asset.id,
+                  speed: 1,
+                  assetDuration: fileDurationFrames,
+                });
+                d.linkClipPair(newClipId, audioClipId);
+              }
+            }
+
+            d.setSelectedClipIds([newClipId]);
+          })();
         });
       }
     };
@@ -971,7 +997,7 @@ export function CanvasTimeline() {
       <Button
         size="sm"
         onClick={() => addTrack()}
-        className="absolute left-2 top-2 z-10 px-2 py-0 h-6"
+        className="absolute top-2 left-2 z-10 h-6 px-2 py-0"
         title="Add track pair"
       >
         <PlusIcon className="size-2" /> Track

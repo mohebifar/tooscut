@@ -10,6 +10,7 @@
  */
 
 import { Input, ALL_FORMATS, BlobSource, AudioSampleSink, type AudioSample } from "mediabunny";
+
 import type { KeyframeTracks } from "./types.js";
 
 /**
@@ -298,7 +299,8 @@ export class BrowserAudioEngine {
     // Wait for worklet to signal it's ready to receive messages
     await new Promise<void>((resolve) => {
       const handler = (event: MessageEvent) => {
-        if (event.data.type === "worklet-ready") {
+        const data = event.data as { type: string };
+        if (data.type === "worklet-ready") {
           this.workletNode!.port.removeEventListener("message", handler);
           resolve();
         }
@@ -337,14 +339,15 @@ export class BrowserAudioEngine {
       }, 10000);
 
       const handler = (event: MessageEvent) => {
-        if (event.data.type === "ready") {
+        const data = event.data as { type: string; message?: string };
+        if (data.type === "ready") {
           clearTimeout(timeout);
           this.workletNode!.port.removeEventListener("message", handler);
           resolve();
-        } else if (event.data.type === "error") {
+        } else if (data.type === "error") {
           clearTimeout(timeout);
           this.workletNode!.port.removeEventListener("message", handler);
-          reject(new Error(event.data.message));
+          reject(new Error(data.message));
         }
       };
 
@@ -358,15 +361,16 @@ export class BrowserAudioEngine {
    * Handle messages from the worklet
    */
   private handleWorkletMessage(event: MessageEvent): void {
-    const { type } = event.data;
+    const data = event.data as { type: string; time?: number; message?: string };
+    const { type } = data;
 
     switch (type) {
       case "time-update":
-        this.lastPlayheadTime = event.data.time as number;
+        this.lastPlayheadTime = data.time as number;
         this.prefetchForPlayhead(this.lastPlayheadTime);
         break;
       case "error":
-        console.error("[AudioEngine] Worklet error:", event.data.message);
+        console.error("[AudioEngine] Worklet error:", data.message);
         break;
     }
   }

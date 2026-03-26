@@ -1,8 +1,3 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
-import { ColorInput } from "../ui/color-input";
-import { KeyframeInput } from "./keyframe-input";
-import { PropertySection, PropertyRow } from "./property-shared";
-import type { LineClip } from "../../state/video-editor-store";
 import type {
   Effects,
   LineStyle,
@@ -10,6 +5,13 @@ import type {
   LineHeadType,
   LineStrokeStyle,
 } from "@tooscut/render-engine";
+
+import type { LineClip } from "../../state/video-editor-store";
+
+import { ColorInput } from "../ui/color-input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { KeyframeInput } from "./keyframe-input";
+import { PropertySection, PropertyRow } from "./property-shared";
 
 interface LinePropertiesProps {
   clip: LineClip;

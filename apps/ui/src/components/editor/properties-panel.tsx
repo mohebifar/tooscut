@@ -1,15 +1,17 @@
+import type { Effects, AudioEffectsParams } from "@tooscut/render-engine";
+
 import { useMemo, useState, useCallback } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
+
 import { useVideoEditorStore } from "../../state/video-editor-store";
-import { TextProperties } from "./text-properties";
-import { ShapeProperties } from "./shape-properties";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
+import { AudioEffectsProperties } from "./audio-effects-properties";
+import { AudioProperties } from "./audio-properties";
+import { EffectProperties } from "./effect-properties";
 import { LineProperties } from "./line-properties";
 import { PictureProperties } from "./picture-properties";
-import { AudioProperties } from "./audio-properties";
-import { AudioEffectsProperties } from "./audio-effects-properties";
-import { EffectProperties } from "./effect-properties";
+import { ShapeProperties } from "./shape-properties";
+import { TextProperties } from "./text-properties";
 import { TransitionProperties } from "./transition-properties";
-import type { Effects, AudioEffectsParams } from "@tooscut/render-engine";
 
 type TabValue = "picture" | "audio" | "text" | "shape" | "line" | "effect" | "transition";
 

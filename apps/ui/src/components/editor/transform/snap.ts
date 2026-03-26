@@ -6,9 +6,11 @@
  */
 
 import type { Transform } from "@tooscut/render-engine";
+
 import type { EditorClip } from "../../../state/video-editor-store";
 import type { MediaAsset } from "../../timeline/use-asset-store";
 import type { SnapTarget, SnapGuide } from "./types";
+
 import { getClipProjectEdges } from "./bounds";
 
 /** Snap threshold in project pixels */

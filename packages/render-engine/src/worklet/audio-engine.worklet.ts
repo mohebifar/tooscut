@@ -1,6 +1,5 @@
 /// <reference types="@types/audioworklet" />
 import "./polyfills";
-
 import { AudioEngine, initSync } from "../../wasm/audio-engine/audio_engine.js";
 
 interface InitMessage {

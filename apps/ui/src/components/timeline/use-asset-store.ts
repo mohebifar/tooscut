@@ -1,8 +1,9 @@
+import { secondsToFrames } from "@tooscut/render-engine";
 /**
  * Asset store for managing imported media files.
  */
 import { create } from "zustand";
-import { secondsToFrames } from "@tooscut/render-engine";
+
 import { db } from "../../state/db";
 import {
   useVideoEditorStore,
@@ -329,10 +330,11 @@ const ACCEPT_MAP: Record<string, string[]> = {
 export async function importFilesWithPicker(
   accept = "video/*,audio/*,image/*",
 ): Promise<MediaAsset[]> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- File System Access API not in TS lib
-  const picker = (window as any).showOpenFilePicker as
-    | ((options: Record<string, unknown>) => Promise<FileSystemFileHandle[]>)
-    | undefined;
+  const picker = (
+    window as unknown as {
+      showOpenFilePicker?: (options: Record<string, unknown>) => Promise<FileSystemFileHandle[]>;
+    }
+  ).showOpenFilePicker;
 
   if (!picker) {
     // Fall back to regular file picker (no handles → assets won't persist)
@@ -414,8 +416,9 @@ export async function hydrateAssets(assets: StoreMediaAsset[]): Promise<{
         continue;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- queryPermission not in TS lib
-      const handle = stored.handle as any;
+      const handle = stored.handle as FileSystemFileHandle & {
+        queryPermission: (opts: { mode: string }) => Promise<string>;
+      };
       const permission: string = await handle.queryPermission({ mode: "read" });
 
       if (permission === "granted") {
@@ -455,8 +458,9 @@ export async function requestPermissionAndHydrate(
       const stored = await db.fileHandles.get(assetId);
       if (!stored) continue;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- requestPermission not in TS lib
-      const handle = stored.handle as any;
+      const handle = stored.handle as FileSystemFileHandle & {
+        requestPermission: (opts: { mode: string }) => Promise<string>;
+      };
       const result: string = await handle.requestPermission({ mode: "read" });
 
       if (result === "granted") {

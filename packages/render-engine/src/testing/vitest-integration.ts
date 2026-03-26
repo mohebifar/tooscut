@@ -37,7 +37,9 @@
  */
 
 import { expect } from "vitest";
+
 import type { RenderFrame } from "../types.js";
+
 import { SnapshotTester, SnapshotOptions } from "./snapshot-tester.js";
 
 // ============================================================================

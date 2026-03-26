@@ -10,8 +10,9 @@
  * - No data returned to main thread (canvas updates visible automatically)
  */
 
-import * as Comlink from "comlink";
 import type { RenderFrame } from "@tooscut/render-engine";
+
+import * as Comlink from "comlink";
 
 // ===================== TYPES =====================
 

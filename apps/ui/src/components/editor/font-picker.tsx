@@ -1,3 +1,4 @@
+import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 /**
  * Searchable font family picker using Fontsource catalog.
  *
@@ -5,13 +6,14 @@
  * with category badges and a check icon for the current selection.
  */
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-import { ScrollArea } from "../ui/scroll-area";
+
+import type { FontsourceFontEntry } from "../../lib/font-service";
+
+import { useFontStore } from "../../state/font-store";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { useFontStore } from "../../state/font-store";
-import type { FontsourceFontEntry } from "../../lib/font-service";
+import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
+import { ScrollArea } from "../ui/scroll-area";
 
 const MAX_RESULTS = 50;
 

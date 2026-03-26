@@ -14,6 +14,7 @@ import {
   type ShapeBox,
   type LineBox,
 } from "@tooscut/render-engine";
+
 import type { EditorClip, TextClip, ShapeClip, LineClip } from "../../../state/video-editor-store";
 import type { MediaAsset } from "../../timeline/use-asset-store";
 import type { DisplayBounds } from "./types";

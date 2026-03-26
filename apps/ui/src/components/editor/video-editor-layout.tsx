@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
+
+import { Eye, Move } from "lucide-react";
+
+import { useVideoEditorStore } from "../../state/video-editor-store";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../ui/resizable";
 import { Toggle } from "../ui/toggle";
-import { Eye, Move } from "lucide-react";
-import { useVideoEditorStore } from "../../state/video-editor-store";
 
 interface VideoEditorLayoutProps {
   /** Left panel - Asset library */
@@ -40,7 +42,7 @@ export function VideoEditorLayout({
   toolbar,
 }: VideoEditorLayoutProps) {
   return (
-    <div className="flex h-screen flex-col m-0 select-none bg-background">
+    <div className="m-0 flex h-screen flex-col bg-background select-none">
       {/* Menubar/toolbar row */}
       {toolbar && <div className="shrink-0">{toolbar}</div>}
 
@@ -50,14 +52,14 @@ export function VideoEditorLayout({
           <ResizablePanelGroup orientation="horizontal">
             {/* Asset Panel */}
             <ResizablePanel defaultSize={20} minSize={350}>
-              <div className="bg-card h-full overflow-auto">{assetPanel}</div>
+              <div className="h-full overflow-auto bg-card">{assetPanel}</div>
             </ResizablePanel>
 
             <ResizableHandle withHandle orientation="horizontal" />
 
             {/* Preview Panel */}
             <ResizablePanel defaultSize={55} minSize={30}>
-              <div className="bg-background flex h-full flex-col">
+              <div className="flex h-full flex-col bg-background">
                 {/* Video Preview Canvas */}
                 <div className="flex-1 overflow-hidden">{previewPanel}</div>
 
@@ -65,7 +67,7 @@ export function VideoEditorLayout({
                 <PreviewModeToggle />
 
                 {/* Playback Controls */}
-                <div className="bg-card shrink-0 border-t border-border">{playbackControls}</div>
+                <div className="shrink-0 border-t border-border bg-card">{playbackControls}</div>
               </div>
             </ResizablePanel>
 
@@ -73,7 +75,7 @@ export function VideoEditorLayout({
 
             {/* Properties Panel */}
             <ResizablePanel defaultSize={25} minSize={15}>
-              <div className="bg-card h-full overflow-auto">{propertiesPanel}</div>
+              <div className="h-full overflow-auto bg-card">{propertiesPanel}</div>
             </ResizablePanel>
           </ResizablePanelGroup>
         </ResizablePanel>
@@ -82,7 +84,7 @@ export function VideoEditorLayout({
 
         {/* Bottom row: Timeline */}
         <ResizablePanel defaultSize={40} minSize={100}>
-          <div className="bg-card h-full overflow-hidden border-t border-border">{timeline}</div>
+          <div className="h-full overflow-hidden border-t border-border bg-card">{timeline}</div>
         </ResizablePanel>
       </ResizablePanelGroup>
     </div>
@@ -92,9 +94,11 @@ export function VideoEditorLayout({
 function PreviewModeToggle() {
   const previewMode = useVideoEditorStore((s) => s.previewMode);
   const setPreviewMode = useVideoEditorStore((s) => s.setPreviewMode);
+  const previewZoom = useVideoEditorStore((s) => s.previewZoom);
+  const setPreviewZoom = useVideoEditorStore((s) => s.setPreviewZoom);
 
   return (
-    <div className="shrink-0 flex justify-center border-t border-border bg-card py-0.5">
+    <div className="flex shrink-0 items-center justify-between border-t border-border bg-card px-2 py-0.5">
       <div className="flex gap-0.5 rounded-md p-0.5">
         <Toggle
           size="sm"
@@ -113,6 +117,24 @@ function PreviewModeToggle() {
           <Move className="h-3.5 w-3.5" />
         </Toggle>
       </div>
+
+      <select
+        className="h-6 cursor-pointer rounded border border-border bg-transparent px-1.5 text-xs text-muted-foreground outline-none focus:ring-1 focus:ring-ring"
+        value={previewZoom === "fit" ? "fit" : String(previewZoom)}
+        onChange={(e) => {
+          const v = e.target.value;
+          setPreviewZoom(v === "fit" ? "fit" : Number(v));
+        }}
+      >
+        <option value="fit">Fit</option>
+        <option value="25">25%</option>
+        <option value="50">50%</option>
+        <option value="100">100%</option>
+        <option value="200">200%</option>
+        {typeof previewZoom === "number" && ![25, 50, 100, 200].includes(previewZoom) && (
+          <option value={String(previewZoom)}>{previewZoom}%</option>
+        )}
+      </select>
     </div>
   );
 }

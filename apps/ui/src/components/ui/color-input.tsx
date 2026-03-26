@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, memo } from "react";
 import ColorLib from "color";
 import { Slider } from "radix-ui";
-import { Popover, PopoverContent, PopoverTrigger } from "./popover";
+import { useState, useRef, useCallback, useEffect, memo } from "react";
+
 import { cn } from "@/lib/utils";
+
+import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 
 /** RGBA color: [r, g, b, a] where each component is 0–1. */
 type RGBA = [number, number, number, number];
@@ -240,7 +242,7 @@ export function ColorInput({ value, onChange, showAlpha = false, className }: Co
         <button
           type="button"
           className={cn(
-            "flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-1.5 cursor-pointer hover:bg-accent/50 transition-colors",
+            "flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-input bg-background px-1.5 transition-colors hover:bg-accent/50",
             className,
           )}
         >
@@ -254,7 +256,7 @@ export function ColorInput({ value, onChange, showAlpha = false, className }: Co
               style={{ backgroundColor: cssColor }}
             />
           </span>
-          <span className="text-xs font-mono text-muted-foreground">{hex}</span>
+          <span className="font-mono text-xs text-muted-foreground">{hex}</span>
         </button>
       </PopoverTrigger>
 
@@ -301,14 +303,14 @@ export function ColorInput({ value, onChange, showAlpha = false, className }: Co
         <div className="flex items-center gap-1.5">
           <input
             type="text"
-            className="h-7 flex-1 rounded border border-input bg-secondary px-2 text-xs font-mono outline-none focus:ring-1 focus:ring-ring"
+            className="h-7 flex-1 rounded border border-input bg-secondary px-2 font-mono text-xs outline-none focus:ring-1 focus:ring-ring"
             value={hexText}
             onChange={(e) => setHexText(e.target.value)}
             onBlur={commitHex}
             onKeyDown={(e) => e.key === "Enter" && commitHex()}
           />
           {showAlpha && (
-            <span className="w-9 text-right text-xs tabular-nums text-muted-foreground">
+            <span className="w-9 text-right text-xs text-muted-foreground tabular-nums">
               {Math.round(alpha * 100)}%
             </span>
           )}

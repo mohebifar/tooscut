@@ -10,8 +10,10 @@
  * - No data copied back (rendering visible directly on canvas)
  */
 
-import * as Comlink from "comlink";
 import type { RenderFrame } from "@tooscut/render-engine";
+
+import * as Comlink from "comlink";
+
 import type { CompositorWorkerApi } from "./compositor.worker";
 
 export interface CompositorApiConfig {
@@ -30,9 +32,9 @@ export interface CompositorApi {
   /** Check if a font is loaded */
   isFontLoaded(fontId: string): Promise<boolean>;
   /** Upload an ImageBitmap texture */
-  uploadBitmap(bitmap: ImageBitmap, textureId: string): void;
+  uploadBitmap(bitmap: ImageBitmap, textureId: string): Promise<void>;
   /** Render a frame */
-  renderFrame(frame: RenderFrame): void;
+  renderFrame(frame: RenderFrame): Promise<void>;
   /** Render a frame and return pixel data (RGBA) */
   renderToPixels(frame: RenderFrame): Promise<Uint8Array>;
   /** Render a frame and return a downscaled JPEG thumbnail as ArrayBuffer */
@@ -42,13 +44,13 @@ export interface CompositorApi {
     thumbHeight: number,
   ): Promise<ArrayBuffer>;
   /** Clear a specific texture */
-  clearTexture(textureId: string): void;
+  clearTexture(textureId: string): Promise<void>;
   /** Clear all textures */
-  clearAllTextures(): void;
+  clearAllTextures(): Promise<void>;
   /** Flush pending GPU operations */
-  flush(): void;
+  flush(): Promise<void>;
   /** Dispose the compositor and worker */
-  dispose(): void;
+  dispose(): Promise<void>;
   /** Whether the compositor is ready */
   isReady: boolean;
 }
