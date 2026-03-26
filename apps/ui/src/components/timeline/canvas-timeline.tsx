@@ -11,6 +11,7 @@ import {
   addAssetsToStores,
 } from "./use-asset-store";
 import { TRACK_HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT } from "./constants";
+import { secondsToFrames } from "@tooscut/render-engine";
 import { PlusIcon } from "lucide-react";
 
 /**
@@ -53,8 +54,8 @@ export function CanvasTimeline() {
     useState<CrossTransitionDropPreview | null>(null);
 
   // Store state for keyboard shortcuts
-  const currentTime = useVideoEditorStore((s) => s.currentTime);
-  const duration = useVideoEditorStore((s) => s.duration);
+  const currentTime = useVideoEditorStore((s) => s.currentFrame);
+  const duration = useVideoEditorStore((s) => s.durationFrames);
   const isPlaying = useVideoEditorStore((s) => s.isPlaying);
   const selectedClipIds = useVideoEditorStore((s) => s.selectedClipIds);
   const zoom = useVideoEditorStore((s) => s.zoom);
@@ -281,7 +282,7 @@ export function CanvasTimeline() {
   ];
 
   // Convert screen coordinates to timeline coordinates
-  const xToTime = useCallback(
+  const xToFrame = useCallback(
     (x: number) => Math.max(0, (x - TRACK_HEADER_WIDTH + scrollX) / zoom),
     [zoom, scrollX],
   );
@@ -299,7 +300,7 @@ export function CanvasTimeline() {
 
       const x = clientX - rect.left;
       const y = clientY - rect.top;
-      const time = Math.max(0, (x - TRACK_HEADER_WIDTH + scrollX) / zoom);
+      const frame = Math.max(0, (x - TRACK_HEADER_WIDTH + scrollX) / zoom);
       const trackIndex = Math.floor((y - RULER_HEIGHT + scrollY) / TRACK_HEIGHT);
 
       if (trackIndex < 0 || trackIndex >= allTracks.length) return null;
@@ -309,8 +310,8 @@ export function CanvasTimeline() {
         if (clip.trackId !== track.fullId) continue;
         if (clip.type === "audio") continue; // transitions don't apply to audio clips
         const clipEnd = clip.startTime + clip.duration;
-        if (time >= clip.startTime && time <= clipEnd) {
-          const fraction = (time - clip.startTime) / clip.duration;
+        if (frame >= clip.startTime && frame <= clipEnd) {
+          const fraction = (frame - clip.startTime) / clip.duration;
           const edge: "in" | "out" = fraction < 1 / 3 ? "in" : fraction > 2 / 3 ? "out" : "in";
           const clipX = TRACK_HEADER_WIDTH + clip.startTime * zoom - scrollX;
           const clipWidth = clip.duration * zoom;
@@ -341,7 +342,7 @@ export function CanvasTimeline() {
 
       const x = clientX - rect.left;
       const y = clientY - rect.top;
-      const time = Math.max(0, (x - TRACK_HEADER_WIDTH + scrollX) / zoom);
+      const frame = Math.max(0, (x - TRACK_HEADER_WIDTH + scrollX) / zoom);
       const trackIndex = Math.floor((y - RULER_HEIGHT + scrollY) / TRACK_HEIGHT);
 
       if (trackIndex < 0 || trackIndex >= allTracks.length) return null;
@@ -368,7 +369,7 @@ export function CanvasTimeline() {
         const boundaryTime = outgoingEnd;
 
         // Check if cursor is near this boundary (within threshold of the boundary)
-        if (Math.abs(time - boundaryTime) < thresholdTime) {
+        if (Math.abs(frame - boundaryTime) < thresholdTime) {
           const boundaryX = TRACK_HEADER_WIDTH + boundaryTime * zoom - scrollX;
           const clipY = RULER_HEIGHT + trackIndex * TRACK_HEIGHT - scrollY + 4;
           return { outgoing, incoming, boundaryX, clipY, trackIndex };
@@ -381,7 +382,7 @@ export function CanvasTimeline() {
 
   // Use refs for drag handler deps to avoid stale closures with native event listeners
   const dragHandlerDepsRef = useRef({
-    xToTime,
+    xToFrame,
     yToTrackIndex,
     allTracks,
     zoom,
@@ -391,7 +392,7 @@ export function CanvasTimeline() {
     getAdjacentClipBoundary,
   });
   dragHandlerDepsRef.current = {
-    xToTime,
+    xToFrame,
     yToTrackIndex,
     allTracks,
     zoom,
@@ -410,7 +411,7 @@ export function CanvasTimeline() {
       e.preventDefault();
 
       const {
-        xToTime: _xToTime,
+        xToFrame: _xToFrame,
         yToTrackIndex: _yToTrackIndex,
         allTracks: _allTracks,
         zoom: _zoom,
@@ -497,7 +498,7 @@ export function CanvasTimeline() {
         const rect = el.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-        const startTime = _xToTime(x);
+        const startTime = _xToFrame(x);
         const rawTrackIndex = _yToTrackIndex(y);
 
         // Find nearest video track (files are most likely video/image)
@@ -539,7 +540,7 @@ export function CanvasTimeline() {
       const y = e.clientY - rect.top;
 
       // Calculate timeline position
-      const startTime = _xToTime(x);
+      const startTime = _xToFrame(x);
       const rawTrackIndex = _yToTrackIndex(y);
 
       // Find compatible tracks
@@ -641,7 +642,7 @@ export function CanvasTimeline() {
     assets,
     allTracks,
     clips,
-    xToTime,
+    xToFrame,
     yToTrackIndex,
     addClipToTrack,
     setSelectedClipIds,
@@ -658,7 +659,7 @@ export function CanvasTimeline() {
     assets,
     allTracks,
     clips,
-    xToTime,
+    xToFrame,
     yToTrackIndex,
     addClipToTrack,
     setSelectedClipIds,
@@ -723,7 +724,7 @@ export function CanvasTimeline() {
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       // Auto-place at timeline start when the timeline is empty
-      const startTime = d.clips.length === 0 ? 0 : d.xToTime(x);
+      const startTime = d.clips.length === 0 ? 0 : d.xToFrame(x);
       const rawTrackIndex = d.yToTrackIndex(y);
 
       // Handle text template drop
@@ -832,16 +833,19 @@ export function CanvasTimeline() {
           transform = { scale_x: scale, scale_y: scale };
         }
 
+        // Convert asset duration from seconds (asset store) to frames (clip store)
+        const durationFrames = secondsToFrames(asset.duration, d.settings.fps);
+
         // Image clips don't set assetDuration since they have no inherent duration limit
         const clipId = d.addClipToTrack({
           type: clipType,
           trackId: track.fullId,
           startTime,
-          duration: asset.duration,
+          duration: durationFrames,
           name: asset.name,
           assetId: asset.id,
           speed: 1,
-          assetDuration: clipType === "image" ? undefined : asset.duration,
+          assetDuration: clipType === "image" ? undefined : durationFrames,
           transform,
         });
 
@@ -852,11 +856,11 @@ export function CanvasTimeline() {
               type: "audio",
               trackId: audioTrack.fullId,
               startTime,
-              duration: asset.duration,
+              duration: durationFrames,
               name: `${asset.name} (Audio)`,
               assetId: asset.id,
               speed: 1,
-              assetDuration: asset.duration,
+              assetDuration: durationFrames,
             });
             d.linkClipPair(clipId, audioClipId);
           }
@@ -888,7 +892,7 @@ export function CanvasTimeline() {
           const x = e.clientX - rect.left;
           const y = e.clientY - rect.top;
           const d = dropHandlerDepsRef.current;
-          const dropStartTime = d.clips.length === 0 ? 0 : d.xToTime(x);
+          const dropStartTime = d.clips.length === 0 ? 0 : d.xToFrame(x);
           const rawIdx = d.yToTrackIndex(y);
 
           const isAudio = asset.type === "audio";
@@ -911,15 +915,17 @@ export function CanvasTimeline() {
             transform = { scale_x: scale, scale_y: scale };
           }
 
+          const fileDurationFrames = secondsToFrames(asset.duration, d.settings.fps);
+
           const newClipId = d.addClipToTrack({
             type: clipType,
             trackId: track.fullId,
             startTime: dropStartTime,
-            duration: asset.duration,
+            duration: fileDurationFrames,
             name: asset.name,
             assetId: asset.id,
             speed: 1,
-            assetDuration: clipType === "image" ? undefined : asset.duration,
+            assetDuration: clipType === "image" ? undefined : fileDurationFrames,
             transform,
           });
 
@@ -930,11 +936,11 @@ export function CanvasTimeline() {
                 type: "audio",
                 trackId: audioTrack.fullId,
                 startTime: dropStartTime,
-                duration: asset.duration,
+                duration: fileDurationFrames,
                 name: `${asset.name} (Audio)`,
                 assetId: asset.id,
                 speed: 1,
-                assetDuration: asset.duration,
+                assetDuration: fileDurationFrames,
               });
               d.linkClipPair(newClipId, audioClipId);
             }

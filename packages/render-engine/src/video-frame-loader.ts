@@ -96,6 +96,8 @@ class HTMLVideoElementAdapter implements VideoFrameSourceAdapter {
   private objectUrl: string | null = null;
   private seekPromise: Promise<void> | null = null;
   private seekResolve: (() => void) | null = null;
+  /** Mutex to serialize getImageBitmap calls (prevents seek race conditions) */
+  private frameLock: Promise<void> = Promise.resolve();
 
   private constructor(video: HTMLVideoElement, info: VideoAssetInfo, objectUrl: string | null) {
     this.video = video;
@@ -180,25 +182,39 @@ class HTMLVideoElementAdapter implements VideoFrameSourceAdapter {
       throw new Error("VideoFrameLoader has been disposed");
     }
 
-    const clampedTime = Math.max(0, Math.min(timestamp, this._info.duration));
+    // Serialize access to the video element to prevent seek race conditions.
+    let resolve!: () => void;
+    const nextLock = new Promise<void>((r) => {
+      resolve = r;
+    });
+    const prevLock = this.frameLock;
+    this.frameLock = nextLock;
 
-    // Seek if needed
-    if (Math.abs(this.video.currentTime - clampedTime) > 0.01) {
-      await this.seekTo(clampedTime);
+    await prevLock;
+
+    try {
+      const clampedTime = Math.max(0, Math.min(timestamp, this._info.duration));
+
+      // Seek if needed
+      if (Math.abs(this.video.currentTime - clampedTime) > 0.01) {
+        await this.seekTo(clampedTime);
+      }
+
+      // Wait for video to have data
+      if (this.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        await new Promise<void>((r) => {
+          const onCanPlay = () => {
+            this.video.removeEventListener("canplay", onCanPlay);
+            r();
+          };
+          this.video.addEventListener("canplay", onCanPlay);
+        });
+      }
+
+      return await createImageBitmap(this.video);
+    } finally {
+      resolve();
     }
-
-    // Wait for video to have data
-    if (this.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-      await new Promise<void>((resolve) => {
-        const onCanPlay = () => {
-          this.video.removeEventListener("canplay", onCanPlay);
-          resolve();
-        };
-        this.video.addEventListener("canplay", onCanPlay);
-      });
-    }
-
-    return createImageBitmap(this.video);
   }
 
   private async seekTo(time: number): Promise<void> {

@@ -15,7 +15,7 @@ import {
   QUALITY_HIGH,
 } from "mediabunny";
 import { useCallback, useRef, useState } from "react";
-import { EvaluatorManager, type AudioTimelineState } from "@tooscut/render-engine";
+import { EvaluatorManager, framesToSeconds, type AudioTimelineState } from "@tooscut/render-engine";
 import initAudioWasm, {
   AudioEngine as WasmAudioEngine,
 } from "@tooscut/render-engine/wasm/audio-engine/audio_engine.js";
@@ -168,8 +168,8 @@ export function useMp4Export(): Mp4ExportHandle {
       throw new Error("No content to export");
     }
 
-    const duration = contentDuration;
-    const totalFrames = Math.ceil(duration * frameRate);
+    // contentDuration is in frames (project frame rate)
+    const totalFrames = contentDuration;
     const workerCount = requestedWorkers ?? getOptimalWorkerCount();
 
     let pool: FrameRendererPool | null = null;
@@ -377,9 +377,9 @@ export function useMp4Export(): Mp4ExportHandle {
               id: clip.id,
               sourceId: clip.assetId || clip.id,
               trackId: clip.trackId,
-              startTime: clip.startTime,
-              duration: clip.duration,
-              inPoint: clip.inPoint,
+              startTime: framesToSeconds(clip.startTime, settings.fps),
+              duration: framesToSeconds(clip.duration, settings.fps),
+              inPoint: framesToSeconds(clip.inPoint, settings.fps),
               speed: clip.speed ?? 1,
               gain: clip.volume ?? 1,
               fadeIn: 0,
@@ -408,7 +408,8 @@ export function useMp4Export(): Mp4ExportHandle {
           engine.set_playing(true);
 
           // Render all audio in chunks
-          const totalSamples = Math.ceil(duration * sampleRate);
+          const durationSeconds = framesToSeconds(contentDuration, settings.fps);
+          const totalSamples = Math.ceil(durationSeconds * sampleRate);
           const fullOutput = new Float32Array(totalSamples * 2);
           const chunkSize = 4096;
           let rendered = 0;
@@ -495,17 +496,18 @@ export function useMp4Export(): Mp4ExportHandle {
       });
 
       // Build frame tasks
-      const exportFrames = getExportFrames(duration, frameRate);
+      const exportFrames = getExportFrames(totalFrames);
       const frameTasks: RenderFrameTask[] = [];
+      const exportFps = settings.fps;
 
-      for (const { frameIndex, timelineTime } of exportFrames) {
-        // Build render frame using layer-builder
+      for (const { frameIndex } of exportFrames) {
+        // Build render frame using layer-builder (timelineTime in frames)
         const { frame, visibleMediaClips, crossTransitionTextureMap } = buildLayersForTime({
           clips,
           tracks,
           crossTransitions,
           settings: { ...settings, width, height },
-          timelineTime,
+          timelineTime: frameIndex,
           evaluatorManager,
           includeMutedTracks: false,
         });
@@ -518,7 +520,7 @@ export function useMp4Export(): Mp4ExportHandle {
           const asset = assetMap.get(assetId);
           if (!asset) continue;
 
-          const sourceTime = calculateSourceTime(timelineTime, clip);
+          const sourceTime = calculateSourceTime(frameIndex, clip, exportFps);
           textureRequests.push({
             assetId,
             sourceTime,
@@ -529,7 +531,7 @@ export function useMp4Export(): Mp4ExportHandle {
 
         frameTasks.push({
           frameIndex,
-          timelineTime,
+          timelineFrame: frameIndex,
           frame,
           textureRequests,
         });
@@ -652,7 +654,7 @@ export function useMp4Export(): Mp4ExportHandle {
       return {
         blob,
         mimeType,
-        duration,
+        duration: framesToSeconds(contentDuration, settings.fps),
         size: buffer.byteLength,
         renderTime,
       };

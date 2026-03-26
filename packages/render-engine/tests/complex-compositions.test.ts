@@ -46,7 +46,6 @@ describe("complex compositions (1920x1080)", () => {
   });
 
   afterEach(async () => {
-    // Capture screenshot after each test for visual verification
     await tester.captureScreenshot();
   });
 

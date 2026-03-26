@@ -36,7 +36,6 @@ describe("compositor", () => {
   });
 
   afterEach(async () => {
-    // Capture screenshot after each test for visual verification
     await tester.captureScreenshot();
   });
 
@@ -56,6 +55,9 @@ describe("compositor", () => {
       pixels.expectPixelAtPercent(50, 50).redGreaterThan(200);
       pixels.expectPixelAtPercent(50, 50).greenLessThan(50);
       pixels.expectPixelAtPercent(50, 50).blueLessThan(50);
+
+      // Visual snapshot (creates reference on first run, compares on subsequent)
+      await expect(tester).toMatchRenderSnapshot(frame, "basic-solid-red");
     });
 
     it("renders a solid green layer", async () => {

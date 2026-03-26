@@ -33,7 +33,13 @@ async function generateThumbnail(projectId: string): Promise<void> {
   const compositor = getSharedCompositor();
   if (!compositor?.isReady) return;
 
-  const { clips, tracks, crossTransitions, settings, currentTime } = useVideoEditorStore.getState();
+  const {
+    clips,
+    tracks,
+    crossTransitions,
+    settings,
+    currentFrame: currentTime,
+  } = useVideoEditorStore.getState();
 
   // Nothing to render if there are no clips
   if (clips.length === 0) return;

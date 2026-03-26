@@ -23,11 +23,20 @@ export const Route = createRootRoute({
       },
     ],
     scripts: [
-      {
-        defer: true,
-        src: "https://cloud.umami.is/script.js",
-        "data-website-id": "7776ab6b-d097-4eb4-ad02-a4e6e4adbd3d",
-      },
+      import.meta.env.VITE_UMAMI_WEBSITE_ID
+        ? {
+            defer: true,
+            src: "https://cloud.umami.is/script.js",
+            "data-website-id": import.meta.env.VITE_UMAMI_WEBSITE_ID,
+          }
+        : undefined,
+      import.meta.env.DEV
+        ? {
+            src: "https://unpkg.com/react-scan/dist/auto.global.js",
+            crossOrigin: "anonymous",
+            strategy: "beforeInteractive",
+          }
+        : undefined,
     ],
   }),
 

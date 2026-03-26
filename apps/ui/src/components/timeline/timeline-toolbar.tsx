@@ -5,7 +5,7 @@ import { Slider } from "../ui/slider";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { useVideoEditorStore } from "../../state/video-editor-store";
-import { MIN_ZOOM, MAX_ZOOM } from "./constants";
+import { MIN_ZOOM, MAX_ZOOM, TRACK_HEADER_WIDTH } from "./constants";
 
 /**
  * Toolbar rendered above the timeline canvas.
@@ -14,8 +14,29 @@ import { MIN_ZOOM, MAX_ZOOM } from "./constants";
 export function TimelineToolbar() {
   const zoom = useVideoEditorStore((s) => s.zoom);
   const setZoom = useVideoEditorStore((s) => s.setZoom);
+  const setScrollX = useVideoEditorStore((s) => s.setScrollX);
   const activeTool = useVideoEditorStore((s) => s.activeTool);
   const setActiveTool = useVideoEditorStore((s) => s.setActiveTool);
+
+  /** Zoom to a new level, adjusting scrollX to keep the playhead in place. */
+  const zoomAroundPlayhead = useCallback(
+    (newZoom: number) => {
+      const state = useVideoEditorStore.getState();
+      const playheadFrame = state.currentFrame;
+      const oldZoom = state.zoom;
+      const oldScrollX = state.scrollX;
+
+      // Current screen-x of the playhead
+      const playheadScreenX = TRACK_HEADER_WIDTH + playheadFrame * oldZoom - oldScrollX;
+
+      // New scrollX that keeps the playhead at the same screen position
+      const newScrollX = TRACK_HEADER_WIDTH + playheadFrame * newZoom - playheadScreenX;
+
+      setZoom(newZoom);
+      setScrollX(Math.max(0, newScrollX));
+    },
+    [setZoom, setScrollX],
+  );
 
   // Zoom slider uses a log scale for more intuitive feel
   // slider value 0..100 maps to MIN_ZOOM..MAX_ZOOM exponentially
@@ -33,18 +54,18 @@ export function TimelineToolbar() {
 
   const handleSliderChange = useCallback(
     (value: number[]) => {
-      setZoom(sliderToZoom(value[0]));
+      zoomAroundPlayhead(sliderToZoom(value[0]));
     },
-    [setZoom, sliderToZoom],
+    [zoomAroundPlayhead, sliderToZoom],
   );
 
   const handleZoomIn = useCallback(() => {
-    setZoom(Math.min(MAX_ZOOM, zoom * 1.2));
-  }, [zoom, setZoom]);
+    zoomAroundPlayhead(Math.min(MAX_ZOOM, zoom * 1.2));
+  }, [zoom, zoomAroundPlayhead]);
 
   const handleZoomOut = useCallback(() => {
-    setZoom(Math.max(MIN_ZOOM, zoom / 1.2));
-  }, [zoom, setZoom]);
+    zoomAroundPlayhead(Math.max(MIN_ZOOM, zoom / 1.2));
+  }, [zoom, zoomAroundPlayhead]);
 
   return (
     <TooltipProvider delayDuration={300}>

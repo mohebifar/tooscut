@@ -25,23 +25,28 @@ import { KeyframeEvaluator } from "./keyframe-evaluator.js";
 
 /**
  * Minimal clip interface for visibility checks.
+ * All time values are in integer frame counts relative to the project frame rate.
  */
 export interface ClipBounds {
   id: string;
+  /** Start position on the timeline in frames */
   startTime: number;
+  /** Duration on the timeline in frames */
   duration: number;
 }
 
 /**
  * Cross transition reference linking two clips.
+ * All time values are in integer frame counts relative to the project frame rate.
  */
 export interface CrossTransitionRef {
   id: string;
   outgoingClipId: string;
   incomingClipId: string;
+  /** Transition duration in frames */
   duration: number;
   type: CrossTransitionType;
-  /** Original cut point on the timeline. The transition region is [boundary - duration/2, boundary + duration/2]. */
+  /** Original cut point on the timeline in frames. The transition region is [boundary - duration/2, boundary + duration/2]. */
   boundary: number;
   easing: Easing;
 }

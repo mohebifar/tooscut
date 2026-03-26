@@ -75,7 +75,7 @@ function ProjectChooser() {
     const project: LocalProject = {
       id,
       name: "Untitled Project",
-      settings: { width: 1920, height: 1080, fps: 30 },
+      settings: { width: 1920, height: 1080, fps: { numerator: 30, denominator: 1 } },
       content: {
         tracks,
         clips: [],
@@ -87,7 +87,11 @@ function ProjectChooser() {
     };
 
     await db.projects.add(project);
-    void navigate({ to: "/editor/$projectId", params: { projectId: id } });
+    void navigate({
+      to: "/editor/$projectId",
+      params: { projectId: id },
+      search: { new: true } as any,
+    });
   };
 
   const handleConfirmDelete = async () => {
@@ -101,7 +105,11 @@ function ProjectChooser() {
   };
 
   const handleOpenProject = (projectId: string) => {
-    void navigate({ to: "/editor/$projectId", params: { projectId } });
+    void navigate({
+      to: "/editor/$projectId",
+      params: { projectId },
+      search: { new: false } as any,
+    });
   };
 
   if (projects === undefined) {

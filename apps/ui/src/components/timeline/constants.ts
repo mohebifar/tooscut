@@ -18,14 +18,14 @@ export const CLIP_PADDING = 4;
 /** Snap threshold in pixels */
 export const SNAP_THRESHOLD = 10;
 
-/** Maximum zoom level (pixels per second) */
-export const MAX_ZOOM = 500;
+/** Maximum zoom level (pixels per frame) */
+export const MAX_ZOOM = 20;
 
-/** Minimum zoom level (pixels per second) */
-export const MIN_ZOOM = 1;
+/** Minimum zoom level (pixels per frame) */
+export const MIN_ZOOM = 0.03;
 
-/** Default zoom level (pixels per second) */
-export const DEFAULT_ZOOM = 50;
+/** Default zoom level (pixels per frame) */
+export const DEFAULT_ZOOM = 1.67;
 
 /** Colors for the timeline */
 export const COLORS = {

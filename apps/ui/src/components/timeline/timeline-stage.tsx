@@ -2,17 +2,7 @@
 
 import Konva from "konva";
 import { useCallback, useMemo, useRef, useState } from "react";
-import {
-  Group,
-  Image as KonvaImage,
-  Label,
-  Layer,
-  Line,
-  Rect,
-  Stage,
-  Tag,
-  Text,
-} from "react-konva";
+import { Group, Label, Layer, Line, Rect, Shape, Stage, Tag, Text } from "react-konva";
 import { useVideoEditorStore } from "../../state/video-editor-store";
 import {
   CLIP_PADDING,
@@ -24,7 +14,8 @@ import {
   TRACK_HEADER_WIDTH,
   TRACK_HEIGHT,
 } from "./constants";
-import { findSnapTargets, snapTime } from "./snap-utils";
+import { findSnapTargets, snapFrame } from "./snap-utils";
+import { framesToSeconds } from "@tooscut/render-engine";
 import {
   KonvaEyeIcon,
   KonvaEyeOffIcon,
@@ -148,32 +139,52 @@ interface CrossTransitionResizeState {
 }
 
 /**
- * Get grid interval based on zoom level.
+ * Get grid interval in frames based on zoom level (pixels per frame) and fps.
+ * Returns frame counts for minor and major gridlines.
  */
-function getGridInterval(pixelsPerSecond: number): {
-  minor: number;
-  major: number;
-} {
-  if (pixelsPerSecond >= 200) return { minor: 0.1, major: 1 };
-  if (pixelsPerSecond >= 100) return { minor: 0.5, major: 5 };
-  if (pixelsPerSecond >= 50) return { minor: 1, major: 5 };
-  if (pixelsPerSecond >= 20) return { minor: 2, major: 10 };
-  if (pixelsPerSecond >= 10) return { minor: 5, major: 30 };
-  return { minor: 10, major: 60 };
+function getGridInterval(
+  pixelsPerFrame: number,
+  fpsFloat: number,
+): { minor: number; major: number } {
+  const fps = Math.round(fpsFloat);
+  const pps = pixelsPerFrame * fpsFloat;
+
+  // Very high zoom: individual frames visible
+  if (pps >= 600) return { minor: 1, major: Math.max(1, Math.round(fps / 6)) };
+  if (pps >= 400) return { minor: 1, major: Math.max(1, Math.round(fps / 2)) };
+  // High zoom: sub-second intervals
+  if (pps >= 200) return { minor: Math.max(1, Math.round(fps / 10)), major: fps };
+  if (pps >= 100) return { minor: Math.max(1, Math.round(fps / 2)), major: fps * 5 };
+  // Medium zoom: second intervals
+  if (pps >= 50) return { minor: fps, major: fps * 5 };
+  if (pps >= 20) return { minor: fps * 2, major: fps * 10 };
+  // Low zoom: multi-second intervals
+  if (pps >= 10) return { minor: fps * 5, major: fps * 30 };
+  if (pps >= 3) return { minor: fps * 10, major: fps * 60 };
+  // Very low zoom: minute intervals
+  return { minor: fps * 30, major: fps * 120 };
 }
 
 /**
- * Format time as MM:SS or MM:SS.ms
+ * Format a frame number as timecode. Adapts format based on magnitude:
+ * - Short durations: SS:FF (e.g., "5:12")
+ * - Medium: M:SS:FF (e.g., "2:05:12")
+ * - Long: H:MM:SS (e.g., "1:02:05")
  */
-function formatTime(seconds: number, showMs = false): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  const ms = Math.floor((seconds % 1) * 100);
+function formatFrameTimecode(frame: number, fpsFloat: number): string {
+  const totalSeconds = frame / fpsFloat;
+  const hrs = Math.floor(totalSeconds / 3600);
+  const mins = Math.floor((totalSeconds % 3600) / 60);
+  const secs = Math.floor(totalSeconds % 60);
+  const ff = Math.round(frame % fpsFloat);
 
-  if (showMs) {
-    return `${mins}:${secs.toString().padStart(2, "0")}.${ms.toString().padStart(2, "0")}`;
+  if (hrs > 0) {
+    return `${hrs}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   }
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
+  if (mins > 0) {
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  }
+  return `${secs}:${ff.toString().padStart(2, "0")}`;
 }
 
 export function TimelineStage({
@@ -233,6 +244,8 @@ export function TimelineStage({
     clipId: string;
     startTime: number;
     duration: number;
+    /** Updated inPoint for left-trim preview (frames) */
+    inPoint?: number;
     // Linked clip preview
     linkedClipId?: string;
     linkedTrackIndex?: number;
@@ -242,6 +255,7 @@ export function TimelineStage({
       clipId: string;
       startTime: number;
       duration: number;
+      inPoint?: number;
       trackIndex: number;
       linkedClipId?: string;
       linkedTrackIndex?: number;
@@ -317,8 +331,10 @@ export function TimelineStage({
   const zoom = useVideoEditorStore((s) => s.zoom);
   const scrollX = useVideoEditorStore((s) => s.scrollX);
   const scrollY = useVideoEditorStore((s) => s.scrollY);
-  const currentTime = useVideoEditorStore((s) => s.currentTime);
-  const duration = useVideoEditorStore((s) => s.duration);
+  const currentTime = useVideoEditorStore((s) => s.currentFrame);
+  const duration = useVideoEditorStore((s) => s.durationFrames);
+  const fps = useVideoEditorStore((s) => s.settings.fps);
+  const fpsFloat = fps.numerator / fps.denominator;
   const tracks = useVideoEditorStore((s) => s.tracks);
   const clips = useVideoEditorStore((s) => s.clips);
   const selectedClipIds = useVideoEditorStore((s) => s.selectedClipIds);
@@ -407,12 +423,12 @@ export function TimelineStage({
   const waveformMap = useClipWaveforms(thumbnailClips);
 
   // Coordinate conversion
-  const timeToX = useCallback(
+  const frameToX = useCallback(
     (time: number) => TRACK_HEADER_WIDTH + time * zoom - scrollX,
     [zoom, scrollX],
   );
 
-  const xToTime = useCallback(
+  const xToFrame = useCallback(
     (x: number) => (x - TRACK_HEADER_WIDTH + scrollX) / zoom,
     [zoom, scrollX],
   );
@@ -431,25 +447,25 @@ export function TimelineStage({
   const contentWidth = TRACK_HEADER_WIDTH + Math.max(duration, 60) * zoom;
   const totalHeight = RULER_HEIGHT + allTracks.length * TRACK_HEIGHT;
 
-  // Generate grid lines for ruler
+  // Generate grid lines for ruler (in frames)
   const gridLines = useMemo(() => {
-    const { minor, major } = getGridInterval(zoom);
-    const lines: Array<{ x: number; isMajor: boolean; time: number }> = [];
-    const startTime = Math.floor(scrollX / zoom / minor) * minor;
-    const endTime = Math.ceil((scrollX + width) / zoom / minor) * minor;
+    const { minor, major } = getGridInterval(zoom, fpsFloat);
+    // Ensure minor is at least 1 frame
+    const minorStep = Math.max(1, minor);
+    const majorStep = Math.max(1, major);
+    const lines: Array<{ x: number; isMajor: boolean; frame: number }> = [];
+    const startFrame = Math.floor(scrollX / zoom / minorStep) * minorStep;
+    const endFrame = Math.ceil((scrollX + width) / zoom / minorStep) * minorStep;
+    const maxFrame = Math.max(duration, Math.round(60 * fpsFloat));
 
-    for (
-      let time = startTime;
-      time <= endTime && time <= Math.max(duration, 60) + 10;
-      time += minor
-    ) {
-      if (time < 0) continue;
-      const x = timeToX(time);
+    for (let f = startFrame; f <= endFrame && f <= maxFrame + minorStep; f += minorStep) {
+      if (f < 0) continue;
+      const x = frameToX(f);
       if (x < TRACK_HEADER_WIDTH || x > width) continue;
-      lines.push({ x, isMajor: Math.abs(time % major) < 0.001, time });
+      lines.push({ x, isMajor: majorStep > 0 && f % majorStep === 0, frame: f });
     }
     return lines;
-  }, [scrollX, zoom, width, duration, timeToX]);
+  }, [scrollX, zoom, width, duration, fpsFloat, frameToX]);
 
   // Handle wheel for zoom/scroll
   const handleWheel = useCallback(
@@ -518,20 +534,20 @@ export function TimelineStage({
       if (trackIndex < 0 || trackIndex >= allTracks.length) return null;
 
       const track = allTracks[trackIndex];
-      const time = xToTime(x);
+      const frame = xToFrame(x);
 
       for (const clip of clips) {
         if (clip.trackId !== track.fullId) continue;
 
         const clipEnd = clip.startTime + clip.duration;
-        if (time >= clip.startTime && time <= clipEnd) {
+        if (frame >= clip.startTime && frame <= clipEnd) {
           return { clip, trackIndex };
         }
       }
 
       return null;
     },
-    [clips, allTracks, xToTime, yToTrackIndex],
+    [clips, allTracks, xToFrame, yToTrackIndex],
   );
 
   // Determine if mouse is near a trim handle
@@ -593,7 +609,7 @@ export function TimelineStage({
         // Use actual clip overlap region
         const overlapStart = incoming.startTime;
         const overlapEnd = outgoing.startTime + outgoing.duration;
-        const ctX = timeToX(overlapStart);
+        const ctX = frameToX(overlapStart);
         const ctWidth = (overlapEnd - overlapStart) * zoom;
         const ctY = trackIndexToY(trackIndex) + CLIP_PADDING;
         const ctHeight = TRACK_HEIGHT - CLIP_PADDING * 2;
@@ -610,7 +626,7 @@ export function TimelineStage({
       }
       return null;
     },
-    [crossTransitions, clips, allTracks, timeToX, trackIndexToY, zoom],
+    [crossTransitions, clips, allTracks, frameToX, trackIndexToY, zoom],
   );
 
   // Handle mouse down on stage
@@ -633,8 +649,8 @@ export function TimelineStage({
       // Clicking on ruler - start playhead drag
       if (pos.y < RULER_HEIGHT && pos.x > TRACK_HEADER_WIDTH) {
         isDraggingPlayheadRef.current = true;
-        const time = Math.max(0, Math.min(duration, xToTime(pos.x)));
-        seekTo(time);
+        const frame = Math.max(0, Math.min(duration, xToFrame(pos.x)));
+        seekTo(frame);
         return;
       }
 
@@ -721,12 +737,12 @@ export function TimelineStage({
 
         // Razor tool: split clip at click position
         if (activeTool === "razor") {
-          const splitTime = xToTime(pos.x);
+          const splitTime = xToFrame(pos.x);
           splitClipAtTime(clip.id, splitTime);
           return;
         }
 
-        const clipX = timeToX(clip.startTime);
+        const clipX = frameToX(clip.startTime);
         const clipWidth = clip.duration * zoom;
 
         // Check for transition resize handle or transition body click
@@ -950,9 +966,9 @@ export function TimelineStage({
     },
     [
       duration,
-      xToTime,
+      xToFrame,
       zoom,
-      timeToX,
+      frameToX,
       getClipAtPosition,
       getTrimEdge,
       seekTo,
@@ -993,8 +1009,8 @@ export function TimelineStage({
 
       // Playhead dragging
       if (isDraggingPlayheadRef.current) {
-        const time = Math.max(0, Math.min(duration, xToTime(pos.x)));
-        seekTo(time);
+        const frame = Math.max(0, Math.min(duration, xToFrame(pos.x)));
+        seekTo(frame);
         return;
       }
 
@@ -1032,8 +1048,8 @@ export function TimelineStage({
             } else {
               anchorNewStart = Math.max(0, originalStartTime + deltaTime);
             }
-            const snapResult = snapTime(anchorNewStart, snapTargetsRef.current, thresholdTime);
-            anchorNewStart = snapResult.time;
+            const snapResult = snapFrame(anchorNewStart, snapTargetsRef.current, thresholdTime);
+            anchorNewStart = snapResult.frame;
             setSnapLines(snapResult.snapLines);
             const anchorDelta = anchorNewStart - originalStartTime;
 
@@ -1057,6 +1073,7 @@ export function TimelineStage({
                 clipId: mc.clipId,
                 startTime: clipNewStart,
                 duration: clipNewDuration,
+                inPoint: mc.originalInPoint + (clipNewStart - mc.originalStartTime) * mc.speed,
                 trackIndex: clipTrackIndex,
                 linkedClipId: mc.linkedClipId,
                 linkedTrackIndex: mc.linkedTrackIndex,
@@ -1069,6 +1086,7 @@ export function TimelineStage({
                 clipId,
                 startTime: anchorNewStart,
                 duration: anchorNewDuration,
+                inPoint: originalInPoint + (anchorNewStart - originalStartTime) * speed,
                 linkedClipId,
                 linkedTrackIndex,
                 isMulti: true,
@@ -1086,10 +1104,10 @@ export function TimelineStage({
               Math.min(anchorMaxDuration, originalDuration + deltaTime),
             );
             const endTime = originalStartTime + anchorNewDuration;
-            const snapResult = snapTime(endTime, snapTargetsRef.current, thresholdTime);
+            const snapResult = snapFrame(endTime, snapTargetsRef.current, thresholdTime);
             anchorNewDuration = Math.max(
               0.1,
-              Math.min(anchorMaxDuration, snapResult.time - originalStartTime),
+              Math.min(anchorMaxDuration, snapResult.frame - originalStartTime),
             );
             setSnapLines(snapResult.snapLines);
             const anchorDelta = anchorNewDuration - originalDuration;
@@ -1141,17 +1159,19 @@ export function TimelineStage({
               newStartTime = Math.max(0, originalStartTime + deltaTime);
             }
 
-            const snapResult = snapTime(newStartTime, snapTargetsRef.current, thresholdTime);
-            newStartTime = snapResult.time;
+            const snapResult = snapFrame(newStartTime, snapTargetsRef.current, thresholdTime);
+            newStartTime = snapResult.frame;
             setSnapLines(snapResult.snapLines);
 
             const newDuration = originalStartTime + originalDuration - newStartTime;
 
             if (newDuration >= 0.1) {
+              const newInPoint = originalInPoint + (newStartTime - originalStartTime) * speed;
               setTrimPreview({
                 clipId,
                 startTime: newStartTime,
                 duration: newDuration,
+                inPoint: newInPoint,
                 linkedClipId,
                 linkedTrackIndex,
               });
@@ -1165,8 +1185,8 @@ export function TimelineStage({
             let newDuration = Math.max(0.1, Math.min(maxDuration, originalDuration + deltaTime));
 
             const endTime = originalStartTime + newDuration;
-            const snapResult = snapTime(endTime, snapTargetsRef.current, thresholdTime);
-            newDuration = snapResult.time - originalStartTime;
+            const snapResult = snapFrame(endTime, snapTargetsRef.current, thresholdTime);
+            newDuration = snapResult.frame - originalStartTime;
             newDuration = Math.max(0.1, Math.min(maxDuration, newDuration));
             setSnapLines(snapResult.snapLines);
 
@@ -1285,23 +1305,23 @@ export function TimelineStage({
             const mcNewEnd = mcNewStart + mcClip.duration;
 
             // Check left edge snap
-            const leftSnap = snapTime(mcNewStart, snapTargetsRef.current, thresholdTime);
+            const leftSnap = snapFrame(mcNewStart, snapTargetsRef.current, thresholdTime);
             if (leftSnap.snapLines.length > 0) {
-              const dist = Math.abs(leftSnap.time - mcNewStart);
+              const dist = Math.abs(leftSnap.frame - mcNewStart);
               if (dist < bestSnapDist) {
                 bestSnapDist = dist;
-                bestSnapDelta = deltaTime + (leftSnap.time - mcNewStart);
+                bestSnapDelta = deltaTime + (leftSnap.frame - mcNewStart);
                 bestSnapLines = leftSnap.snapLines;
               }
             }
 
             // Check right edge snap
-            const rightSnap = snapTime(mcNewEnd, snapTargetsRef.current, thresholdTime);
+            const rightSnap = snapFrame(mcNewEnd, snapTargetsRef.current, thresholdTime);
             if (rightSnap.snapLines.length > 0) {
-              const dist = Math.abs(rightSnap.time - mcNewEnd);
+              const dist = Math.abs(rightSnap.frame - mcNewEnd);
               if (dist < bestSnapDist) {
                 bestSnapDist = dist;
-                bestSnapDelta = deltaTime + (rightSnap.time - mcNewEnd);
+                bestSnapDelta = deltaTime + (rightSnap.frame - mcNewEnd);
                 bestSnapLines = rightSnap.snapLines;
               }
             }
@@ -1332,7 +1352,7 @@ export function TimelineStage({
             const mcNewStart = mc.originalStartTime + bestSnapDelta;
             multiPreviews.push({
               clipId: mc.clipId,
-              x: timeToX(mcNewStart),
+              x: frameToX(mcNewStart),
               y: trackIndexToY(mc.originalTrackIndex) + CLIP_PADDING,
               trackIndex: mc.originalTrackIndex,
             });
@@ -1345,7 +1365,7 @@ export function TimelineStage({
             ) {
               multiPreviews.push({
                 clipId: mc.linkedClipId,
-                x: timeToX(mcNewStart),
+                x: frameToX(mcNewStart),
                 y: trackIndexToY(mc.linkedOriginalTrackIndex) + CLIP_PADDING,
                 trackIndex: mc.linkedOriginalTrackIndex,
               });
@@ -1356,7 +1376,7 @@ export function TimelineStage({
           const anchorNewStart = originalStartTime + bestSnapDelta;
           setDragPreview({
             clipId,
-            x: timeToX(anchorNewStart),
+            x: frameToX(anchorNewStart),
             y: trackIndexToY(originalTrackIndex) + CLIP_PADDING,
             trackIndex: originalTrackIndex,
             isMulti: true,
@@ -1378,27 +1398,27 @@ export function TimelineStage({
 
           let newStartTime = Math.max(0, originalStartTime + deltaTime);
 
-          const leftSnap = snapTime(newStartTime, snapTargetsRef.current, thresholdTime);
+          const leftSnap = snapFrame(newStartTime, snapTargetsRef.current, thresholdTime);
           const rightEdge = newStartTime + clip.duration;
-          const rightSnap = snapTime(rightEdge, snapTargetsRef.current, thresholdTime);
+          const rightSnap = snapFrame(rightEdge, snapTargetsRef.current, thresholdTime);
 
-          const leftDist = Math.abs(leftSnap.time - newStartTime);
-          const rightDist = Math.abs(rightSnap.time - rightEdge);
+          const leftDist = Math.abs(leftSnap.frame - newStartTime);
+          const rightDist = Math.abs(rightSnap.frame - rightEdge);
 
           if (leftSnap.snapLines.length > 0 || rightSnap.snapLines.length > 0) {
             if (leftSnap.snapLines.length > 0 && rightSnap.snapLines.length > 0) {
               if (leftDist <= rightDist) {
-                newStartTime = leftSnap.time;
+                newStartTime = leftSnap.frame;
                 setSnapLines(leftSnap.snapLines);
               } else {
-                newStartTime = rightSnap.time - clip.duration;
+                newStartTime = rightSnap.frame - clip.duration;
                 setSnapLines(rightSnap.snapLines);
               }
             } else if (leftSnap.snapLines.length > 0) {
-              newStartTime = leftSnap.time;
+              newStartTime = leftSnap.frame;
               setSnapLines(leftSnap.snapLines);
             } else {
-              newStartTime = rightSnap.time - clip.duration;
+              newStartTime = rightSnap.frame - clip.duration;
               setSnapLines(rightSnap.snapLines);
             }
           } else {
@@ -1419,7 +1439,7 @@ export function TimelineStage({
             }
           }
 
-          const newX = timeToX(newStartTime);
+          const newX = frameToX(newStartTime);
           const newY = trackIndexToY(newTrackIndex) + CLIP_PADDING;
 
           let linkedX: number | undefined;
@@ -1445,7 +1465,7 @@ export function TimelineStage({
                 }
               }
 
-              linkedX = timeToX(newStartTime);
+              linkedX = frameToX(newStartTime);
               linkedY = trackIndexToY(linkedTrackIndex) + CLIP_PADDING;
             }
           }
@@ -1484,7 +1504,7 @@ export function TimelineStage({
           for (const clip of clips) {
             const trackIndex = allTracks.findIndex((t) => t.fullId === clip.trackId);
             if (trackIndex === -1) continue;
-            const cx = timeToX(clip.startTime);
+            const cx = frameToX(clip.startTime);
             const cy = trackIndexToY(trackIndex) + CLIP_PADDING;
             const cw = clip.duration * zoom;
             const ch = TRACK_HEIGHT - CLIP_PADDING * 2;
@@ -1541,7 +1561,7 @@ export function TimelineStage({
                 trackHeight: TRACK_HEIGHT - CLIP_PADDING * 2,
               });
             } else {
-              const clipX = timeToX(clip.startTime);
+              const clipX = frameToX(clip.startTime);
               const clipWidth = clip.duration * zoom;
 
               // Check transition resize handles first
@@ -1591,8 +1611,8 @@ export function TimelineStage({
     [
       duration,
       zoom,
-      xToTime,
-      timeToX,
+      xToFrame,
+      frameToX,
       trackIndexToY,
       allTracks,
       clips,
@@ -1698,14 +1718,14 @@ export function TimelineStage({
             .filter((mc) => selectedIds.has(mc.clipId))
             .map((mc) => ({
               clipId: mc.clipId,
-              newStartTime: xToTime(mc.x),
+              newStartTime: xToFrame(mc.x),
             }));
           batchMoveClips(moves);
         } else {
           // Single-clip drag
           const { clipId } = dragState;
           const newTrack = allTracks[dragPreview.trackIndex];
-          const newStartTime = xToTime(dragPreview.x);
+          const newStartTime = xToFrame(dragPreview.x);
 
           if (newTrack) {
             moveClipTimeAndTrack(clipId, newStartTime, newTrack.fullId);
@@ -1728,7 +1748,7 @@ export function TimelineStage({
     transitionResizePreview,
     allTracks,
     clips,
-    xToTime,
+    xToFrame,
     moveClipTimeAndTrack,
     batchMoveClips,
     trimLeft,
@@ -1760,7 +1780,7 @@ export function TimelineStage({
   }, []);
 
   // Playhead X position
-  const playheadX = timeToX(currentTime);
+  const playheadX = frameToX(currentTime);
 
   // Render a clip
   const renderClip = useCallback(
@@ -1788,7 +1808,7 @@ export function TimelineStage({
       clipThumbnails?: ClipThumbnailData[],
       clipWaveformMap?: Map<string, WaveformData>,
     ) => {
-      const x = overrideX ?? timeToX(clip.startTime);
+      const x = overrideX ?? frameToX(clip.startTime);
       const y = overrideY ?? trackIndexToY(trackIndex) + CLIP_PADDING;
       const clipWidth = clip.duration * zoom;
       const clipHeight = TRACK_HEIGHT - CLIP_PADDING * 2;
@@ -1852,23 +1872,48 @@ export function TimelineStage({
             >
               {thumbnails.map((thumb) => {
                 if (!thumb.image) return null;
-                // Calculate slot width and scale thumbnail to fit height
                 const slotWidth = clipWidth / thumbnails.length;
-                const thumbAspect = thumb.image.width / thumb.image.height;
-                const thumbHeight = clipHeight - 4;
-                const thumbWidth = thumbHeight * thumbAspect;
-                // Position relative to clip's current x (not stale thumb.x from hook)
                 const slotX = x + thumb.slotIndex * slotWidth;
-                const thumbX = slotX + (slotWidth - thumbWidth) / 2;
+                const slotHeight = clipHeight - 4;
+                const slotY = y + 2;
+
+                // Crop-to-fill: scale image to cover the slot, clip overflow
+                const imgAspect = thumb.image.width / thumb.image.height;
+                const slotAspect = slotWidth / slotHeight;
+
+                let drawW: number;
+                let drawH: number;
+                let drawX: number;
+                let drawY: number;
+
+                if (imgAspect > slotAspect) {
+                  drawH = slotHeight;
+                  drawW = slotHeight * imgAspect;
+                  drawX = slotX + (slotWidth - drawW) / 2;
+                  drawY = slotY;
+                } else {
+                  drawW = slotWidth;
+                  drawH = slotWidth / imgAspect;
+                  drawX = slotX;
+                  drawY = slotY + (slotHeight - drawH) / 2;
+                }
+
+                const img = thumb.image;
                 return (
-                  <KonvaImage
+                  <Shape
                     key={thumb.key}
-                    image={thumb.image}
-                    x={thumbX}
-                    y={y + 2}
-                    width={thumbWidth}
-                    height={thumbHeight}
-                    opacity={baseOpacity * 0.9}
+                    sceneFunc={(context) => {
+                      const ctx = context._context;
+                      ctx.save();
+                      ctx.beginPath();
+                      ctx.rect(slotX, slotY, slotWidth, slotHeight);
+                      ctx.clip();
+                      ctx.imageSmoothingEnabled = true;
+                      ctx.imageSmoothingQuality = "high";
+                      ctx.globalAlpha = baseOpacity;
+                      ctx.drawImage(img, drawX, drawY, drawW, drawH);
+                      ctx.restore();
+                    }}
                     listening={false}
                   />
                 );
@@ -1883,7 +1928,9 @@ export function TimelineStage({
             (() => {
               const wf = clipWaveformMap?.get(clip.assetId);
               if (!wf) return null;
-              const outPoint = clip.inPoint + clip.duration * clip.speed;
+              // Convert frame-based clip values to seconds to match waveform data
+              const inPointSec = framesToSeconds(clip.inPoint, fps);
+              const outPointSec = inPointSec + framesToSeconds(clip.duration, fps) * clip.speed;
               return (
                 <Group
                   clipFunc={(ctx) => {
@@ -1912,8 +1959,8 @@ export function TimelineStage({
                     width={clipWidth}
                     height={clipHeight}
                     waveformData={wf.data}
-                    inPoint={clip.inPoint}
-                    outPoint={outPoint}
+                    inPoint={inPointSec}
+                    outPoint={outPointSec}
                     duration={wf.duration}
                   />
                 </Group>
@@ -2094,7 +2141,7 @@ export function TimelineStage({
       );
     },
     [
-      timeToX,
+      frameToX,
       trackIndexToY,
       zoom,
       width,
@@ -2183,8 +2230,13 @@ export function TimelineStage({
           if (trimPreview?.isMulti && trimPreview.multiClips) {
             const mc = trimPreview.multiClips.find((m) => m.clipId === clip.id);
             if (mc) {
+              const mcOverrides = {
+                startTime: mc.startTime,
+                duration: mc.duration,
+                ...(mc.inPoint !== undefined ? { inPoint: mc.inPoint } : {}),
+              };
               return renderClip(
-                { ...clip, startTime: mc.startTime, duration: mc.duration },
+                { ...clip, ...mcOverrides },
                 mc.trackIndex >= 0 ? mc.trackIndex : trackIndex,
                 false,
                 undefined,
@@ -2199,8 +2251,13 @@ export function TimelineStage({
             if (linkedMc && linkedMc.linkedTrackIndex !== undefined) {
               const linkedTrack = allTracks[linkedMc.linkedTrackIndex];
               const linkedIsLocked = linkedTrack?.locked ?? false;
+              const linkedOverrides = {
+                startTime: linkedMc.startTime,
+                duration: linkedMc.duration,
+                ...(linkedMc.inPoint !== undefined ? { inPoint: linkedMc.inPoint } : {}),
+              };
               return renderClip(
-                { ...clip, startTime: linkedMc.startTime, duration: linkedMc.duration },
+                { ...clip, ...linkedOverrides },
                 linkedMc.linkedTrackIndex,
                 false,
                 undefined,
@@ -2211,10 +2268,15 @@ export function TimelineStage({
               );
             }
           } else if (trimPreview) {
-            // Single-clip trim
+            // Single-clip trim — apply startTime, duration, and inPoint (for left-trim)
+            const trimOverrides = {
+              startTime: trimPreview.startTime,
+              duration: trimPreview.duration,
+              ...(trimPreview.inPoint !== undefined ? { inPoint: trimPreview.inPoint } : {}),
+            };
             if (trimPreview.clipId === clip.id) {
               return renderClip(
-                { ...clip, startTime: trimPreview.startTime, duration: trimPreview.duration },
+                { ...clip, ...trimOverrides },
                 trackIndex,
                 false,
                 undefined,
@@ -2231,7 +2293,7 @@ export function TimelineStage({
               const linkedTrack = allTracks[trimPreview.linkedTrackIndex];
               const linkedIsLocked = linkedTrack?.locked ?? false;
               return renderClip(
-                { ...clip, startTime: trimPreview.startTime, duration: trimPreview.duration },
+                { ...clip, ...trimOverrides },
                 trimPreview.linkedTrackIndex,
                 false,
                 undefined,
@@ -2272,7 +2334,7 @@ export function TimelineStage({
           const overlapEnd = isResizing
             ? crossTransitionResizePreview.overlapEnd
             : outgoing.startTime + outgoing.duration;
-          const ctX = timeToX(overlapStart);
+          const ctX = frameToX(overlapStart);
           const ctWidth = (overlapEnd - overlapStart) * zoom;
           const ctY = trackIndexToY(trackIndex) + CLIP_PADDING;
           const ctHeight = TRACK_HEIGHT - CLIP_PADDING * 2;
@@ -2353,7 +2415,7 @@ export function TimelineStage({
           ? dragPreview.multiClips.map((mc) => {
               const mcClip = clips.find((c) => c.id === mc.clipId);
               if (!mcClip) return null;
-              const newStartTime = xToTime(mc.x);
+              const newStartTime = xToFrame(mc.x);
               return renderClip(
                 { ...mcClip, startTime: newStartTime },
                 mc.trackIndex,
@@ -2370,7 +2432,7 @@ export function TimelineStage({
               const clip = clips.find((c) => c.id === dragPreview.clipId);
               if (!clip) return null;
 
-              const newStartTime = xToTime(dragPreview.x);
+              const newStartTime = xToFrame(dragPreview.x);
               return renderClip(
                 { ...clip, startTime: newStartTime },
                 dragPreview.trackIndex,
@@ -2394,7 +2456,7 @@ export function TimelineStage({
             const linkedClip = clips.find((c) => c.id === dragPreview.linkedClipId);
             if (!linkedClip) return null;
 
-            const newStartTime = xToTime(dragPreview.linkedX);
+            const newStartTime = xToFrame(dragPreview.linkedX);
             return renderClip(
               { ...linkedClip, startTime: newStartTime },
               dragPreview.linkedTrackIndex,
@@ -2409,7 +2471,7 @@ export function TimelineStage({
 
         {/* Snap lines */}
         {snapLines.map((snapTime) => {
-          const sx = timeToX(snapTime);
+          const sx = frameToX(snapTime);
           if (sx < TRACK_HEADER_WIDTH || sx > width) return null;
           return (
             <Line
@@ -2500,24 +2562,33 @@ export function TimelineStage({
         <Rect x={0} y={0} width={width} height={RULER_HEIGHT} fill={COLORS.ruler} />
 
         {/* Ruler time markers */}
-        {gridLines.map((line, i) => (
-          <Group key={i}>
-            <Line
-              points={[line.x, line.isMajor ? 20 : 30, line.x, RULER_HEIGHT]}
-              stroke={line.isMajor ? COLORS.rulerMajorLine : COLORS.rulerMinorLine}
-              strokeWidth={1}
-            />
-            {line.isMajor && (
-              <Text
-                x={line.x + 4}
-                y={8}
-                text={formatTime(line.time)}
-                fontSize={10}
-                fill={COLORS.rulerText}
+        {gridLines.map((line, i) => {
+          const fps = Math.round(fpsFloat);
+          const isOnSecondBoundary = fps > 0 && line.frame % fps === 0;
+          // Show text only on major lines that fall on a whole-second boundary
+          const showLabel = line.isMajor && isOnSecondBoundary;
+          // Major sub-second lines get a medium tick (between major and minor height)
+          const tickTop = showLabel ? 20 : line.isMajor ? 25 : 30;
+
+          return (
+            <Group key={i}>
+              <Line
+                points={[line.x, tickTop, line.x, RULER_HEIGHT]}
+                stroke={line.isMajor ? COLORS.rulerMajorLine : COLORS.rulerMinorLine}
+                strokeWidth={1}
               />
-            )}
-          </Group>
-        ))}
+              {showLabel && (
+                <Text
+                  x={line.x + 4}
+                  y={8}
+                  text={formatFrameTimecode(line.frame, fpsFloat)}
+                  fontSize={10}
+                  fill={COLORS.rulerText}
+                />
+              )}
+            </Group>
+          );
+        })}
 
         {/* Track headers background */}
         <Rect

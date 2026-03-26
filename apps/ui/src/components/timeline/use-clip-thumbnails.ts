@@ -10,18 +10,17 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { VideoFrameLoaderManager } from "@tooscut/render-engine";
+import { VideoFrameLoaderManager, framesToSeconds } from "@tooscut/render-engine";
 import { useVideoEditorStore } from "../../state/video-editor-store";
-import {
-  getCachedBitmap,
-  getNearestCachedBitmap,
-  setCachedBitmap,
-  clearThumbnailCache,
-} from "./thumbnail-cache";
+import { getCachedBitmap, setCachedBitmap, clearThumbnailCache } from "./thumbnail-cache";
 import { useAssetStore } from "./use-asset-store";
 
 /** Width of each thumbnail slot in pixels */
 const THUMBNAIL_SLOT_WIDTH = 80;
+/** Height to resize thumbnails to (accounts for HiDPI) */
+const THUMBNAIL_RESIZE_HEIGHT = Math.round(
+  80 * (typeof window !== "undefined" ? (window.devicePixelRatio ?? 2) : 2),
+);
 
 /** Buffer zone - number of slots to preload beyond visible area */
 const BUFFER_SLOTS = 2;
@@ -99,6 +98,7 @@ export function useClipThumbnails({
   const thumbnailDataRef = useRef<ClipThumbnailData[]>([]);
 
   const assets = useAssetStore((state) => state.assets);
+  const fps = useVideoEditorStore((s) => s.settings.fps);
 
   // Initialize loader manager (dedicated instance for thumbnails)
   useEffect(() => {
@@ -124,22 +124,21 @@ export function useClipThumbnails({
 
       for (let i = 0; i < numSlots; i++) {
         // Image clips use timestamp 0 for all slots (same image, no time variation)
-        // Video clips compute media time from inPoint and speed
-        const mediaTime =
+        // Video clips compute media time from inPoint and speed (all in frames),
+        // then convert to seconds for video frame extraction
+        const mediaTimeFrames =
           clip.type === "image"
             ? 0
             : clip.inPoint + (i + 0.5) * (clip.duration / numSlots) * clip.speed;
+        const mediaTime = framesToSeconds(mediaTimeFrames, fps);
 
-        // Check exact cache first, then fall back to nearest cached frame
-        const exactBitmap = getCachedBitmap(clip.assetId, mediaTime, THUMBNAIL_SLOT_WIDTH);
-        const image =
-          exactBitmap ?? getNearestCachedBitmap(clip.assetId, mediaTime, THUMBNAIL_SLOT_WIDTH);
+        const image = getCachedBitmap(clip.assetId, mediaTime, THUMBNAIL_SLOT_WIDTH);
 
         slots.push({
           x: 0, // Not used — render positions via slotIndex
           timestamp: mediaTime,
           image,
-          needsLoad: !exactBitmap, // nearest-cache fallback still needs exact load
+          needsLoad: !image,
           key: `${clip.id}-${i}`,
           assetId: clip.assetId,
           slotIndex: i,
@@ -226,7 +225,12 @@ export function useClipThumbnails({
 
         const prioritized = prioritizeSlots(clipData.slots, clipData.startTime, clipData.duration);
         for (const slot of prioritized) {
-          allSlotsToLoad.push({ clipIdx, slot, assetUrl: asset.url, clipType: clipData.clipType });
+          allSlotsToLoad.push({
+            clipIdx,
+            slot,
+            assetUrl: asset.url,
+            clipType: clipData.clipType,
+          });
         }
       }
 
@@ -270,7 +274,11 @@ export function useClipThumbnails({
           if (cached) {
             const slotIdx = updates[clipIdx].slots.findIndex((s) => s.key === slot.key);
             if (slotIdx !== -1) {
-              updates[clipIdx].slots[slotIdx] = { ...slot, image: cached, needsLoad: false };
+              updates[clipIdx].slots[slotIdx] = {
+                ...slot,
+                image: cached,
+                needsLoad: false,
+              };
               emitUpdate();
             }
             continue;
@@ -289,7 +297,14 @@ export function useClipThumbnails({
                 activeLoads--;
                 break;
               }
-              bitmap = await loader.getImageBitmap(slot.timestamp);
+              const fullBitmap = await loader.getImageBitmap(slot.timestamp);
+              const aspect = fullBitmap.width / fullBitmap.height;
+              bitmap = await createImageBitmap(fullBitmap, {
+                resizeWidth: Math.round(THUMBNAIL_RESIZE_HEIGHT * aspect),
+                resizeHeight: THUMBNAIL_RESIZE_HEIGHT,
+                resizeQuality: "high",
+              });
+              fullBitmap.close();
             }
 
             if (signal.aborted) {
@@ -305,13 +320,21 @@ export function useClipThumbnails({
               for (let si = 0; si < updates[clipIdx].slots.length; si++) {
                 const s = updates[clipIdx].slots[si];
                 if (s.needsLoad) {
-                  updates[clipIdx].slots[si] = { ...s, image: bitmap, needsLoad: false };
+                  updates[clipIdx].slots[si] = {
+                    ...s,
+                    image: bitmap,
+                    needsLoad: false,
+                  };
                 }
               }
             } else {
               const slotIdx = updates[clipIdx].slots.findIndex((s) => s.key === slot.key);
               if (slotIdx !== -1) {
-                updates[clipIdx].slots[slotIdx] = { ...slot, image: bitmap, needsLoad: false };
+                updates[clipIdx].slots[slotIdx] = {
+                  ...slot,
+                  image: bitmap,
+                  needsLoad: false,
+                };
               }
             }
             emitUpdate();

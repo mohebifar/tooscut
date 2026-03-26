@@ -30,7 +30,7 @@ export interface FrameRendererConfig {
 
 export interface RenderFrameTask {
   frameIndex: number;
-  timelineTime: number;
+  timelineFrame: number;
   frame: RenderFrame;
   /** Asset IDs that need texture upload with their source timestamps */
   textureRequests: Array<{

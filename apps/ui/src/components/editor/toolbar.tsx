@@ -23,10 +23,40 @@ import { ProjectSettingsDialog } from "./project-settings-dialog";
 import { useVideoEditorStore, useTemporalStore } from "../../state/video-editor-store";
 import { importFilesWithPicker, addAssetsToStores } from "../timeline/use-asset-store";
 
-export function Toolbar() {
+interface ToolbarProps {
+  /** Open the settings dialog on mount (for new projects) */
+  showSettingsOnMount?: boolean;
+}
+
+export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
+  const { projectId } = Route.useParams();
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+
   const navigate = useNavigate();
+
+  // Auto-open settings dialog for new projects
+  useEffect(() => {
+    if (showSettingsOnMount) {
+      setSettingsDialogOpen(true);
+    }
+  }, [showSettingsOnMount]);
+
+  const handleSettingsDialogChange = useCallback(
+    (open: boolean) => {
+      setSettingsDialogOpen(open);
+      // Clear the "new" search param when closing
+      if (!open && showSettingsOnMount) {
+        void navigate({
+          to: "/editor/$projectId",
+          params: { projectId },
+          search: {} as any,
+          replace: true,
+        });
+      }
+    },
+    [showSettingsOnMount, navigate, projectId],
+  );
   const activeTool = useVideoEditorStore((s) => s.activeTool);
   const setActiveTool = useVideoEditorStore((s) => s.setActiveTool);
   const clips = useVideoEditorStore((s) => s.clips);
@@ -308,7 +338,11 @@ export function Toolbar() {
 
         {/* Dialogs */}
         <ExportDialog open={exportDialogOpen} onOpenChange={setExportDialogOpen} />
-        <ProjectSettingsDialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen} />
+        <ProjectSettingsDialog
+          open={settingsDialogOpen}
+          onOpenChange={handleSettingsDialogChange}
+          projectId={projectId}
+        />
       </div>
     </TooltipProvider>
   );

@@ -51,7 +51,7 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
     const base = clip.transform ?? {};
     if (!clip.keyframes?.tracks?.length) return base;
 
-    const currentTime = useVideoEditorStore.getState().currentTime;
+    const currentTime = useVideoEditorStore.getState().currentFrame;
     const localTime = currentTime - clip.startTime;
     const evaluator = new KeyframeEvaluator(clip.keyframes);
     const keyframed = evaluator.evaluateTransform(localTime);
@@ -87,7 +87,7 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
     (clip: EditorClip, property: AnimatableProperty, value: number) => {
       const store = useVideoEditorStore.getState();
       if (hasKeyframes(clip, property)) {
-        const localTime = store.currentTime - clip.startTime;
+        const localTime = store.currentFrame - clip.startTime;
         store.addKeyframe(clip.id, property, localTime, value);
       } else {
         const field = PROPERTY_TO_TRANSFORM_FIELD[property] ?? property;
@@ -104,7 +104,7 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
     (clip: EditorClip, property: AnimatableProperty, value: number) => {
       const store = useVideoEditorStore.getState();
       if (hasKeyframes(clip, property)) {
-        const localTime = store.currentTime - clip.startTime;
+        const localTime = store.currentFrame - clip.startTime;
         store.addKeyframe(clip.id, property, localTime, value);
       } else {
         store.updateClipLineBox(clip.id, { [property]: value });
@@ -120,7 +120,7 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
     (clip: EditorClip, property: AnimatableProperty, value: number) => {
       const store = useVideoEditorStore.getState();
       if (hasKeyframes(clip, property)) {
-        const localTime = store.currentTime - clip.startTime;
+        const localTime = store.currentFrame - clip.startTime;
         store.addKeyframe(clip.id, property, localTime, value);
       } else {
         store.updateClipShapeBox(clip.id, { [property]: value });
@@ -156,18 +156,18 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
       if (!clip || clip.type === "audio") return;
 
       const evaluatedTransform = getEvaluatedTransform(clip);
-      const bounds = getClipDisplayBounds(clip, evaluatedTransform, ctx, state.currentTime);
+      const bounds = getClipDisplayBounds(clip, evaluatedTransform, ctx, state.currentFrame);
       if (!bounds) return;
 
       // Collect snap targets
-      const visibleClips = state.getVisibleClipsAtTime(state.currentTime);
+      const visibleClips = state.getVisibleClipsAtTime(state.currentFrame);
       const transforms = new Map<string, Partial<Transform>>();
       for (const c of visibleClips) {
         if (c.type !== "audio") transforms.set(c.id, getEvaluatedTransform(c));
       }
       snapTargetsRef.current = collectSnapTargets(visibleClips, clipId, transforms, ctx);
 
-      const { startPercentageBox, startLineBox } = captureStartBoxes(clip, state.currentTime);
+      const { startPercentageBox, startLineBox } = captureStartBoxes(clip, state.currentFrame);
 
       dragStateRef.current = {
         dragType: "move",
@@ -195,10 +195,10 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
       if (!clip || clip.type === "audio") return;
 
       const evaluatedTransform = getEvaluatedTransform(clip);
-      const bounds = getClipDisplayBounds(clip, evaluatedTransform, ctx, state.currentTime);
+      const bounds = getClipDisplayBounds(clip, evaluatedTransform, ctx, state.currentFrame);
       if (!bounds) return;
 
-      const { startPercentageBox, startLineBox } = captureStartBoxes(clip, state.currentTime);
+      const { startPercentageBox, startLineBox } = captureStartBoxes(clip, state.currentFrame);
 
       dragStateRef.current = {
         dragType: "resize",
@@ -227,7 +227,7 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
       if (!clip || clip.type === "audio") return;
 
       const evaluatedTransform = getEvaluatedTransform(clip);
-      const bounds = getClipDisplayBounds(clip, evaluatedTransform, ctx, state.currentTime);
+      const bounds = getClipDisplayBounds(clip, evaluatedTransform, ctx, state.currentFrame);
       if (!bounds) return;
 
       const centerX = bounds.x + bounds.width / 2;

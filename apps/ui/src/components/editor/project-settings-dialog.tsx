@@ -13,10 +13,13 @@ import { Button } from "../ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { NumericInput } from "../ui/numeric-input";
 import { useVideoEditorStore } from "../../state/video-editor-store";
+import { FRAME_RATE_PRESETS, type FrameRate } from "@tooscut/render-engine";
+import { db } from "../../state/db";
 
 interface ProjectSettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  projectId: string;
 }
 
 interface ResolutionPreset {
@@ -50,31 +53,53 @@ const RESOLUTION_PRESETS: ResolutionPreset[] = [
 
 const GROUPS = ["Landscape", "Portrait", "Square", "Platform"] as const;
 
-const FRAME_RATE_PRESETS = [60, 30, 25, 24];
+const FPS_OPTIONS: { label: string; value: FrameRate }[] = [
+  { label: "60", value: FRAME_RATE_PRESETS["60"] },
+  { label: "30", value: FRAME_RATE_PRESETS["30"] },
+  { label: "25", value: FRAME_RATE_PRESETS["25"] },
+  { label: "24", value: FRAME_RATE_PRESETS["24"] },
+  { label: "29.97", value: FRAME_RATE_PRESETS["29.97"] },
+  { label: "23.976", value: FRAME_RATE_PRESETS["23.976"] },
+  { label: "59.94", value: FRAME_RATE_PRESETS["59.94"] },
+];
+
+/** Serialize a FrameRate to a string key for the select component */
+function fpsToKey(fps: FrameRate): string {
+  return `${fps.numerator}/${fps.denominator}`;
+}
 
 function findPresetIndex(width: number, height: number): string {
   const idx = RESOLUTION_PRESETS.findIndex((p) => p.width === width && p.height === height);
   return idx !== -1 ? String(idx) : "custom";
 }
 
-export function ProjectSettingsDialog({ open, onOpenChange }: ProjectSettingsDialogProps) {
+export function ProjectSettingsDialog({
+  open,
+  onOpenChange,
+  projectId,
+}: ProjectSettingsDialogProps) {
+  const [name, setName] = useState("Untitled Project");
   const [width, setWidth] = useState(1920);
   const [height, setHeight] = useState(1080);
-  const [fps, setFps] = useState(30);
+  const [fps, setFps] = useState<FrameRate>({ numerator: 30, denominator: 1 });
   const [preset, setPreset] = useState("1");
 
   const settings = useVideoEditorStore((s) => s.settings);
   const setSettings = useVideoEditorStore((s) => s.setSettings);
 
-  // Sync local state from store when dialog opens
+  // Sync local state from store and DB when dialog opens
   useEffect(() => {
     if (open) {
       setWidth(settings.width);
       setHeight(settings.height);
       setFps(settings.fps);
       setPreset(findPresetIndex(settings.width, settings.height));
+      // Load project name from DB
+      void db.projects.get(projectId).then((project) => {
+        if (project) setName(project.name);
+      });
     }
-  }, [open, settings]);
+  }, [open, settings, projectId]);
 
   const handlePresetChange = useCallback((value: string) => {
     setPreset(value);
@@ -98,8 +123,11 @@ export function ProjectSettingsDialog({ open, onOpenChange }: ProjectSettingsDia
 
   const handleSave = useCallback(() => {
     setSettings({ width, height, fps });
+    // Save project name to DB
+    const trimmed = name.trim() || "Untitled Project";
+    void db.projects.update(projectId, { name: trimmed });
     onOpenChange(false);
-  }, [width, height, fps, setSettings, onOpenChange]);
+  }, [width, height, fps, name, projectId, setSettings, onOpenChange]);
 
   const handleClose = useCallback(() => {
     onOpenChange(false);
@@ -117,6 +145,17 @@ export function ProjectSettingsDialog({ open, onOpenChange }: ProjectSettingsDia
 
         <DialogPanel>
           <div className="grid gap-4 py-4">
+            {/* Project name */}
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Project Name</label>
+              <input
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Untitled Project"
+              />
+            </div>
+
             {/* Resolution preset */}
             <div className="grid gap-2">
               <label className="text-sm font-medium">Resolution</label>
@@ -186,14 +225,20 @@ export function ProjectSettingsDialog({ open, onOpenChange }: ProjectSettingsDia
             {/* Frame rate */}
             <div className="grid gap-2">
               <label className="text-sm font-medium">Frame Rate</label>
-              <Select value={String(fps)} onValueChange={(v) => setFps(Number(v))}>
+              <Select
+                value={fpsToKey(fps)}
+                onValueChange={(v) => {
+                  const option = FPS_OPTIONS.find((o) => fpsToKey(o.value) === v);
+                  if (option) setFps(option.value);
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select frame rate" />
                 </SelectTrigger>
                 <SelectContent>
-                  {FRAME_RATE_PRESETS.map((f) => (
-                    <SelectItem key={f} value={String(f)}>
-                      {f} fps
+                  {FPS_OPTIONS.map((o) => (
+                    <SelectItem key={fpsToKey(o.value)} value={fpsToKey(o.value)}>
+                      {o.label} fps
                     </SelectItem>
                   ))}
                 </SelectContent>

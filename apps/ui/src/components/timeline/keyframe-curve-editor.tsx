@@ -337,12 +337,12 @@ function PropertyGraph({
   const graphContentHeight = height - GRAPH_PADDING * 2;
 
   // Coordinate conversion
-  const timeToX = useCallback(
+  const frameToX = useCallback(
     (time: number) => TRACK_HEADER_WIDTH + (clipStartTime + time) * zoom - scrollX,
     [zoom, scrollX, clipStartTime],
   );
 
-  const xToTime = useCallback(
+  const xToFrame = useCallback(
     (x: number) => {
       const absoluteTime = (x - TRACK_HEADER_WIDTH + scrollX) / zoom;
       return absoluteTime - clipStartTime;
@@ -393,7 +393,7 @@ function PropertyGraph({
 
       if (type === "point") {
         // Drag keyframe point
-        const newTime = Math.max(0, xToTime(pos.x));
+        const newTime = Math.max(0, xToFrame(pos.x));
         const newValue = yToValue(pos.y);
         updateKeyframe(clipId, property, index, { time: newTime, value: newValue });
       } else {
@@ -401,9 +401,9 @@ function PropertyGraph({
         const nextKf = keyframes[index + 1];
         if (!nextKf) return;
 
-        const x1 = timeToX(kf.time);
+        const x1 = frameToX(kf.time);
         const y1 = valueToY(kf.value);
-        const x2 = timeToX(nextKf.time);
+        const x2 = frameToX(nextKf.time);
         const y2 = valueToY(nextKf.value);
         const dx = x2 - x1;
         const dy = y2 - y1;
@@ -448,9 +448,9 @@ function PropertyGraph({
       clipId,
       property,
       config,
-      xToTime,
+      xToFrame,
       yToValue,
-      timeToX,
+      frameToX,
       valueToY,
       updateKeyframe,
     ],
@@ -486,15 +486,15 @@ function PropertyGraph({
           value = k1.value + easedT * (k2.value - k1.value);
         }
 
-        points.push(timeToX(time), valueToY(value));
+        points.push(frameToX(time), valueToY(value));
       }
     }
 
     return points;
-  }, [keyframes, timeToX, valueToY]);
+  }, [keyframes, frameToX, valueToY]);
 
   // Playhead position
-  const playheadX = timeToX(currentTime - clipStartTime);
+  const playheadX = frameToX(currentTime - clipStartTime);
   const curvePoints = generateCurvePoints();
 
   // Value scale labels
@@ -551,7 +551,7 @@ function PropertyGraph({
           const startTime = Math.floor(scrollX / zoom);
           const endTime = Math.ceil((scrollX + graphWidth) / zoom);
           for (let t = startTime; t <= endTime; t++) {
-            const x = timeToX(t - clipStartTime);
+            const x = frameToX(t - clipStartTime);
             if (x >= TRACK_HEADER_WIDTH && x <= width) {
               lines.push(
                 <Line key={t} points={[x, 0, x, height]} stroke="#2a2a2a" strokeWidth={1} />,
@@ -590,7 +590,7 @@ function PropertyGraph({
 
         {/* Keyframe points and bezier handles */}
         {keyframes.map((kf, index) => {
-          const x = timeToX(kf.time);
+          const x = frameToX(kf.time);
           const y = valueToY(kf.value);
           const nextKf = keyframes[index + 1];
           const showHandles = nextKf && kf.interpolation === "Bezier";
@@ -600,7 +600,7 @@ function PropertyGraph({
               {/* Bezier handles */}
               {showHandles &&
                 (() => {
-                  const x2 = timeToX(nextKf.time);
+                  const x2 = frameToX(nextKf.time);
                   const y2 = valueToY(nextKf.value);
                   const bezier = kf.easing.custom_bezier ?? CUBIC_BEZIER_PRESETS[kf.easing.preset];
                   const dx = x2 - x;
@@ -734,7 +734,7 @@ export function KeyframeCurveEditor({ width, clipId, properties }: KeyframeCurve
 
   const scrollX = useVideoEditorStore((s) => s.scrollX);
   const zoom = useVideoEditorStore((s) => s.zoom);
-  const currentTime = useVideoEditorStore((s) => s.currentTime);
+  const currentTime = useVideoEditorStore((s) => s.currentFrame);
   const clips = useVideoEditorStore((s) => s.clips);
 
   const clip = clips.find((c) => c.id === clipId);
