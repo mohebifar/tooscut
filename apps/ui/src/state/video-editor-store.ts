@@ -360,7 +360,7 @@ function validateCrossTransitions(
     if (outgoing.trackId !== incoming.trackId) return false;
     const outgoingEnd = outgoing.startTime + outgoing.duration;
     const gap = incoming.startTime - outgoingEnd;
-    return gap <= 0.1;
+    return gap <= 1;
   });
 }
 
@@ -1661,8 +1661,8 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             const outgoingEnd = outgoing.startTime + outgoing.duration;
             const gap = incoming.startTime - outgoingEnd;
 
-            // Only allow between adjacent clips (gap <= 0.1s)
-            if (gap > 0.1) return state;
+            // Only allow between adjacent clips (gap <= 1 frame)
+            if (gap > 1) return state;
 
             // Boundary is the original cut point (where outgoing ends).
             // Any gap is closed by shifting incoming left.

@@ -7,7 +7,6 @@ export interface TimelineTrack {
   fullId: string;
   type: "video" | "audio";
   name: string;
-  order: number;
   muted: boolean;
   locked: boolean;
 }
@@ -55,16 +54,30 @@ export interface DragState {
 export interface TrimState {
   clipId: string;
   edge: "left" | "right";
-  startX: number;
+  startMouseX: number;
   originalStartTime: number;
   originalDuration: number;
-  originalInPoint?: number;
-  originalOutPoint?: number;
+  originalInPoint: number;
+  speed: number;
+  assetDuration: number | undefined;
+  /** Whether this clip is backed by a media asset (video/audio/image). Text/shape clips are not. */
+  hasAsset: boolean;
+  // Linked clip info for visual feedback during trim
   linkedClipId?: string;
-  currentStartTime: number;
-  currentDuration: number;
-  currentInPoint?: number;
-  currentOutPoint?: number;
+  linkedTrackIndex?: number;
+  // Multi-select trim
+  isMulti?: boolean;
+  multiClips?: Array<{
+    clipId: string;
+    originalStartTime: number;
+    originalDuration: number;
+    originalInPoint: number;
+    speed: number;
+    assetDuration: number | undefined;
+    hasAsset: boolean;
+    linkedClipId?: string;
+    linkedTrackIndex?: number;
+  }>;
 }
 
 export interface BoxSelectState {
@@ -78,4 +91,25 @@ export interface TimelineStageProps {
   width: number;
   height: number;
   dropPreview: DropPreview | null;
+}
+
+export interface TransitionResizeState {
+  clipId: string;
+  edge: "in" | "out";
+  startMouseX: number;
+  originalDuration: number;
+  clipDuration: number;
+}
+
+export interface CrossTransitionResizeState {
+  transitionId: string;
+  edge: "left" | "right";
+  startMouseX: number;
+  originalDuration: number;
+  maxDuration: number;
+  boundary: number;
+  /** Maximum extension on the outgoing side (from boundary) */
+  totalMaxOut: number;
+  /** Maximum extension on the incoming side (from boundary) */
+  totalMaxIn: number;
 }
