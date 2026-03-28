@@ -14,6 +14,7 @@ import {
 } from "@tooscut/render-engine";
 import { PlusIcon } from "lucide-react";
 import { useRef, useEffect, useState, useCallback, useMemo } from "react";
+import { useStoreWithEqualityFn } from "zustand/traditional";
 
 import { useVideoEditorStore, useTemporalStore } from "../../state/video-editor-store";
 import { Button } from "../ui/button";
@@ -82,7 +83,24 @@ export function CanvasTimeline() {
   const removeClip = useVideoEditorStore((s) => s.removeClip);
   const setSelectedClipIds = useVideoEditorStore((s) => s.setSelectedClipIds);
   const linkClipPair = useVideoEditorStore((s) => s.linkClipPair);
-  const clips = useVideoEditorStore((s) => s.clips);
+
+  const clips = useStoreWithEqualityFn(
+    useVideoEditorStore,
+    (s) => s.clips,
+    (a, b) => {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        const ac = a[i];
+        const bc = b[i];
+        if (ac !== bc) {
+          return false;
+        }
+      }
+
+      return true;
+    },
+  );
+
   const addTrack = useVideoEditorStore((s) => s.addTrack);
   const setActiveTool = useVideoEditorStore((s) => s.setActiveTool);
   const setClipTransitionIn = useVideoEditorStore((s) => s.setClipTransitionIn);
@@ -340,14 +358,19 @@ export function CanvasTimeline() {
   );
 
   // Extract transition duration from MIME types (encoded as application/x-transition-duration-{seconds})
-  const getTransitionDurationFromMime = useCallback((types: readonly string[]): number => {
-    const durationMime = types.find((t) => t.startsWith("application/x-transition-duration-"));
-    if (durationMime) {
-      const val = parseFloat(durationMime.replace("application/x-transition-duration-", ""));
-      if (val > 0 && Number.isFinite(val)) return val;
-    }
-    return 0.5; // fallback
-  }, []);
+  /** Extract transition duration from MIME type and convert from seconds to frames */
+  const getTransitionDurationFromMime = useCallback(
+    (types: readonly string[]): number => {
+      const durationMime = types.find((t) => t.startsWith("application/x-transition-duration-"));
+      let seconds = 0.5; // fallback
+      if (durationMime) {
+        const val = parseFloat(durationMime.replace("application/x-transition-duration-", ""));
+        if (val > 0 && Number.isFinite(val)) seconds = val;
+      }
+      return secondsToFrames(seconds, settings.fps);
+    },
+    [settings.fps],
+  );
 
   // Find adjacent clip boundary at screen position for cross transitions
   const getAdjacentClipBoundary = useCallback(
@@ -371,7 +394,7 @@ export function CanvasTimeline() {
       // Find the boundary between two adjacent clips closest to the cursor.
       // Only allow cross transitions between clips that are adjacent or nearly so (gap < 0.1s).
       const thresholdTime = 30 / zoom; // 30px tolerance in time units
-      const maxGap = 0.1; // seconds — clips further apart are not considered adjacent
+      const maxGap = 1; // frames — clips further apart are not considered adjacent
       for (let i = 0; i < trackClips.length - 1; i++) {
         const outgoing = trackClips[i];
         const incoming = trackClips[i + 1];
@@ -708,10 +731,15 @@ export function CanvasTimeline() {
         if (!hit) return;
 
         const transition = JSON.parse(transitionData) as Transition;
+        // Convert duration from seconds (template) to frames (store)
+        const transitionInFrames = {
+          ...transition,
+          duration: secondsToFrames(transition.duration, d.settings.fps),
+        };
         if (hit.edge === "in") {
-          d.setClipTransitionIn(hit.clip.id, transition);
+          d.setClipTransitionIn(hit.clip.id, transitionInFrames);
         } else {
-          d.setClipTransitionOut(hit.clip.id, transition);
+          d.setClipTransitionOut(hit.clip.id, transitionInFrames);
         }
         d.setSelectedClipIds([hit.clip.id]);
         return;
@@ -731,7 +759,7 @@ export function CanvasTimeline() {
           boundary.outgoing.id,
           boundary.incoming.id,
           data.type,
-          data.duration,
+          secondsToFrames(data.duration, d.settings.fps),
         );
         return;
       }
@@ -765,7 +793,7 @@ export function CanvasTimeline() {
           type: "text",
           trackId: track.fullId,
           startTime,
-          duration: template.defaultDuration,
+          duration: secondsToFrames(template.defaultDuration, d.settings.fps),
           name: template.name,
           speed: 1,
           text: template.text,
@@ -797,7 +825,7 @@ export function CanvasTimeline() {
           type: "shape",
           trackId: track.fullId,
           startTime,
-          duration: template.defaultDuration,
+          duration: secondsToFrames(template.defaultDuration, d.settings.fps),
           name: template.name,
           speed: 1,
           shape: template.shape,
@@ -828,7 +856,7 @@ export function CanvasTimeline() {
           type: "line",
           trackId: track.fullId,
           startTime,
-          duration: template.defaultDuration,
+          duration: secondsToFrames(template.defaultDuration, d.settings.fps),
           name: template.name,
           speed: 1,
           lineStyle: template.style,

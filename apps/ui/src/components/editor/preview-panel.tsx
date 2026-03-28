@@ -579,8 +579,23 @@ export function PreviewPanel() {
   useEffect(() => {
     if (!isInitialized || isPlaying) return;
 
+    let rafId = 0;
+    let trailing = false;
     const rerenderFrame = () => {
-      void renderFrame(useVideoEditorStore.getState().currentFrame);
+      if (rafId) {
+        // A render is already scheduled — mark trailing so it re-fires after
+        trailing = true;
+        return;
+      }
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        void renderFrame(useVideoEditorStore.getState().currentFrame);
+        // If more updates arrived while rendering, schedule one more
+        if (trailing) {
+          trailing = false;
+          rerenderFrame();
+        }
+      });
     };
 
     // Re-render when currentTime changes (scrubbing)
@@ -628,6 +643,7 @@ export function PreviewPanel() {
 
     rerenderFrame();
     return () => {
+      if (rafId) cancelAnimationFrame(rafId);
       unsubscribeTime();
       unsubscribeClips();
       unsubscribeTracks();
