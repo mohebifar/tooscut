@@ -69,9 +69,12 @@ function ProjectChooser() {
 
   const handleCreateProject = async () => {
     const id = generateId();
-    const videoTrackId = generateId();
-    const audioTrackId = generateId();
-    const { tracks } = addTrackPair([] as EditableTrack[], videoTrackId, audioTrackId);
+    const videoTrackId1 = generateId();
+    const audioTrackId1 = generateId();
+    const { tracks: tracks1 } = addTrackPair([] as EditableTrack[], videoTrackId1, audioTrackId1);
+    const videoTrackId2 = generateId();
+    const audioTrackId2 = generateId();
+    const { tracks } = addTrackPair(tracks1, videoTrackId2, audioTrackId2);
 
     const project: LocalProject = {
       id,

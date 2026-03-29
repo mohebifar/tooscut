@@ -19,9 +19,15 @@ interface TrackHeaderProps {
   track: TimelineTrack;
   y: number;
   trackHeight: number;
+  onContextMenu: (trackId: string) => void;
 }
 
-const TrackHeader = React.memo(function TrackHeader({ track, y, trackHeight }: TrackHeaderProps) {
+const TrackHeader = React.memo(function TrackHeader({
+  track,
+  y,
+  trackHeight,
+  onContextMenu,
+}: TrackHeaderProps) {
   const toggleTrackMuted = useVideoEditorStore((s) => s.toggleTrackMuted);
   const toggleTrackLocked = useVideoEditorStore((s) => s.toggleTrackLocked);
   const buttonSize = 24;
@@ -42,7 +48,12 @@ const TrackHeader = React.memo(function TrackHeader({ track, y, trackHeight }: T
   const LockIcon = track.locked ? KonvaLockIcon : KonvaLockOpenIcon;
 
   return (
-    <Group key={track.fullId}>
+    <Group
+      key={track.fullId}
+      onContextMenu={() => {
+        onContextMenu(track.id);
+      }}
+    >
       <Rect
         x={0}
         y={y}
@@ -102,6 +113,7 @@ export const TrackHeaders = React.memo(function TrackHeaders({
   section,
   sectionTop,
   sectionHeight,
+  onContextMenu,
 }: {
   tracks: TimelineTrack[];
   trackIndexToY: (index: number) => number;
@@ -109,6 +121,7 @@ export const TrackHeaders = React.memo(function TrackHeaders({
   section: "video" | "audio";
   sectionTop: number;
   sectionHeight: number;
+  onContextMenu: (trackId: string) => void;
 }) {
   const numVideo = splitLayout.videoTrackCount;
   const sectionBottom = sectionTop + sectionHeight;
@@ -117,7 +130,6 @@ export const TrackHeaders = React.memo(function TrackHeaders({
     <>
       {tracks.map((track, index) => {
         const isVideo = index < numVideo;
-        // Only render tracks belonging to this section
         if ((section === "video") !== isVideo) return null;
 
         const sectionIdx = isVideo ? index : index - numVideo;
@@ -127,7 +139,15 @@ export const TrackHeaders = React.memo(function TrackHeaders({
 
         if (y + trackHeight < sectionTop || y > sectionBottom) return null;
 
-        return <TrackHeader key={track.fullId} track={track} y={y} trackHeight={trackHeight} />;
+        return (
+          <TrackHeader
+            key={track.fullId}
+            track={track}
+            y={y}
+            trackHeight={trackHeight}
+            onContextMenu={onContextMenu}
+          />
+        );
       })}
     </>
   );

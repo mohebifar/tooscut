@@ -44,6 +44,7 @@ interface TimelineStageProps {
   dropPreview?: DropPreviewState | null;
   transitionDropPreview?: TransitionDropPreview | null;
   crossTransitionDropPreview?: CrossTransitionDropPreview | null;
+  onTrackContextMenu?: (trackId: string) => void;
 }
 
 /** Width in pixels of the transition resize hit zone */
@@ -310,6 +311,7 @@ export function TimelineStage({
   dropPreview,
   transitionDropPreview,
   crossTransitionDropPreview,
+  onTrackContextMenu,
 }: TimelineStageProps) {
   const stageRef = useRef<Konva.Stage>(null);
 
@@ -2445,6 +2447,7 @@ export function TimelineStage({
             section="video"
             sectionTop={videoSectionTop}
             sectionHeight={sectionHeight}
+            onContextMenu={onTrackContextMenu ?? (() => {})}
           />
         </Group>
         <Group
@@ -2460,6 +2463,7 @@ export function TimelineStage({
             section="audio"
             sectionTop={audioSectionTop}
             sectionHeight={sectionHeight}
+            onContextMenu={onTrackContextMenu ?? (() => {})}
           />
         </Group>
 
@@ -2480,6 +2484,16 @@ export function TimelineStage({
           width={TRACK_HEADER_WIDTH}
           height={RULER_HEIGHT}
           fill={COLORS.headerBackground}
+        />
+
+        {/* Separator line below ruler/header */}
+        <Rect
+          x={0}
+          y={RULER_HEIGHT - 1}
+          width={width}
+          height={1}
+          fill="#444444"
+          listening={false}
         />
 
         {/* Playhead */}

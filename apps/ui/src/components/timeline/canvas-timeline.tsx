@@ -12,12 +12,28 @@ import {
   type LineStyle,
   type LineBox,
 } from "@tooscut/render-engine";
-import { PlusIcon } from "lucide-react";
+import { EyeIcon, EyeOffIcon, LockIcon, LockOpenIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 
 import { useVideoEditorStore, useTemporalStore } from "../../state/video-editor-store";
 import { Button } from "../ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "../ui/context-menu";
+import {
+  Dialog,
+  DialogPopup,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from "../ui/dialog";
 import { TRACK_HEADER_WIDTH, RULER_HEIGHT } from "./constants";
 import { TimelineStage } from "./timeline-stage";
 import { computeSplitLayout, yToSectionTrackIndex } from "./track-layout";
@@ -66,6 +82,9 @@ export function CanvasTimeline() {
   );
   const [crossTransitionDropPreview, setCrossTransitionDropPreview] =
     useState<CrossTransitionDropPreview | null>(null);
+  const [deleteTrackId, setDeleteTrackId] = useState<string | null>(null);
+  const contextTrackIdRef = useRef<string | null>(null);
+  const [contextTrackId, setContextTrackId] = useState<string | null>(null);
 
   // Store state for keyboard shortcuts
   const currentTime = useVideoEditorStore((s) => s.currentFrame);
@@ -103,6 +122,9 @@ export function CanvasTimeline() {
   );
 
   const addTrack = useVideoEditorStore((s) => s.addTrack);
+  const removeTrack = useVideoEditorStore((s) => s.removeTrack);
+  const toggleTrackMuted = useVideoEditorStore((s) => s.toggleTrackMuted);
+  const toggleTrackLocked = useVideoEditorStore((s) => s.toggleTrackLocked);
   const setActiveTool = useVideoEditorStore((s) => s.setActiveTool);
   const setClipTransitionIn = useVideoEditorStore((s) => s.setClipTransitionIn);
   const setClipTransitionOut = useVideoEditorStore((s) => s.setClipTransitionOut);
@@ -1066,27 +1088,119 @@ export function CanvasTimeline() {
     return () => el.removeEventListener("drop", handleDrop);
   }, []);
 
-  return (
-    <div ref={containerRef} className="relative h-full w-full overflow-hidden">
-      {dimensions.width > 0 && dimensions.height > 0 && (
-        <TimelineStage
-          width={dimensions.width}
-          height={dimensions.height}
-          dropPreview={dropPreview}
-          transitionDropPreview={transitionDropPreview}
-          crossTransitionDropPreview={crossTransitionDropPreview}
-        />
-      )}
+  const contextTrack = contextTrackId ? tracks.find((t) => t.id === contextTrackId) : null;
 
-      {/* Add track button (top-left corner) */}
-      <Button
-        size="sm"
-        onClick={() => addTrack()}
-        className="absolute top-2 left-2 z-10 h-6 px-2 py-0"
-        title="Add track pair"
+  return (
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger
+          className="relative block h-full w-full overflow-hidden"
+          ref={containerRef}
+        >
+          {dimensions.width > 0 && dimensions.height > 0 && (
+            <TimelineStage
+              width={dimensions.width}
+              height={dimensions.height}
+              dropPreview={dropPreview}
+              transitionDropPreview={transitionDropPreview}
+              crossTransitionDropPreview={crossTransitionDropPreview}
+              onTrackContextMenu={(trackId) => {
+                contextTrackIdRef.current = trackId;
+                setContextTrackId(trackId);
+              }}
+            />
+          )}
+
+          {/* Add track button (top-left corner) */}
+          <Button
+            size="sm"
+            onClick={() => addTrack()}
+            className="absolute top-2 left-2 z-10 h-6 px-2 py-0"
+            title="Add track pair"
+          >
+            <PlusIcon className="size-3" /> Track
+          </Button>
+        </ContextMenuTrigger>
+
+        {contextTrack && (
+          <ContextMenuContent>
+            <ContextMenuItem
+              onClick={() => {
+                toggleTrackMuted(contextTrack.id);
+              }}
+            >
+              {contextTrack.muted ? <EyeIcon /> : <EyeOffIcon />}
+              {contextTrack.muted
+                ? contextTrack.type === "video"
+                  ? "Show"
+                  : "Unmute"
+                : contextTrack.type === "video"
+                  ? "Hide"
+                  : "Mute"}
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={() => {
+                toggleTrackLocked(contextTrack.id);
+              }}
+            >
+              {contextTrack.locked ? <LockOpenIcon /> : <LockIcon />}
+              {contextTrack.locked ? "Unlock" : "Lock"}
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              variant="destructive"
+              disabled={tracks.length <= 2}
+              onClick={() => {
+                if (tracks.length <= 2) return;
+                const pairedId = contextTrack.pairedTrackId;
+                const hasClips = clips.some(
+                  (c) => c.trackId === contextTrack.id || (pairedId && c.trackId === pairedId),
+                );
+                if (hasClips) {
+                  setDeleteTrackId(contextTrack.id);
+                } else {
+                  removeTrack(contextTrack.id);
+                }
+              }}
+            >
+              <Trash2Icon />
+              Delete Track
+            </ContextMenuItem>
+          </ContextMenuContent>
+        )}
+      </ContextMenu>
+
+      {/* Delete track confirmation dialog */}
+      <Dialog
+        open={deleteTrackId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTrackId(null);
+        }}
       >
-        <PlusIcon className="size-2" /> Track
-      </Button>
-    </div>
+        <DialogPopup showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Delete Track</DialogTitle>
+            <DialogDescription>
+              This track and its paired audio/video track contain clips. Deleting will remove both
+              tracks and all their clips. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter variant="bare">
+            <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (deleteTrackId) {
+                  removeTrack(deleteTrackId);
+                  setDeleteTrackId(null);
+                }
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
+    </>
   );
 }
