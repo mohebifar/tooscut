@@ -2,6 +2,7 @@ import * as React from "react";
 import { useCallback, useRef, useState, useEffect } from "react";
 
 import { cn } from "../../lib/utils";
+import { useVideoEditorStore } from "../../state/video-editor-store";
 
 export interface NumericInputProps {
   /** Current value */
@@ -22,6 +23,10 @@ export interface NumericInputProps {
   disabled?: boolean;
   /** Additional class names */
   className?: string;
+  /** Called when a continuous drag interaction starts */
+  onDragStart?: () => void;
+  /** Called when a continuous drag interaction ends */
+  onDragEnd?: () => void;
 }
 
 /**
@@ -42,6 +47,8 @@ export const NumericInput = React.forwardRef<HTMLDivElement, NumericInputProps>(
       precision = 0,
       disabled = false,
       className,
+      onDragStart,
+      onDragEnd,
     },
     ref,
   ) => {
@@ -64,6 +71,8 @@ export const NumericInput = React.forwardRef<HTMLDivElement, NumericInputProps>(
     const disabledRef = useRef(disabled);
     const valueRef = useRef(value);
     const precisionRef = useRef(precision);
+    const onDragStartRef = useRef(onDragStart);
+    const onDragEndRef = useRef(onDragEnd);
 
     // Keep refs in sync with props
     useEffect(() => {
@@ -74,6 +83,8 @@ export const NumericInput = React.forwardRef<HTMLDivElement, NumericInputProps>(
       disabledRef.current = disabled;
       valueRef.current = value;
       precisionRef.current = precision;
+      onDragStartRef.current = onDragStart;
+      onDragEndRef.current = onDragEnd;
     });
 
     // Format value for display
@@ -99,8 +110,10 @@ export const NumericInput = React.forwardRef<HTMLDivElement, NumericInputProps>(
       const deltaX = e.clientX - dragStartXRef.current;
 
       // Only start drag adjustment after moving a few pixels
-      if (Math.abs(deltaX) > 3) {
+      if (Math.abs(deltaX) > 3 && !hasDraggedRef.current) {
         hasDraggedRef.current = true;
+        useVideoEditorStore.temporal.getState().pause();
+        onDragStartRef.current?.();
       }
 
       if (hasDraggedRef.current) {
@@ -115,7 +128,10 @@ export const NumericInput = React.forwardRef<HTMLDivElement, NumericInputProps>(
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
 
-      if (!hasDraggedRef.current && !disabledRef.current) {
+      if (hasDraggedRef.current) {
+        useVideoEditorStore.temporal.getState().resume();
+        onDragEndRef.current?.();
+      } else if (!disabledRef.current) {
         // Clicked without dragging - enter edit mode
         setIsEditing(true);
         setEditValue(valueRef.current.toFixed(precisionRef.current));
