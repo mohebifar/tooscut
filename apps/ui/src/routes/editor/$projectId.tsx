@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { framesToSeconds } from "@tooscut/render-engine";
 import { useEffect, useState } from "react";
 
 import type { MediaAsset } from "../../state/video-editor-store";
@@ -84,8 +85,15 @@ function EditorPage() {
           }
 
           // Populate the UI asset store (with file objects for preview/thumbnails)
+          // Hydrated assets have duration in frames (from editor store) — convert back to seconds
           if (hydrated.length > 0) {
-            useAssetStore.getState().addAssets(hydrated);
+            const fps = project.settings.fps;
+            useAssetStore.getState().addAssets(
+              hydrated.map((a) => ({
+                ...a,
+                duration: framesToSeconds(a.duration, fps),
+              })),
+            );
           }
 
           // If some assets need user permission, show prompt
@@ -125,7 +133,13 @@ function EditorPage() {
       store.updateAssetUrl(asset.id, asset.url);
     }
     if (hydrated.length > 0) {
-      useAssetStore.getState().addAssets(hydrated);
+      const fps = useVideoEditorStore.getState().settings.fps;
+      useAssetStore.getState().addAssets(
+        hydrated.map((a) => ({
+          ...a,
+          duration: framesToSeconds(a.duration, fps),
+        })),
+      );
     }
 
     setPendingPermissionIds([]);
