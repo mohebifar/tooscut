@@ -6,3 +6,4 @@ catalog:
   oxfmt: ^0.42.0
   oxlint: ^1.57.0
   oxlint-tsgolint: ^0.17.4
+  vite: ^7.1.7

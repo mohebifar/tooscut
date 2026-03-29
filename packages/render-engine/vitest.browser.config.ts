@@ -37,6 +37,7 @@ export default defineConfig({
       "tests/complex-compositions.test.ts",
       "tests/webgpu-debug.test.ts",
       "tests/video-frame-loader.test.ts",
+      "tests/transition-videos.test.ts",
     ],
     setupFiles: ["./tests/setup.ts"],
   },
