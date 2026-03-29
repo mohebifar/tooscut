@@ -12,7 +12,7 @@ import { Group, Label, Rect, Shape, Tag, Text } from "react-konva";
 
 import type { ThumbnailSlot } from "./use-clip-thumbnails";
 
-import { TRACK_HEIGHT, CLIP_PADDING, COLORS } from "./constants";
+import { COLORS } from "./constants";
 import { WaveformDisplay } from "./waveform-display";
 
 const TRIM_HANDLE_WIDTH = 8;
@@ -35,6 +35,7 @@ export interface ClipNodeProps {
   x: number;
   y: number;
   clipWidth: number;
+  clipHeight: number;
 
   /** Visible window in content-space X (for viewport culling of thumbnails/waveform) */
   viewportLeft: number;
@@ -86,6 +87,7 @@ function ClipNodeInner({
   x,
   y,
   clipWidth,
+  clipHeight,
   viewportLeft,
   viewportRight,
   isSelected,
@@ -110,7 +112,6 @@ function ClipNodeInner({
   zoom,
   fps,
 }: ClipNodeProps) {
-  const clipHeight = TRACK_HEIGHT - CLIP_PADDING * 2;
   const baseOpacity = isGhost ? 0.5 : isLocked ? 0.5 : 1;
 
   // Rounded rect clip path helper
@@ -416,6 +417,7 @@ function arePropsEqual(prev: ClipNodeProps, next: ClipNodeProps): boolean {
     prev.x === next.x &&
     prev.y === next.y &&
     prev.clipWidth === next.clipWidth &&
+    prev.clipHeight === next.clipHeight &&
     prev.isSelected === next.isSelected &&
     prev.isGhost === next.isGhost &&
     prev.isLocked === next.isLocked &&

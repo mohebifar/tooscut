@@ -1,9 +1,10 @@
 import React from "react";
 import { Group, Rect } from "react-konva";
 
+import type { TimelineTrack } from "./types";
+
 import { useVideoEditorStore } from "../../state/video-editor-store";
-import { CLIP_PADDING, TRACK_HEIGHT } from "./constants";
-import { TimelineTrack } from "./types";
+import { CLIP_PADDING } from "./constants";
 
 interface CrossTransitionOverlaysProps {
   crossTransitions: ReturnType<typeof useVideoEditorStore.getState>["crossTransitions"];
@@ -11,6 +12,7 @@ interface CrossTransitionOverlaysProps {
   allTracks: TimelineTrack[];
   frameToX: (frame: number) => number;
   trackIndexToY: (index: number) => number;
+  getTrackHeight: (index: number) => number;
   zoom: number;
   crossTransitionHover: string | null;
   crossTransitionResizePreview: {
@@ -27,6 +29,7 @@ export const CrossTransitionOverlays = React.memo(function CrossTransitionOverla
   allTracks,
   frameToX,
   trackIndexToY,
+  getTrackHeight,
   zoom,
   crossTransitionHover,
   crossTransitionResizePreview,
@@ -53,7 +56,7 @@ export const CrossTransitionOverlays = React.memo(function CrossTransitionOverla
         const ctX = frameToX(overlapStart);
         const ctWidth = (overlapEnd - overlapStart) * zoom;
         const ctY = trackIndexToY(trackIndex) + CLIP_PADDING;
-        const ctHeight = TRACK_HEIGHT - CLIP_PADDING * 2;
+        const ctHeight = getTrackHeight(trackIndex) - CLIP_PADDING * 2;
         const isSelected = selectedCrossTransition === ct.id;
         const isHovered = crossTransitionHover === ct.id;
 
@@ -69,6 +72,9 @@ export const CrossTransitionOverlays = React.memo(function CrossTransitionOverla
                 return allTracks.findIndex((t) => t.fullId === linkedClip.trackId);
               })()
             : -1;
+
+        const audioCtHeight =
+          audioTrackIndex >= 0 ? getTrackHeight(audioTrackIndex) - CLIP_PADDING * 2 : 0;
 
         return (
           <Group key={ct.id}>
@@ -114,7 +120,7 @@ export const CrossTransitionOverlays = React.memo(function CrossTransitionOverla
                 x={ctX}
                 y={trackIndexToY(audioTrackIndex) + CLIP_PADDING}
                 width={ctWidth}
-                height={ctHeight}
+                height={audioCtHeight}
                 fill="rgba(168, 85, 247, 0.35)"
                 stroke={isSelected ? "#ffffff" : "rgba(168, 85, 247, 0.4)"}
                 strokeWidth={isSelected ? 2 : 1}

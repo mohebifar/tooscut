@@ -202,6 +202,7 @@ interface VideoEditorState {
   zoom: number;
   scrollX: number;
   scrollY: number;
+  trackHeights: Record<string, number>;
   activeTool: "select" | "razor";
   previewMode: "view" | "transform";
   /** Preview canvas zoom: "fit" auto-fills container, or a percentage (e.g. 50, 100) */
@@ -233,6 +234,7 @@ interface VideoEditorState {
   setZoom: (zoom: number) => void;
   setScrollX: (scrollX: number) => void;
   setScrollY: (scrollY: number) => void;
+  setTrackHeight: (trackId: string, height: number) => void;
   setActiveTool: (tool: "select" | "razor") => void;
   setPreviewMode: (mode: "view" | "transform") => void;
   setPreviewZoom: (zoom: "fit" | number) => void;
@@ -667,6 +669,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
         zoom: 1.67, // pixels per frame (~50px/s at 30fps)
         scrollX: 0,
         scrollY: 0,
+        trackHeights: {},
         activeTool: "select" as const,
         previewMode: "transform" as const,
         previewZoom: "fit",
@@ -704,6 +707,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             zoom: 1.67, // pixels per frame (~50px/s at 30fps)
             scrollX: 0,
             scrollY: 0,
+            trackHeights: {},
             activeTool: "select" as const,
             durationFrames: 900, // 30s at 30fps
           }),
@@ -732,6 +736,14 @@ export const useVideoEditorStore = create<VideoEditorState>()(
         setZoom: (zoom) => set({ zoom: Math.max(0.03, Math.min(20, zoom)) }),
         setScrollX: (scrollX) => set({ scrollX: Math.max(0, scrollX) }),
         setScrollY: (scrollY) => set({ scrollY: Math.max(0, scrollY) }),
+        setTrackHeight: (trackId, height) =>
+          set((state) => {
+            const updates: Record<string, number> = { [trackId]: height };
+            // Mirror height to paired track
+            const pairedId = getPairedTrackIdFromTracks(state.tracks, trackId);
+            if (pairedId) updates[pairedId] = height;
+            return { trackHeights: { ...state.trackHeights, ...updates } };
+          }),
         setActiveTool: (activeTool) => set({ activeTool }),
         setPreviewMode: (previewMode) => set({ previewMode }),
         setPreviewZoom: (previewZoom) => set({ previewZoom }),

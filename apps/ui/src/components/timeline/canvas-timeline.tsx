@@ -12,14 +12,31 @@ import {
   type LineStyle,
   type LineBox,
 } from "@tooscut/render-engine";
-import { PlusIcon } from "lucide-react";
+import { EyeIcon, EyeOffIcon, LockIcon, LockOpenIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 
 import { useVideoEditorStore, useTemporalStore } from "../../state/video-editor-store";
 import { Button } from "../ui/button";
-import { TRACK_HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT } from "./constants";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "../ui/context-menu";
+import {
+  Dialog,
+  DialogPopup,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from "../ui/dialog";
+import { TRACK_HEADER_WIDTH, RULER_HEIGHT } from "./constants";
 import { TimelineStage } from "./timeline-stage";
+import { computeSplitLayout, yToSectionTrackIndex } from "./track-layout";
 import {
   useAssetStore,
   importFiles,
@@ -65,6 +82,9 @@ export function CanvasTimeline() {
   );
   const [crossTransitionDropPreview, setCrossTransitionDropPreview] =
     useState<CrossTransitionDropPreview | null>(null);
+  const [deleteTrackId, setDeleteTrackId] = useState<string | null>(null);
+  const contextTrackIdRef = useRef<string | null>(null);
+  const [contextTrackId, setContextTrackId] = useState<string | null>(null);
 
   // Store state for keyboard shortcuts
   const currentTime = useVideoEditorStore((s) => s.currentFrame);
@@ -102,6 +122,9 @@ export function CanvasTimeline() {
   );
 
   const addTrack = useVideoEditorStore((s) => s.addTrack);
+  const removeTrack = useVideoEditorStore((s) => s.removeTrack);
+  const toggleTrackMuted = useVideoEditorStore((s) => s.toggleTrackMuted);
+  const toggleTrackLocked = useVideoEditorStore((s) => s.toggleTrackLocked);
   const setActiveTool = useVideoEditorStore((s) => s.setActiveTool);
   const setClipTransitionIn = useVideoEditorStore((s) => s.setClipTransitionIn);
   const setClipTransitionOut = useVideoEditorStore((s) => s.setClipTransitionOut);
@@ -113,6 +136,7 @@ export function CanvasTimeline() {
   const pasteClipsAtPlayhead = useVideoEditorStore((s) => s.pasteClipsAtPlayhead);
   const undo = useTemporalStore((s) => s.undo);
   const redo = useTemporalStore((s) => s.redo);
+  const trackHeightsMap = useVideoEditorStore((s) => s.trackHeights);
 
   // Assets are managed in a separate store for file handling
   const assets = useAssetStore((s) => s.assets);
@@ -285,34 +309,36 @@ export function CanvasTimeline() {
     removeCrossTransitionById,
   ]);
 
-  // Combine tracks with full IDs for drop target calculation
-  const videoTracksFiltered = tracks
-    .filter((t) => t.type === "video")
-    .sort((a, b) => b.index - a.index);
-  const audioTracksFiltered = tracks
-    .filter((t) => t.type === "audio")
-    .sort((a, b) => a.index - b.index);
-  const allTracks = useMemo(
-    () => [
-      ...videoTracksFiltered.map((t) => ({
-        id: t.id,
-        fullId: t.id,
-        type: "video" as const,
-        name: t.name || `Video ${t.index + 1}`,
-        index: t.index,
-        pairedTrackId: t.pairedTrackId,
-      })),
-      ...audioTracksFiltered.map((t) => ({
-        id: t.id,
-        fullId: t.id,
-        type: "audio" as const,
-        name: t.name || `Audio ${t.index + 1}`,
-        index: t.index,
-        pairedTrackId: t.pairedTrackId,
-      })),
-    ],
-    [videoTracksFiltered, audioTracksFiltered],
+  // Combine tracks with full IDs for drop target calculation (ascending by index)
+  const { _videoTracks, _audioTracks, allTracks } = useMemo(() => {
+    const toTrack = (t: (typeof tracks)[0]) => ({
+      id: t.id,
+      fullId: t.id,
+      type: t.type as "video" | "audio",
+      name: t.name || `${t.type === "video" ? "Video" : "Audio"} ${t.index + 1}`,
+      muted: t.muted,
+      locked: t.locked,
+      pairedTrackId: t.pairedTrackId,
+    });
+    const video = tracks
+      .filter((t) => t.type === "video")
+      .sort((a, b) => b.index - a.index)
+      .map(toTrack);
+    const audio = tracks
+      .filter((t) => t.type === "audio")
+      .sort((a, b) => a.index - b.index)
+      .map(toTrack);
+    return { _videoTracks: video, _audioTracks: audio, allTracks: [...video, ...audio] };
+  }, [tracks]);
+
+  const _splitLayout = useMemo(
+    () => computeSplitLayout(_videoTracks, _audioTracks, trackHeightsMap),
+    [_videoTracks, _audioTracks, trackHeightsMap],
   );
+
+  const _sectionHeight = Math.floor((dimensions.height - RULER_HEIGHT) / 2);
+  const _videoSectionTop = RULER_HEIGHT;
+  const _audioSectionTop = RULER_HEIGHT + _sectionHeight;
 
   // Convert screen coordinates to timeline coordinates
   const xToFrame = useCallback(
@@ -320,9 +346,48 @@ export function CanvasTimeline() {
     [zoom, scrollX],
   );
 
+  // Video: bottom-aligned (V1 near divider), scroll reveals higher tracks from top
+  const _videoContentH = _splitLayout.video.totalContentHeight;
+  const _videoBaseY = _videoSectionTop + _sectionHeight - _videoContentH + scrollY;
+  // Audio: top-aligned (A1 near divider), scroll reveals higher tracks from bottom
+  const _audioBaseY = _audioSectionTop - scrollY;
+
   const yToTrackIndex = useCallback(
-    (y: number) => Math.floor((y - RULER_HEIGHT + scrollY) / TRACK_HEIGHT),
-    [scrollY],
+    (y: number) => {
+      const numVideo = _splitLayout.videoTrackCount;
+      if (y >= _videoSectionTop && y < _audioSectionTop) {
+        const localY = y - _videoBaseY;
+        return yToSectionTrackIndex(localY, _splitLayout.video);
+      }
+      if (y >= _audioSectionTop) {
+        const localY = y - _audioBaseY;
+        const idx = yToSectionTrackIndex(localY, _splitLayout.audio);
+        return idx >= 0 ? idx + numVideo : -1;
+      }
+      return -1;
+    },
+    [_splitLayout, _videoSectionTop, _audioSectionTop, _videoBaseY, _audioBaseY],
+  );
+
+  const _trackIndexToY = useCallback(
+    (index: number) => {
+      const numVideo = _splitLayout.videoTrackCount;
+      if (index < numVideo) {
+        return _videoBaseY + (_splitLayout.video.trackYOffsets[index] ?? 0);
+      }
+      const audioIdx = index - numVideo;
+      return _audioBaseY + (_splitLayout.audio.trackYOffsets[audioIdx] ?? 0);
+    },
+    [_splitLayout, _videoBaseY, _audioBaseY],
+  );
+
+  const _getTrackHeight = useCallback(
+    (index: number) => {
+      const numVideo = _splitLayout.videoTrackCount;
+      if (index < numVideo) return _splitLayout.video.trackHeights[index] ?? 80;
+      return _splitLayout.audio.trackHeights[index - numVideo] ?? 80;
+    },
+    [_splitLayout],
   );
 
   // Helper to find clip at a screen position
@@ -334,7 +399,7 @@ export function CanvasTimeline() {
       const x = clientX - rect.left;
       const y = clientY - rect.top;
       const frame = Math.max(0, (x - TRACK_HEADER_WIDTH + scrollX) / zoom);
-      const trackIndex = Math.floor((y - RULER_HEIGHT + scrollY) / TRACK_HEIGHT);
+      const trackIndex = yToTrackIndex(y);
 
       if (trackIndex < 0 || trackIndex >= allTracks.length) return null;
       const track = allTracks[trackIndex];
@@ -348,13 +413,13 @@ export function CanvasTimeline() {
           const edge: "in" | "out" = fraction < 1 / 3 ? "in" : fraction > 2 / 3 ? "out" : "in";
           const clipX = TRACK_HEADER_WIDTH + clip.startTime * zoom - scrollX;
           const clipWidth = clip.duration * zoom;
-          const clipY = RULER_HEIGHT + trackIndex * TRACK_HEIGHT - scrollY + 4;
+          const clipY = _trackIndexToY(trackIndex) + 4;
           return { clip, trackIndex, edge, clipX, clipWidth, clipY };
         }
       }
       return null;
     },
-    [clips, allTracks, zoom, scrollX, scrollY],
+    [clips, allTracks, zoom, scrollX, yToTrackIndex, _trackIndexToY],
   );
 
   // Extract transition duration from MIME types (encoded as application/x-transition-duration-{seconds})
@@ -381,7 +446,7 @@ export function CanvasTimeline() {
       const x = clientX - rect.left;
       const y = clientY - rect.top;
       const frame = Math.max(0, (x - TRACK_HEADER_WIDTH + scrollX) / zoom);
-      const trackIndex = Math.floor((y - RULER_HEIGHT + scrollY) / TRACK_HEIGHT);
+      const trackIndex = yToTrackIndex(y);
 
       if (trackIndex < 0 || trackIndex >= allTracks.length) return null;
       const track = allTracks[trackIndex];
@@ -409,13 +474,13 @@ export function CanvasTimeline() {
         // Check if cursor is near this boundary (within threshold of the boundary)
         if (Math.abs(frame - boundaryTime) < thresholdTime) {
           const boundaryX = TRACK_HEADER_WIDTH + boundaryTime * zoom - scrollX;
-          const clipY = RULER_HEIGHT + trackIndex * TRACK_HEIGHT - scrollY + 4;
+          const clipY = _trackIndexToY(trackIndex) + 4;
           return { outgoing, incoming, boundaryX, clipY, trackIndex };
         }
       }
       return null;
     },
-    [clips, allTracks, zoom, scrollX, scrollY],
+    [clips, allTracks, zoom, scrollX, yToTrackIndex, _trackIndexToY],
   );
 
   // Use refs for drag handler deps to avoid stale closures with native event listeners
@@ -428,6 +493,7 @@ export function CanvasTimeline() {
     getClipAtScreenPosition,
     getTransitionDurationFromMime,
     getAdjacentClipBoundary,
+    getTrackHeight: _getTrackHeight,
   });
   dragHandlerDepsRef.current = {
     xToFrame,
@@ -438,6 +504,7 @@ export function CanvasTimeline() {
     getClipAtScreenPosition,
     getTransitionDurationFromMime,
     getAdjacentClipBoundary,
+    getTrackHeight: _getTrackHeight,
   };
 
   // Native drag event listeners (bypasses React synthetic events for reliable Konva compatibility)
@@ -457,6 +524,7 @@ export function CanvasTimeline() {
         getClipAtScreenPosition: _getClipAtScreenPosition,
         getTransitionDurationFromMime: _getTransitionDurationFromMime,
         getAdjacentClipBoundary: _getAdjacentClipBoundary,
+        getTrackHeight: _getTrackHeightRef,
       } = dragHandlerDepsRef.current;
 
       const hasTransitionType = e.dataTransfer!.types.includes("application/x-transition-type");
@@ -488,7 +556,7 @@ export function CanvasTimeline() {
           x: previewX,
           y: hit.clipY,
           width: previewWidth,
-          height: TRACK_HEIGHT - 8,
+          height: _getTrackHeightRef(hit.trackIndex) - 8,
         });
         e.dataTransfer!.dropEffect = "copy";
         return;
@@ -513,7 +581,7 @@ export function CanvasTimeline() {
           x: boundary.boundaryX - halfWidth,
           y: boundary.clipY,
           width: halfWidth * 2,
-          height: TRACK_HEIGHT - 8,
+          height: _getTrackHeightRef(boundary.trackIndex) - 8,
         });
         e.dataTransfer!.dropEffect = "copy";
         return;
@@ -1020,27 +1088,119 @@ export function CanvasTimeline() {
     return () => el.removeEventListener("drop", handleDrop);
   }, []);
 
-  return (
-    <div ref={containerRef} className="relative h-full w-full overflow-hidden">
-      {dimensions.width > 0 && dimensions.height > 0 && (
-        <TimelineStage
-          width={dimensions.width}
-          height={dimensions.height}
-          dropPreview={dropPreview}
-          transitionDropPreview={transitionDropPreview}
-          crossTransitionDropPreview={crossTransitionDropPreview}
-        />
-      )}
+  const contextTrack = contextTrackId ? tracks.find((t) => t.id === contextTrackId) : null;
 
-      {/* Add track button (top-left corner) */}
-      <Button
-        size="sm"
-        onClick={() => addTrack()}
-        className="absolute top-2 left-2 z-10 h-6 px-2 py-0"
-        title="Add track pair"
+  return (
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger
+          className="relative block h-full w-full overflow-hidden"
+          ref={containerRef}
+        >
+          {dimensions.width > 0 && dimensions.height > 0 && (
+            <TimelineStage
+              width={dimensions.width}
+              height={dimensions.height}
+              dropPreview={dropPreview}
+              transitionDropPreview={transitionDropPreview}
+              crossTransitionDropPreview={crossTransitionDropPreview}
+              onTrackContextMenu={(trackId) => {
+                contextTrackIdRef.current = trackId;
+                setContextTrackId(trackId);
+              }}
+            />
+          )}
+
+          {/* Add track button (top-left corner) */}
+          <Button
+            size="sm"
+            onClick={() => addTrack()}
+            className="absolute top-2 left-2 z-10 h-6 px-2 py-0"
+            title="Add track pair"
+          >
+            <PlusIcon className="size-3" /> Track
+          </Button>
+        </ContextMenuTrigger>
+
+        {contextTrack && (
+          <ContextMenuContent>
+            <ContextMenuItem
+              onClick={() => {
+                toggleTrackMuted(contextTrack.id);
+              }}
+            >
+              {contextTrack.muted ? <EyeIcon /> : <EyeOffIcon />}
+              {contextTrack.muted
+                ? contextTrack.type === "video"
+                  ? "Show"
+                  : "Unmute"
+                : contextTrack.type === "video"
+                  ? "Hide"
+                  : "Mute"}
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={() => {
+                toggleTrackLocked(contextTrack.id);
+              }}
+            >
+              {contextTrack.locked ? <LockOpenIcon /> : <LockIcon />}
+              {contextTrack.locked ? "Unlock" : "Lock"}
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              variant="destructive"
+              disabled={tracks.length <= 2}
+              onClick={() => {
+                if (tracks.length <= 2) return;
+                const pairedId = contextTrack.pairedTrackId;
+                const hasClips = clips.some(
+                  (c) => c.trackId === contextTrack.id || (pairedId && c.trackId === pairedId),
+                );
+                if (hasClips) {
+                  setDeleteTrackId(contextTrack.id);
+                } else {
+                  removeTrack(contextTrack.id);
+                }
+              }}
+            >
+              <Trash2Icon />
+              Delete Track
+            </ContextMenuItem>
+          </ContextMenuContent>
+        )}
+      </ContextMenu>
+
+      {/* Delete track confirmation dialog */}
+      <Dialog
+        open={deleteTrackId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTrackId(null);
+        }}
       >
-        <PlusIcon className="size-2" /> Track
-      </Button>
-    </div>
+        <DialogPopup showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Delete Track</DialogTitle>
+            <DialogDescription>
+              This track and its paired audio/video track contain clips. Deleting will remove both
+              tracks and all their clips. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter variant="bare">
+            <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (deleteTrackId) {
+                  removeTrack(deleteTrackId);
+                  setDeleteTrackId(null);
+                }
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
+    </>
   );
 }
