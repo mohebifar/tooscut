@@ -2,6 +2,7 @@ import * as React from "react";
 import { useCallback, useRef, useState, useEffect } from "react";
 
 import { cn } from "../../lib/utils";
+import { useVideoEditorStore } from "../../state/video-editor-store";
 
 export interface NumericInputProps {
   /** Current value */
@@ -22,6 +23,10 @@ export interface NumericInputProps {
   disabled?: boolean;
   /** Additional class names */
   className?: string;
+  /** Called when a continuous drag interaction starts */
+  onDragStart?: () => void;
+  /** Called when a continuous drag interaction ends */
+  onDragEnd?: () => void;
 }
 
 /**
@@ -42,6 +47,8 @@ export const NumericInput = React.forwardRef<HTMLDivElement, NumericInputProps>(
       precision = 0,
       disabled = false,
       className,
+      onDragStart,
+      onDragEnd,
     },
     ref,
   ) => {
@@ -64,6 +71,8 @@ export const NumericInput = React.forwardRef<HTMLDivElement, NumericInputProps>(
     const disabledRef = useRef(disabled);
     const valueRef = useRef(value);
     const precisionRef = useRef(precision);
+    const onDragStartRef = useRef(onDragStart);
+    const onDragEndRef = useRef(onDragEnd);
 
     // Keep refs in sync with props
     useEffect(() => {
@@ -74,6 +83,8 @@ export const NumericInput = React.forwardRef<HTMLDivElement, NumericInputProps>(
       disabledRef.current = disabled;
       valueRef.current = value;
       precisionRef.current = precision;
+      onDragStartRef.current = onDragStart;
+      onDragEndRef.current = onDragEnd;
     });
 
     // Format value for display
@@ -99,8 +110,10 @@ export const NumericInput = React.forwardRef<HTMLDivElement, NumericInputProps>(
       const deltaX = e.clientX - dragStartXRef.current;
 
       // Only start drag adjustment after moving a few pixels
-      if (Math.abs(deltaX) > 3) {
+      if (Math.abs(deltaX) > 3 && !hasDraggedRef.current) {
         hasDraggedRef.current = true;
+        useVideoEditorStore.temporal.getState().pause();
+        onDragStartRef.current?.();
       }
 
       if (hasDraggedRef.current) {
@@ -115,7 +128,10 @@ export const NumericInput = React.forwardRef<HTMLDivElement, NumericInputProps>(
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
 
-      if (!hasDraggedRef.current && !disabledRef.current) {
+      if (hasDraggedRef.current) {
+        useVideoEditorStore.temporal.getState().resume();
+        onDragEndRef.current?.();
+      } else if (!disabledRef.current) {
         // Clicked without dragging - enter edit mode
         setIsEditing(true);
         setEditValue(valueRef.current.toFixed(precisionRef.current));
@@ -197,28 +213,32 @@ export const NumericInput = React.forwardRef<HTMLDivElement, NumericInputProps>(
           }
         }}
         className={cn(
-          "inline-flex h-8 min-w-16 items-center justify-center rounded-md border border-input bg-background px-2 text-sm",
+          "relative inline-flex h-8 min-w-16 items-center justify-center rounded-md border border-input bg-background px-2 text-sm",
           !disabled && !isEditing && "cursor-ew-resize",
           disabled && "cursor-not-allowed opacity-50",
           className,
         )}
         onMouseDown={handleMouseDown}
       >
-        {isEditing ? (
-          <input
-            ref={inputRef}
-            type="text"
-            value={editValue}
-            onChange={handleInputChange}
-            onBlur={handleInputBlur}
-            onKeyDown={handleInputKeyDown}
-            className="w-full bg-transparent text-center outline-none"
-          />
-        ) : (
-          <span className="tabular-nums select-none">
-            {formatValue(value)}
-            {suffix && <span className="ml-0.5 text-muted-foreground">{suffix}</span>}
-          </span>
+        <span className={cn("tabular-nums select-none", isEditing && "invisible")}>
+          {formatValue(value)}
+          {suffix && <span className="ml-0.5 text-muted-foreground">{suffix}</span>}
+        </span>
+        {isEditing && (
+          <div className="absolute inset-px flex items-center justify-center px-2">
+            <input
+              ref={inputRef}
+              type="text"
+              value={editValue}
+              onChange={handleInputChange}
+              onBlur={handleInputBlur}
+              onKeyDown={handleInputKeyDown}
+              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-right text-sm tabular-nums outline-none"
+            />
+            {suffix && (
+              <span className="ml-0.5 shrink-0 text-sm text-muted-foreground">{suffix}</span>
+            )}
+          </div>
         )}
       </div>
     );

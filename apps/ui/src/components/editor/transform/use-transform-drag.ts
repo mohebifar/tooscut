@@ -188,6 +188,7 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
         startLineBox,
       };
 
+      useVideoEditorStore.temporal.getState().pause();
       e.preventDefault();
     },
     [ctx, getEvaluatedTransform, captureStartBoxes],
@@ -220,6 +221,7 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
         startLineBox,
       };
 
+      useVideoEditorStore.temporal.getState().pause();
       e.preventDefault();
     },
     [ctx, getEvaluatedTransform, captureStartBoxes],
@@ -261,6 +263,7 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
         clipType: clip.type,
       };
 
+      useVideoEditorStore.temporal.getState().pause();
       e.preventDefault();
     },
     [ctx, getEvaluatedTransform],
@@ -599,6 +602,9 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
       if (rafIdRef.current !== null) {
         cancelAnimationFrame(rafIdRef.current);
         rafIdRef.current = null;
+      }
+      if (dragStateRef.current) {
+        useVideoEditorStore.temporal.getState().resume();
       }
       dragStateRef.current = null;
       snapTargetsRef.current = [];

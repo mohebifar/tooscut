@@ -58,6 +58,7 @@
     "playwright": "^1.50.0",
     "tsdown": "^0.20.1",
     "typescript": "^5.8.0",
+    "vite": "catalog:",
     "vitest": "^3.0.0"
   }
 }
