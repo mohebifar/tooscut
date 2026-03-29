@@ -1,8 +1,8 @@
 //! Audio Clip Source - PCM storage and sampling
 //!
 //! Supports two modes:
-//! 1. **Unbounded** (legacy): Full PCM stored in memory via `new()` / `append_chunk()`
-//! 2. **Windowed**: Fixed-size segment cache via `new_windowed()` / `update_buffer()`
+//! 1. **Bulk** (tests): Full PCM stored in memory via `new()`
+//! 2. **Windowed** (preview + export): Fixed-size segment cache via `new_windowed()` / `update_buffer()`
 //!
 //! Both modes expose the same `get_sample()` API. Windowed mode returns silence
 //! for regions not currently buffered and tracks buffer misses.
@@ -76,40 +76,6 @@ impl AudioClipSource {
         }
     }
 
-    /// Create a new streaming audio clip source with no initial data (unbounded)
-    ///
-    /// PCM data is appended incrementally via `append_chunk()` and finalized
-    /// with `finalize()`. The source is playable immediately (returns silence
-    /// for regions not yet received).
-    pub fn new_streaming(
-        id: String,
-        sample_rate: u32,
-        channels: u32,
-        estimated_duration: Option<f64>,
-    ) -> Self {
-        let capacity = match estimated_duration {
-            Some(dur) => (dur * sample_rate as f64 * channels as f64) as usize,
-            None => 0,
-        };
-
-        let segment = PcmSegment {
-            start_time: 0.0,
-            data: Vec::with_capacity(capacity),
-        };
-
-        Self {
-            id,
-            segments: vec![segment],
-            sample_rate,
-            channels,
-            duration: 0.0,
-            is_complete: false,
-            max_samples: usize::MAX,
-            last_requested_time: 0.0,
-            buffer_misses: 0,
-        }
-    }
-
     /// Create a windowed audio source (metadata only, no PCM data)
     ///
     /// PCM data is managed via `update_buffer()` / `clear_buffer()`.
@@ -133,31 +99,6 @@ impl AudioClipSource {
             max_samples,
             last_requested_time: 0.0,
             buffer_misses: 0,
-        }
-    }
-
-    /// Append a chunk of interleaved PCM data to this streaming source (unbounded mode)
-    ///
-    /// Appends to the first (and only) segment. Recalculates duration after appending.
-    pub fn append_chunk(&mut self, chunk: &[f32]) {
-        if self.segments.is_empty() {
-            self.segments.push(PcmSegment {
-                start_time: 0.0,
-                data: Vec::new(),
-            });
-        }
-        self.segments[0].data.extend_from_slice(chunk);
-        let num_samples = self.segments[0].data.len() / self.channels as usize;
-        self.duration = num_samples as f64 / self.sample_rate as f64;
-    }
-
-    /// Mark this streaming source as complete (all data received)
-    ///
-    /// Calls `shrink_to_fit()` to release unused pre-allocated capacity.
-    pub fn finalize(&mut self) {
-        self.is_complete = true;
-        if let Some(segment) = self.segments.first_mut() {
-            segment.data.shrink_to_fit();
         }
     }
 
@@ -449,61 +390,6 @@ mod tests {
         let (l, r) = source.get_sample(1.0, 48000);
         assert_eq!(l, 0.0);
         assert_eq!(r, 0.0);
-    }
-
-    #[test]
-    fn test_streaming_new() {
-        let source = AudioClipSource::new_streaming("stream".to_string(), 48000, 2, Some(10.0));
-        assert!(!source.is_complete);
-        assert_eq!(source.duration, 0.0);
-        assert_eq!(source.total_samples(), 0);
-        // Pre-allocated capacity for ~10s of stereo audio
-        assert!(source.segments[0].data.capacity() >= 48000 * 2 * 10);
-    }
-
-    #[test]
-    fn test_streaming_append_and_playback() {
-        let mut source = AudioClipSource::new_streaming("stream".to_string(), 1000, 2, None);
-
-        // Append first chunk: 2 stereo frames
-        source.append_chunk(&[0.5, -0.5, 1.0, -1.0]);
-        assert_eq!(source.duration, 0.002); // 2 frames at 1000 Hz
-        assert!(!source.is_complete);
-
-        // Can sample from the first chunk
-        let (l, r) = source.get_sample(0.0, 48000);
-        assert!((l - 0.5).abs() < 0.01);
-        assert!((r - (-0.5)).abs() < 0.01);
-
-        // Beyond current data returns silence
-        let (l, r) = source.get_sample(0.01, 48000);
-        assert_eq!(l, 0.0);
-        assert_eq!(r, 0.0);
-
-        // Append second chunk
-        source.append_chunk(&[0.25, -0.25]);
-        assert_eq!(source.duration, 0.003); // 3 frames now
-
-        // Can sample across chunk boundary (interpolation between frame 1 and 2)
-        let (l, r) = source.get_sample(0.0015, 48000);
-        // Midpoint between frame 1 (1.0, -1.0) and frame 2 (0.25, -0.25)
-        assert!((l - 0.625).abs() < 0.01);
-        assert!((r - (-0.625)).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_streaming_finalize() {
-        let mut source =
-            AudioClipSource::new_streaming("stream".to_string(), 48000, 2, Some(60.0));
-
-        // Pre-allocated for 60s but only append a tiny amount
-        source.append_chunk(&[0.5, -0.5]);
-        assert!(!source.is_complete);
-
-        source.finalize();
-        assert!(source.is_complete);
-        // shrink_to_fit should have reduced capacity
-        assert!(source.segments[0].data.capacity() <= source.segments[0].data.len() + 16);
     }
 
     #[test]

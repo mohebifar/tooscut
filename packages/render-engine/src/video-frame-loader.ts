@@ -69,6 +69,9 @@ interface VideoFrameSourceAdapter {
   /** Get an ImageBitmap at the specified timestamp (seconds) */
   getImageBitmap(timestamp: number): Promise<ImageBitmap>;
 
+  /** Get ImageBitmaps for multiple timestamps (seconds) */
+  getImageBitmaps?(timestamps: number[]): Promise<Array<ImageBitmap | null>>;
+
   /** Get the underlying video element (preview mode only) */
   getVideoElement?(): HTMLVideoElement | null;
 
@@ -83,6 +86,36 @@ interface VideoFrameSourceAdapter {
 
   /** Dispose and release resources */
   dispose(): void;
+}
+
+interface SequentialFrame {
+  sample: VideoSample | null;
+  videoFrame: VideoFrame | null;
+  timestamp: number;
+  duration: number;
+}
+
+function closeSequentialFrame(frame: SequentialFrame | null): void {
+  if (!frame) return;
+  frame.sample?.close();
+  frame.videoFrame?.close();
+}
+
+async function readSequentialFrame(
+  iterator: AsyncGenerator<FrameResult>,
+): Promise<SequentialFrame | null> {
+  const next = await iterator.next();
+  if (next.done || !next.value) {
+    return null;
+  }
+
+  const { sample, timestamp, duration } = next.value;
+  return {
+    sample,
+    videoFrame: null,
+    timestamp,
+    duration,
+  };
 }
 
 // ============================================================================
@@ -382,6 +415,77 @@ class MediaBunnyAdapter implements VideoFrameSourceAdapter {
     return bitmap;
   }
 
+  async getImageBitmaps(timestamps: number[]): Promise<Array<ImageBitmap | null>> {
+    if (this._disposed) {
+      throw new Error("VideoFrameLoader has been disposed");
+    }
+
+    if (timestamps.length === 0) {
+      return [];
+    }
+
+    // Sequential export decode is much faster than repeated random-access
+    // lookups, so consume a single sample iterator when timestamps are
+    // monotonic. Fall back to individual requests for sparse/random input.
+    for (let i = 1; i < timestamps.length; i++) {
+      if (timestamps[i] < timestamps[i - 1]) {
+        return Promise.all(timestamps.map((timestamp) => this.getImageBitmap(timestamp)));
+      }
+    }
+
+    const clamped = timestamps.map((timestamp, index) => ({
+      index,
+      timestamp: Math.max(0, Math.min(timestamp, this._info.duration)),
+    }));
+    const results: Array<ImageBitmap | null> = new Array(timestamps.length).fill(null);
+    const lastTimestamp = clamped[clamped.length - 1]!.timestamp;
+    const iterator = this.frames(
+      clamped[0]!.timestamp,
+      Math.min(this._info.duration, lastTimestamp + 1),
+    );
+    const epsilon = 1 / 1000;
+
+    let current: SequentialFrame | null = null;
+
+    try {
+      current = await readSequentialFrame(iterator);
+      let pendingIndex = 0;
+
+      while (pendingIndex < clamped.length) {
+        const request = clamped[pendingIndex]!;
+
+        while (current && request.timestamp >= current.timestamp + current.duration - epsilon) {
+          closeSequentialFrame(current);
+          current = await readSequentialFrame(iterator);
+        }
+
+        if (
+          current &&
+          request.timestamp + epsilon >= current.timestamp &&
+          request.timestamp < current.timestamp + current.duration + epsilon
+        ) {
+          if (!current.videoFrame) {
+            current.videoFrame = current.sample!.toVideoFrame();
+            current.sample!.close();
+            current.sample = null;
+          }
+
+          results[request.index] = await createImageBitmap(current.videoFrame);
+          pendingIndex++;
+          continue;
+        }
+
+        results[request.index] = await this.getImageBitmap(request.timestamp);
+        pendingIndex++;
+      }
+    } finally {
+      closeSequentialFrame(current);
+      await iterator.return?.(undefined);
+    }
+
+    return results;
+  }
+
   /**
    * Get raw VideoSample for advanced use cases.
    * Caller is responsible for calling sample.close().
@@ -523,6 +627,20 @@ export class VideoFrameLoader {
    */
   async getImageBitmap(timestamp: number): Promise<ImageBitmap> {
     return this.adapter.getImageBitmap(timestamp);
+  }
+
+  /**
+   * Get ImageBitmaps for multiple timestamps.
+   *
+   * Export mode can optimize monotonic timestamp sequences into one sequential
+   * decode pass. Preview mode falls back to per-timestamp extraction.
+   */
+  async getImageBitmaps(timestamps: number[]): Promise<Array<ImageBitmap | null>> {
+    if (this.adapter.getImageBitmaps) {
+      return this.adapter.getImageBitmaps(timestamps);
+    }
+
+    return Promise.all(timestamps.map((timestamp) => this.getImageBitmap(timestamp)));
   }
 
   /**

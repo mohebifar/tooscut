@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { FaqsSection } from "../components/faqs-section";
 import { FeatureSection } from "../components/feature-section";
 import { Footer } from "../components/footer";
 import { Header } from "../components/header";
@@ -25,6 +26,10 @@ function LandingPage() {
             </p>
           </div>
           <FeatureSection />
+        </section>
+
+        <section className="px-4 py-20">
+          <FaqsSection />
         </section>
       </main>
 

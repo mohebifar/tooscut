@@ -1,13 +1,17 @@
+/// <reference lib="webworker" />
+
 /**
  * Frame Renderer Web Worker
  *
- * Renders individual frames using the WASM compositor for parallel export.
- * Each worker maintains its own compositor instance with OffscreenCanvas.
+ * Decodes source video and renders frames via WASM compositor.
+ * Returns GPU-backed VideoFrames for zero-copy transfer to main thread.
+ * Encoding happens on the main thread (non-blocking, hardware-accelerated).
  *
  * Architecture:
  * - Uses 'export' mode VideoFrameLoader for frame-accurate decoding
- * - Compositor renders to OffscreenCanvas, then reads back pixels
- * - Returns ImageBitmap for zero-copy transfer back to main thread
+ * - Compositor renders to OffscreenCanvas (GPU)
+ * - VideoFrame created from canvas (GPU-to-GPU, no readback)
+ * - VideoFrame transferred to main thread (~0 cost)
  */
 
 import {
@@ -32,6 +36,10 @@ export interface RenderFrameTask {
   frameIndex: number;
   timelineFrame: number;
   frame: RenderFrame;
+  /** Timestamp in microseconds for the output VideoFrame */
+  timestampMicros: number;
+  /** Duration in microseconds for the output VideoFrame */
+  durationMicros: number;
   /** Asset IDs that need texture upload with their source timestamps */
   textureRequests: Array<{
     assetId: string;
@@ -44,9 +52,22 @@ export interface RenderFrameTask {
 
 export interface RenderFrameResult {
   frameIndex: number;
-  pixels: Uint8Array;
-  width: number;
-  height: number;
+  videoFrame: VideoFrame | null;
+}
+
+export interface RenderProfileData {
+  decodeTime: number;
+  uploadTime: number;
+  renderTime: number;
+  videoFrameTime: number;
+  totalTime: number;
+  fps: number;
+}
+
+/** Call to get the current accumulated profile and reset counters. */
+function getAndResetProfile(): RenderProfileData | null {
+  if (profileFrameCount === 0) return null;
+  return collectProfileData();
 }
 
 // ===================== WORKER STATE =====================
@@ -54,8 +75,6 @@ export interface RenderFrameResult {
 let compositor: Compositor | null = null;
 let offscreenCanvas: OffscreenCanvas | null = null;
 let isInitialized = false;
-let renderWidth = 0;
-let renderHeight = 0;
 
 /** Unique worker ID for debugging */
 const workerId = Math.random().toString(36).slice(2, 8);
@@ -72,6 +91,33 @@ const uploadedTextures = new Set<string>();
 /** Loaded fonts */
 const loadedFonts = new Set<string>();
 
+// ===================== PROFILING =====================
+
+let profileFrameCount = 0;
+let profileDecodeTotal = 0;
+let profileUploadTotal = 0;
+let profileRenderTotal = 0;
+let profileVideoFrameTotal = 0;
+let profileTotalTotal = 0;
+
+function collectProfileData(): RenderProfileData {
+  const data: RenderProfileData = {
+    decodeTime: profileDecodeTotal,
+    uploadTime: profileUploadTotal,
+    renderTime: profileRenderTotal,
+    videoFrameTime: profileVideoFrameTotal,
+    totalTime: profileTotalTotal,
+    fps: (1000 * profileFrameCount) / profileTotalTotal,
+  };
+  profileDecodeTotal = 0;
+  profileUploadTotal = 0;
+  profileRenderTotal = 0;
+  profileVideoFrameTotal = 0;
+  profileTotalTotal = 0;
+  profileFrameCount = 0;
+  return data;
+}
+
 // ===================== WORKER API =====================
 
 /**
@@ -84,9 +130,6 @@ async function initialize(config: FrameRendererConfig): Promise<void> {
 
   try {
     const { width, height } = config;
-    renderWidth = width;
-    renderHeight = height;
-
     // Initialize WASM module
     await initCompositorWasm();
 
@@ -114,8 +157,6 @@ function resize(width: number, height: number): void {
     return;
   }
 
-  renderWidth = width;
-  renderHeight = height;
   offscreenCanvas.width = width;
   offscreenCanvas.height = height;
   compositor.resize(width, height);
@@ -185,56 +226,104 @@ function uploadBitmap(bitmap: ImageBitmap, textureId: string): void {
 }
 
 /**
- * Render a single frame and return pixels.
+ * Render a batch of frames sequentially.
  *
- * @param task - Frame render task with RenderFrame data
- * @returns Rendered frame as Uint8Array (RGBA pixels)
+ * decode source → upload texture → compositor render → transferToImageBitmap → VideoFrame
+ *
+ * Batching amortizes Comlink round-trip overhead and preserves sequential decode
+ * locality for export workloads that render timeline frames in order.
  */
-async function renderFrame(task: RenderFrameTask): Promise<RenderFrameResult> {
-  if (!compositor) {
-    throw new Error("Compositor not initialized");
+async function renderFrames(tasks: RenderFrameTask[]): Promise<RenderFrameResult[]> {
+  const results: RenderFrameResult[] = [];
+  const transferables: Transferable[] = [];
+  const decodeStart = performance.now();
+  const batchedBitmaps = new Map<number, Array<{ bitmap: ImageBitmap; uploadId: string }>>();
+
+  const videoRequestsByAsset = new Map<
+    string,
+    Array<{ taskIndex: number; sourceTime: number; uploadId: string }>
+  >();
+
+  for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
+    const task = tasks[taskIndex]!;
+    for (const req of task.textureRequests) {
+      if (req.type !== "video") continue;
+      const uploadId = req.textureId ?? req.assetId;
+      const grouped = videoRequestsByAsset.get(req.assetId) ?? [];
+      grouped.push({ taskIndex, sourceTime: req.sourceTime, uploadId });
+      videoRequestsByAsset.set(req.assetId, grouped);
+    }
   }
 
-  const startTime = performance.now();
-  const { frameIndex, frame, textureRequests } = task;
-
-  // Decode video frames in parallel, then upload all textures
   await Promise.all(
-    textureRequests.map(async (req) => {
-      const uploadId = req.textureId ?? req.assetId;
-      if (req.type === "video") {
-        const loader = loaderManager.getExistingLoader(req.assetId);
-        if (loader) {
-          try {
-            const bitmap = await loader.getImageBitmap(req.sourceTime);
-            compositor?.uploadBitmap(bitmap, uploadId);
-            bitmap.close();
-          } catch (error) {
-            console.warn(
-              `[FrameRenderer:${workerId}] Failed to get frame for ${req.assetId}:`,
-              error,
-            );
-          }
+    Array.from(videoRequestsByAsset.entries(), async ([assetId, requests]) => {
+      const loader = loaderManager.getExistingLoader(assetId);
+      if (!loader) return;
+
+      try {
+        const bitmaps = await loader.getImageBitmaps(requests.map((request) => request.sourceTime));
+        for (let i = 0; i < requests.length; i++) {
+          const bitmap = bitmaps[i];
+          if (!bitmap) continue;
+
+          const request = requests[i]!;
+          const taskBitmaps = batchedBitmaps.get(request.taskIndex) ?? [];
+          taskBitmaps.push({ bitmap, uploadId: request.uploadId });
+          batchedBitmaps.set(request.taskIndex, taskBitmaps);
         }
+      } catch (error) {
+        console.warn(`[FrameRenderer:${workerId}] Failed batched decode for ${assetId}:`, error);
       }
-      // Image textures are pre-uploaded during init (including cross-transition IDs)
     }),
   );
+  const decodeEnd = performance.now();
 
-  // Render frame to pixels
-  const pixels = await compositor.renderToPixels(frame);
+  const uploadStart = performance.now();
+  let renderTotal = 0;
+  let videoFrameTotal = 0;
 
-  const elapsed = performance.now() - startTime;
-  console.log(
-    `[FrameRenderer:${workerId}] Frame ${frameIndex} rendered in ${elapsed.toFixed(1)}ms`,
-  );
+  for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
+    const task = tasks[taskIndex]!;
+    const taskBitmaps = batchedBitmaps.get(taskIndex) ?? [];
+    for (const { bitmap, uploadId } of taskBitmaps) {
+      compositor!.uploadBitmap(bitmap, uploadId);
+      bitmap.close(); // Free GPU bitmap memory immediately after upload
+    }
 
-  return {
-    frameIndex,
-    pixels,
-    width: renderWidth,
-    height: renderHeight,
-  };
+    const renderStart = performance.now();
+    compositor!.renderFrame(task.frame);
+    compositor!.flush();
+    const renderEnd = performance.now();
+    renderTotal += renderEnd - renderStart;
+
+    const vfStart = performance.now();
+    const bitmap = offscreenCanvas!.transferToImageBitmap();
+    const videoFrame = new VideoFrame(bitmap, {
+      timestamp: task.timestampMicros,
+      duration: task.durationMicros,
+    });
+    bitmap.close();
+    const vfEnd = performance.now();
+    videoFrameTotal += vfEnd - vfStart;
+
+    const result = { frameIndex: task.frameIndex, videoFrame };
+    if (result.videoFrame) {
+      transferables.push(result.videoFrame);
+    }
+    results.push(result);
+  }
+
+  const uploadEnd = performance.now();
+
+  profileDecodeTotal += decodeEnd - decodeStart;
+  profileUploadTotal += uploadEnd - uploadStart;
+  profileRenderTotal += renderTotal;
+  profileVideoFrameTotal += videoFrameTotal;
+  profileTotalTotal +=
+    decodeEnd - decodeStart + (uploadEnd - uploadStart) + renderTotal + videoFrameTotal;
+  profileFrameCount += tasks.length;
+
+  return Comlink.transfer(results, transferables);
 }
 
 /**
@@ -277,7 +366,8 @@ const workerApi = {
   isFontLoaded,
   loadVideoAsset,
   uploadBitmap,
-  renderFrame,
+  renderFrames,
+  getAndResetProfile,
   clearAllTextures,
   dispose,
 };

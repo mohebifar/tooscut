@@ -64,49 +64,6 @@ impl AudioEngine {
         self.mixer.remove_audio(source_id);
     }
 
-    /// Create a streaming audio source that receives PCM data incrementally
-    ///
-    /// # Arguments
-    /// * `source_id` - Unique identifier for this audio source (asset ID)
-    /// * `sample_rate` - Sample rate of the source audio
-    /// * `channels` - Number of channels (1 or 2)
-    /// * `estimated_duration` - Optional duration hint in seconds for pre-allocation (0 = no hint)
-    #[wasm_bindgen]
-    pub fn create_streaming_source(
-        &mut self,
-        source_id: &str,
-        sample_rate: u32,
-        channels: u32,
-        estimated_duration: f64,
-    ) {
-        let duration_hint = if estimated_duration > 0.0 {
-            Some(estimated_duration)
-        } else {
-            None
-        };
-        self.mixer
-            .create_streaming_source(source_id, sample_rate, channels, duration_hint);
-    }
-
-    /// Append a chunk of interleaved PCM data to a streaming source
-    ///
-    /// # Arguments
-    /// * `source_id` - ID of the streaming source (must have been created with `create_streaming_source`)
-    /// * `chunk` - Interleaved PCM data (f32)
-    #[wasm_bindgen]
-    pub fn append_audio_chunk(&mut self, source_id: &str, chunk: &[f32]) {
-        self.mixer.append_audio_chunk(source_id, chunk);
-    }
-
-    /// Mark a streaming source as complete (all data has been received)
-    ///
-    /// # Arguments
-    /// * `source_id` - ID of the streaming source
-    #[wasm_bindgen]
-    pub fn finalize_audio(&mut self, source_id: &str) {
-        self.mixer.finalize_audio(source_id);
-    }
-
     /// Create a windowed audio source (metadata only, fixed-size buffer)
     ///
     /// Unlike streaming sources, windowed sources only retain a limited amount

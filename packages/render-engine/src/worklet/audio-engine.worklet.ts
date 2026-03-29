@@ -8,14 +8,6 @@ interface InitMessage {
   sampleRate: number;
 }
 
-interface UploadAudioMessage {
-  type: "upload-audio";
-  sourceId: string;
-  pcmData: Float32Array;
-  sampleRate: number;
-  channels: number;
-}
-
 interface RemoveAudioMessage {
   type: "remove-audio";
   sourceId: string;
@@ -41,25 +33,6 @@ interface SetMasterVolumeMessage {
   volume: number;
 }
 
-interface CreateStreamingSourceMessage {
-  type: "create-streaming-source";
-  sourceId: string;
-  sampleRate: number;
-  channels: number;
-  estimatedDuration: number;
-}
-
-interface AppendAudioChunkMessage {
-  type: "append-audio-chunk";
-  sourceId: string;
-  pcmData: Float32Array;
-}
-
-interface FinalizeAudioMessage {
-  type: "finalize-audio";
-  sourceId: string;
-}
-
 interface CreateWindowedSourceMessage {
   type: "create-windowed-source";
   sourceId: string;
@@ -83,15 +56,11 @@ interface ClearSourceBufferMessage {
 
 type WorkletMessage =
   | InitMessage
-  | UploadAudioMessage
   | RemoveAudioMessage
   | SetTimelineMessage
   | SetPlayingMessage
   | SeekMessage
   | SetMasterVolumeMessage
-  | CreateStreamingSourceMessage
-  | AppendAudioChunkMessage
-  | FinalizeAudioMessage
   | CreateWindowedSourceMessage
   | UpdateSourceBufferMessage
   | ClearSourceBufferMessage;
@@ -124,15 +93,6 @@ class AudioEngineProcessor extends AudioWorkletProcessor {
         void this.initEngine(message.wasmBinary, message.sampleRate);
         break;
 
-      case "upload-audio":
-        this.engine?.upload_audio(
-          message.sourceId,
-          message.pcmData,
-          message.sampleRate,
-          message.channels,
-        );
-        break;
-
       case "remove-audio":
         this.engine?.remove_audio(message.sourceId);
         break;
@@ -152,23 +112,6 @@ class AudioEngineProcessor extends AudioWorkletProcessor {
 
       case "set-master-volume":
         this.engine?.set_master_volume(message.volume);
-        break;
-
-      case "create-streaming-source":
-        this.engine?.create_streaming_source(
-          message.sourceId,
-          message.sampleRate,
-          message.channels,
-          message.estimatedDuration,
-        );
-        break;
-
-      case "append-audio-chunk":
-        this.engine?.append_audio_chunk(message.sourceId, message.pcmData);
-        break;
-
-      case "finalize-audio":
-        this.engine?.finalize_audio(message.sourceId);
         break;
 
       case "create-windowed-source":

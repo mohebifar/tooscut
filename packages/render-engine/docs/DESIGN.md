@@ -368,7 +368,7 @@ compositor.clearTexture(id); // Release texture
 
 ### Technology Stack (Rust/WASM)
 
-Text rendering is implemented entirely in Rust, matching the Subformer approach:
+Text rendering is implemented entirely in Rust:
 
 - **glyphon 0.8** - GPU-accelerated text rendering crate (compatible with wgpu 24)
 - **cosmic-text 0.12** - Text layout and shaping (included via glyphon)
@@ -698,45 +698,40 @@ AudioEngine (Rust/WASM)
 
 The worklet calls `engine.render(output, numFrames)` every ~128 samples. The mixer iterates active clips, reads from their sources with linear interpolation, applies per-clip gain/fades, cross-transition crossfades, track volume/pan/mute/solo, and master volume.
 
-### Streaming Audio Decode
+### Audio Source Modes
 
-Audio is decoded **incrementally** using MediaBunny's `AudioSampleSink` iterator, rather than decoding the entire file upfront with `decodeAudioData()`.
+The WASM `AudioClipSource` supports three modes:
 
-**Rationale:**
+| Mode          | API                                  | Memory             | Use Case                   |
+| ------------- | ------------------------------------ | ------------------ | -------------------------- |
+| **Bulk**      | `new()` / `upload_audio()`           | Full file          | Legacy fallback            |
+| **Streaming** | `new_streaming()` / `append_chunk()` | Grows unbounded    | N/A (replaced by windowed) |
+| **Windowed**  | `new_windowed()` / `update_buffer()` | Fixed budget (30s) | Preview playback + export  |
 
-- `decodeAudioData()` blocks until the entire file is decoded — for a 1-hour video this can take ~10 seconds before any audio plays
-- Streaming decode sends PCM chunks to WASM as they're decoded, so audio is playable within the first ~200ms
-- The WASM source returns silence for regions not yet received, which is transparent to the user during sequential playback
+**Windowed mode** is the primary mode for both preview and export. It stores PCM in time-indexed segments with a fixed memory budget. The engine returns silence for regions not yet buffered (`get_sample()` returns `(0.0, 0.0)`), and auto-evicts the segment furthest from the last read position when the budget is exceeded.
 
-**Flow:**
+**Preview flow (real-time decode-ahead):**
 
 ```
-1. BrowserAudioEngine.streamAudioFromUrl(sourceId, url)
-2. Open file with MediaBunny (BlobSource for blob: URLs, UrlSource for remote)
-3. Get primary audio track, create AudioSampleSink
-4. Send "create-streaming-source" to worklet (sample rate, channels, estimated duration)
-5. for await (sample of sink.samples()):
-   a. Extract f32 PCM via sample.copyTo()
-   b. Interleave channels (L,R,L,R,...)
-   c. Transfer ArrayBuffer to worklet via "append-audio-chunk"
-6. Send "finalize-audio" to worklet
+1. BrowserAudioEngine creates windowed source (30s budget)
+2. AudioWorklet sends time-update messages (~10Hz) with playhead position
+3. Main thread computes needed source regions per clip (inPoint, speed)
+4. Decodes ranges via MediaBunny sink.samples(from, to)
+5. Sends PCM to worklet via "update-source-buffer"
+6. WASM auto-evicts old segments as playhead advances
 ```
 
-**Rust side:**
+**Export flow (windowed decode + render):**
 
-```rust
-// AudioClipSource supports two construction modes:
-AudioClipSource::new(id, pcm_data, sample_rate, channels)        // Bulk (is_complete = true)
-AudioClipSource::new_streaming(id, sample_rate, channels, hint)   // Streaming (is_complete = false)
-
-// Streaming methods:
-source.append_chunk(&[f32])   // Extends pcm_data, recalculates duration
-source.finalize()             // Sets is_complete = true, shrink_to_fit()
 ```
-
-`get_sample()` returns `(0.0, 0.0)` for times beyond the current `duration`, so partially-loaded sources produce silence in unloaded regions without any special handling.
-
-**Pre-allocation:** `new_streaming()` accepts an optional duration hint and calls `Vec::with_capacity()` to avoid repeated reallocations during append.
+1. Audio worker creates windowed source (30s budget)
+2. For each 10s timeline window:
+   a. Compute needed source regions from clip data
+   b. Decode via MediaBunny sink.samples(from, to)
+   c. Feed to WASM via update_source_buffer()
+   d. Render window, stream 1-second chunks to main thread
+3. WASM auto-evicts — peak memory ~11MB/source regardless of duration
+```
 
 ### URL Source Selection
 
@@ -779,6 +774,77 @@ Thread safety is guaranteed: the worklet processes messages between `process()` 
 | `crates/audio-engine/src/lib.rs`      | `AudioEngine` — WASM bindings (`#[wasm_bindgen]`)         |
 | `src/worklet/audio-engine.worklet.ts` | `AudioWorkletProcessor` — message dispatch, render loop   |
 | `src/audio-engine.ts`                 | `BrowserAudioEngine` — browser API, MediaBunny streaming  |
+
+---
+
+## Export Pipeline
+
+### Architecture
+
+Export streams rendered frames directly to disk via the File System Access API, avoiding the need to hold the entire video in memory.
+
+```
+┌─ Worker Thread ─────────────────────────────────────────────┐
+│  VideoFrameLoader (MediaBunny decode)                       │
+│        ↓                                                    │
+│  Compositor (WASM/WebGPU) → renderFrame()                   │
+│        ↓                                                    │
+│  transferToImageBitmap() → VideoFrame                       │
+│        ↓ (Comlink transfer, zero-copy)                      │
+└─────────────────────────────────────────────────────────────┘
+          ↓
+┌─ Main Thread ───────────────────────────────────────────────┐
+│  VideoEncoder (hardware H.264) → EncodedVideoChunk          │
+│        ↓                                                    │
+│  EncodedVideoPacketSource → MediaBunny Output               │
+│        ↓                                                    │
+│  StreamTarget(FileSystemWritableFileStream) → disk           │
+└─────────────────────────────────────────────────────────────┘
+
+┌─ Audio Worker ──────────────────────────────────────────────┐
+│  MediaBunny decode → WASM AudioEngine (windowed) → render   │
+│        ↓ (postMessage, 1-second chunks)                     │
+└─────────────────────────────────────────────────────────────┘
+          ↓
+┌─ Main Thread ───────────────────────────────────────────────┐
+│  AudioSampleSource → MediaBunny Output (same as video)      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Key Design Decisions
+
+**Streaming to disk via FileSystemWritableFileStream:**
+The `FileSystemWritableFileStream` is passed directly to MediaBunny's `StreamTarget`. Its sink natively handles `{type: 'write', data, position}` — the same format MediaBunny writes internally. No intermediary `WritableStream`, no chunking, no buffering.
+
+**Fragmented MP4 (`fastStart: "fragmented"`):**
+Fragments are written incrementally as rendering progresses. No large metadata rewrite at finalize time (unlike regular MP4 which writes the moov atom at the end or seeks to prepend it).
+
+**`transferToImageBitmap()` for VideoFrame creation:**
+The compositor renders to an OffscreenCanvas backed by WebGPU. `new VideoFrame(canvas)` captures a reference to the swap chain texture's shared image mailbox — not a copy. When the compositor renders the next frame, `get_current_texture()` recycles that texture, invalidating the mailbox. The main thread's encoder then reads a destroyed texture (`glCopySubTexture: unknown source image mailbox`). `transferToImageBitmap()` detaches the canvas content into an independent GPU bitmap, breaking the reference to the swap chain.
+
+**Concurrent audio + video:**
+Audio rendering runs in a dedicated worker concurrently with video frame rendering. Both feed into the same MediaBunny `Output` via separate track sources. The muxer handles interleaving by timestamp.
+
+**Backpressure management:**
+
+- `VideoEncoder` queue capped at 4 frames (`MAX_VIDEO_ENCODER_QUEUE_SIZE`). The render loop waits on `dequeue` events when the queue is full.
+- Encoded chunk queue capped at 8 packets (`MAX_ENCODED_CHUNK_QUEUE_SIZE`). Drain is pumped from the encoder output callback.
+
+**Immediate bitmap closure in batch rendering:**
+In the worker's batch render path, each `ImageBitmap` is closed immediately after `compositor.uploadBitmap()` — not accumulated until batch end. This prevents duplicate GPU memory (bitmap + compositor texture) from accumulating across the batch.
+
+### Windowed Audio Export
+
+The audio export worker uses the same windowed source mechanism as preview playback (`create_windowed_source` / `update_source_buffer`), keeping only ~30 seconds of decoded PCM per source in WASM memory.
+
+For each 10-second timeline window:
+
+1. Compute which source regions active clips need (accounting for `inPoint` and `speed`)
+2. Decode those ranges via MediaBunny's `AudioSampleSink.samples(from, to)`
+3. Feed to WASM via `update_source_buffer()` — the engine auto-evicts old data
+4. Render the window in 1-second chunks, stream to main thread
+
+This bounds peak audio memory to ~11MB per source regardless of video duration.
 
 ---
 
