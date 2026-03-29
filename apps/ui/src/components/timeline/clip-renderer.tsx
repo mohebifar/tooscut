@@ -7,6 +7,8 @@ import { TimelineTrack } from "./types";
 export interface ClipRendererProps {
   clips: ReturnType<typeof useVideoEditorStore.getState>["clips"];
   allTracks: TimelineTrack[];
+  /** Only render clips on tracks of this type (for split video/audio sections) */
+  section?: "video" | "audio";
   dragPreview: {
     clipId: string;
     x: number;
@@ -58,6 +60,7 @@ export interface ClipRendererProps {
 export const ClipRenderer = React.memo(function ClipRenderer({
   clips,
   allTracks,
+  section,
   dragPreview,
   trimPreview,
   buildClipNodeProps,
@@ -67,6 +70,12 @@ export const ClipRenderer = React.memo(function ClipRenderer({
       {clips.map((clip) => {
         const trackIndex = allTracks.findIndex((t) => t.fullId === clip.trackId);
         if (trackIndex === -1) return null;
+
+        // Filter clips by section
+        if (section) {
+          const track = allTracks[trackIndex];
+          if (track.type !== section) return null;
+        }
 
         // Multi-clip drag: all clips in multiClips are ghosts at original positions
         if (dragPreview?.isMulti && dragPreview.multiClips) {

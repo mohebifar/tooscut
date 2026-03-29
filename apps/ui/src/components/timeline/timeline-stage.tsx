@@ -22,13 +22,13 @@ import {
   RULER_HEIGHT,
   SNAP_THRESHOLD,
   TRACK_HEADER_WIDTH,
-  TRACK_HEIGHT,
 } from "./constants";
 import { CrossTransitionOverlays } from "./cross-transition-overlays";
 import { GridLinesTrackArea } from "./grid-lines-track-area";
 import { findSnapTargets, snapFrame } from "./snap-utils";
 import { TrackBackgrounds } from "./track-backgrounds";
 import { TrackHeaders } from "./track-headers";
+import { computeSplitLayout, yToSectionTrackIndex } from "./track-layout";
 import {
   CrossTransitionResizeState,
   TimelineTrack,
@@ -132,6 +132,8 @@ function formatFrameTimecode(frame: number, fpsFloat: number): string {
 
 interface DragPreviewClipsProps {
   clips: ReturnType<typeof useVideoEditorStore.getState>["clips"];
+  allTracks: TimelineTrack[];
+  section: "video" | "audio";
   dragPreview: ClipRendererProps["dragPreview"];
   buildClipNodeProps: ClipRendererProps["buildClipNodeProps"];
   xToFrame: (x: number) => number;
@@ -139,55 +141,47 @@ interface DragPreviewClipsProps {
 
 const DragPreviewClips = React.memo(function DragPreviewClips({
   clips,
+  allTracks,
+  section,
   dragPreview,
   buildClipNodeProps,
   xToFrame,
 }: DragPreviewClipsProps) {
   if (!dragPreview) return null;
 
+  const renderClipPreview = (clipId: string, trackIndex: number, x: number, keySuffix: string) => {
+    const clip = clips.find((c) => c.id === clipId);
+    if (!clip) return null;
+    const track = allTracks[trackIndex];
+    if (track && track.type !== section) return null;
+    const newStartTime = xToFrame(x);
+    const props = buildClipNodeProps(clip, trackIndex, {
+      overrideStartTime: newStartTime,
+      overrideTrackIndex: trackIndex,
+    });
+    if (!props) return null;
+    return <ClipNode key={props.clipId + keySuffix} {...props} />;
+  };
+
   return (
     <>
       {dragPreview.isMulti && dragPreview.multiClips
-        ? dragPreview.multiClips.map((mc) => {
-            const mcClip = clips.find((c) => c.id === mc.clipId);
-            if (!mcClip) return null;
-            const newStartTime = xToFrame(mc.x);
-            const props = buildClipNodeProps(mcClip, mc.trackIndex, {
-              overrideStartTime: newStartTime,
-              overrideTrackIndex: mc.trackIndex,
-            });
-            if (!props) return null;
-            return <ClipNode key={props.clipId + "-drag"} {...props} />;
-          })
-        : (() => {
-            const clip = clips.find((c) => c.id === dragPreview.clipId);
-            if (!clip) return null;
-            const newStartTime = xToFrame(dragPreview.x);
-            const props = buildClipNodeProps(clip, dragPreview.trackIndex, {
-              overrideStartTime: newStartTime,
-              overrideTrackIndex: dragPreview.trackIndex,
-            });
-            if (!props) return null;
-            return <ClipNode key={props.clipId + "-drag"} {...props} />;
-          })()}
+        ? dragPreview.multiClips.map((mc) =>
+            renderClipPreview(mc.clipId, mc.trackIndex, mc.x, "-drag"),
+          )
+        : renderClipPreview(dragPreview.clipId, dragPreview.trackIndex, dragPreview.x, "-drag")}
 
       {/* Drag preview for linked clip (single-clip drag only) */}
       {!dragPreview.isMulti &&
         dragPreview.linkedClipId &&
         dragPreview.linkedX !== undefined &&
-        dragPreview.linkedY !== undefined &&
         dragPreview.linkedTrackIndex !== undefined &&
-        (() => {
-          const linkedClip = clips.find((c) => c.id === dragPreview.linkedClipId);
-          if (!linkedClip) return null;
-          const newStartTime = xToFrame(dragPreview.linkedX!);
-          const props = buildClipNodeProps(linkedClip, dragPreview.linkedTrackIndex!, {
-            overrideStartTime: newStartTime,
-            overrideTrackIndex: dragPreview.linkedTrackIndex,
-          });
-          if (!props) return null;
-          return <ClipNode key={props.clipId + "-drag-linked"} {...props} />;
-        })()}
+        renderClipPreview(
+          dragPreview.linkedClipId,
+          dragPreview.linkedTrackIndex,
+          dragPreview.linkedX,
+          "-drag-linked",
+        )}
     </>
   );
 });
@@ -450,6 +444,16 @@ export function TimelineStage({
     trackHeight: number;
   } | null>(null);
 
+  // Track height resize state
+  const trackResizeRef = useRef<{
+    trackIndex: number;
+    trackId: string;
+    startY: number;
+    originalHeight: number;
+    /** Video tracks resize from top edge (drag up = grow), audio from bottom (drag down = grow) */
+    invertDelta: boolean;
+  } | null>(null);
+
   // Track zoom gesture — skip expensive drawing during continuous zoom
   const [isZooming, setIsZooming] = useState(false);
   const zoomTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -495,6 +499,8 @@ export function TimelineStage({
   const setZoom = useVideoEditorStore((s) => s.setZoom);
   const setScrollX = useVideoEditorStore((s) => s.setScrollX);
   const setScrollY = useVideoEditorStore((s) => s.setScrollY);
+  const trackHeightsMap = useVideoEditorStore((s) => s.trackHeights);
+  const setTrackHeight = useVideoEditorStore((s) => s.setTrackHeight);
   const seekTo = useVideoEditorStore((s) => s.seekTo);
   const setSelectedClipIds = useVideoEditorStore((s) => s.setSelectedClipIds);
   const clearSelection = useVideoEditorStore((s) => s.clearSelection);
@@ -513,36 +519,29 @@ export function TimelineStage({
   const setSelectedCrossTransition = useVideoEditorStore((s) => s.setSelectedCrossTransition);
   const updateCrossTransitionDuration = useVideoEditorStore((s) => s.updateCrossTransitionDuration);
 
-  // Combine tracks with full IDs - video tracks first (sorted by index descending), then audio tracks (sorted by index ascending)
-  const allTracks = useMemo<TimelineTrack[]>(() => {
-    const videoTracksFiltered = tracks
+  // Build track arrays:
+  // - Video: sorted descending by index (V3 on top, V1 at bottom near divider)
+  // - Audio: sorted ascending by index (A1 on top near divider, A3 at bottom)
+  // This creates the traditional NLE "butterfly" layout where V1 and A1 are adjacent.
+  // allTracks = [...videoTracks, ...audioTracks]
+  const { videoTracks, audioTracks, allTracks } = useMemo(() => {
+    const toTimelineTrack = (t: (typeof tracks)[0]): TimelineTrack => ({
+      id: t.id,
+      fullId: t.id,
+      type: t.type,
+      name: t.name || `${t.type === "video" ? "Video" : "Audio"} ${t.index + 1}`,
+      muted: t.muted,
+      locked: t.locked,
+    });
+    const video = tracks
       .filter((t) => t.type === "video")
-      .sort((a, b) => b.index - a.index);
-    const audioTracksFiltered = tracks
+      .sort((a, b) => b.index - a.index)
+      .map(toTimelineTrack);
+    const audio = tracks
       .filter((t) => t.type === "audio")
-      .sort((a, b) => a.index - b.index);
-    return [
-      ...videoTracksFiltered.map((t) => ({
-        id: t.id,
-        fullId: t.id,
-        type: "video" as const,
-        name: t.name || `Video ${t.index + 1}`,
-        index: t.index,
-        pairedTrackId: t.pairedTrackId,
-        muted: t.muted,
-        locked: t.locked,
-      })),
-      ...audioTracksFiltered.map((t) => ({
-        id: t.id,
-        fullId: t.id,
-        type: "audio" as const,
-        name: t.name || `Audio ${t.index + 1}`,
-        index: t.index,
-        pairedTrackId: t.pairedTrackId,
-        muted: t.muted,
-        locked: t.locked,
-      })),
-    ];
+      .sort((a, b) => a.index - b.index)
+      .map(toTimelineTrack);
+    return { videoTracks: video, audioTracks: audio, allTracks: [...video, ...audio] };
   }, [tracks]);
 
   // Memoize clips data for thumbnail hook to prevent infinite loops
@@ -583,19 +582,86 @@ export function TimelineStage({
     [zoom, scrollX],
   );
 
-  const trackIndexToY = useCallback(
-    (index: number) => RULER_HEIGHT + index * TRACK_HEIGHT - scrollY,
-    [scrollY],
+  // Compute split layout (video section + audio section with mirrored heights)
+  const splitLayout = useMemo(
+    () => computeSplitLayout(videoTracks, audioTracks, trackHeightsMap),
+    [videoTracks, audioTracks, trackHeightsMap],
   );
 
+  // Each section gets half the available height below the ruler
+  const sectionHeight = Math.floor((height - RULER_HEIGHT) / 2);
+  const videoSectionTop = RULER_HEIGHT;
+  const audioSectionTop = RULER_HEIGHT + sectionHeight;
+
+  // Video section is bottom-aligned: V1 sits at the bottom near the divider.
+  // Scrolling (increasing scrollY) reveals higher-numbered tracks from the top.
+  // videoBaseY is the Y offset of the video content group.
+  const videoContentH = splitLayout.video.totalContentHeight;
+  const videoBaseY = videoSectionTop + sectionHeight - videoContentH + scrollY;
+
+  // Audio section is top-aligned: A1 sits at the top near the divider.
+  // Scrolling reveals higher-numbered tracks from the bottom.
+  const audioBaseY = audioSectionTop - scrollY;
+
+  /**
+   * Convert an allTracks index to screen Y.
+   * Video tracks (indices 0..videoTrackCount-1) render in the top section (bottom-aligned).
+   * Audio tracks (indices videoTrackCount..end) render in the bottom section (top-aligned).
+   */
+  const trackIndexToY = useCallback(
+    (index: number) => {
+      const numVideo = splitLayout.videoTrackCount;
+      if (index < numVideo) {
+        return videoBaseY + (splitLayout.video.trackYOffsets[index] ?? 0);
+      }
+      const audioIdx = index - numVideo;
+      return audioBaseY + (splitLayout.audio.trackYOffsets[audioIdx] ?? 0);
+    },
+    [splitLayout, videoBaseY, audioBaseY],
+  );
+
+  /**
+   * Convert screen Y to an allTracks index.
+   * Returns -1 if outside any track.
+   */
   const yToTrackIndex = useCallback(
-    (y: number) => Math.floor((y - RULER_HEIGHT + scrollY) / TRACK_HEIGHT),
-    [scrollY],
+    (y: number) => {
+      const numVideo = splitLayout.videoTrackCount;
+      if (y >= videoSectionTop && y < audioSectionTop) {
+        // In video section — content is bottom-aligned
+        const localY = y - videoBaseY;
+        const idx = yToSectionTrackIndex(localY, splitLayout.video);
+        return idx;
+      }
+      if (y >= audioSectionTop) {
+        // In audio section — content is top-aligned
+        const localY = y - audioBaseY;
+        const idx = yToSectionTrackIndex(localY, splitLayout.audio);
+        return idx >= 0 ? idx + numVideo : -1;
+      }
+      return -1;
+    },
+    [splitLayout, videoSectionTop, audioSectionTop, videoBaseY, audioBaseY],
+  );
+
+  const getTrackHeight = useCallback(
+    (index: number) => {
+      const numVideo = splitLayout.videoTrackCount;
+      if (index < numVideo) {
+        return splitLayout.video.trackHeights[index] ?? 80;
+      }
+      return splitLayout.audio.trackHeights[index - numVideo] ?? 80;
+    },
+    [splitLayout],
   );
 
   // Calculate content dimensions
   const contentWidth = TRACK_HEADER_WIDTH + Math.max(duration, 60) * zoom;
-  const totalHeight = RULER_HEIGHT + allTracks.length * TRACK_HEIGHT;
+  // Total scrollable height within each section (used for scroll bounds)
+  const sectionContentHeight = Math.max(
+    splitLayout.video.totalContentHeight,
+    splitLayout.audio.totalContentHeight,
+  );
 
   // Generate grid lines for ruler (in frames)
   const gridLines = useMemo(() => {
@@ -639,25 +705,34 @@ export function TimelineStage({
         setZoom(newZoom);
         setScrollX(newScrollX);
       } else {
-        // Scroll: vertical wheel (deltaY) scrolls horizontally through time,
-        // horizontal wheel/trackpad (deltaX) also scrolls horizontally,
-        // shift+wheel scrolls vertically between tracks.
+        // Scroll: deltaY scrolls tracks vertically, deltaX scrolls time horizontally.
+        // Shift+wheel swaps: deltaY scrolls horizontally.
         if (evt.shiftKey) {
-          const verticalDelta = evt.deltaY;
-          if (Math.abs(verticalDelta) > 0) {
-            const newScrollY = Math.max(
-              0,
-              Math.min(Math.max(0, totalHeight - height + RULER_HEIGHT), scrollY + verticalDelta),
-            );
-            setScrollY(newScrollY);
-          }
-        } else {
-          const horizontalDelta = evt.deltaX + evt.deltaY;
+          const horizontalDelta = evt.deltaY;
           if (Math.abs(horizontalDelta) > 0) {
             const newScrollX = Math.max(
               0,
               Math.min(contentWidth - width, scrollX + horizontalDelta),
             );
+            setScrollX(newScrollX);
+          }
+        } else {
+          if (Math.abs(evt.deltaY) > 0) {
+            // Video section is bottom-aligned, so scrolling is inverted:
+            // scroll down (deltaY > 0) in video section should decrease scrollY
+            // to reveal higher-numbered tracks from the top.
+            // Audio section scrolls normally.
+            const maxScrollY = Math.max(0, sectionContentHeight - sectionHeight);
+            const stage = e.target.getStage();
+            const pointerPos = stage?.getPointerPosition();
+            const pointerY = pointerPos?.y ?? 0;
+            const inVideoSection = pointerY >= videoSectionTop && pointerY < audioSectionTop;
+            const effectiveDelta = inVideoSection ? -evt.deltaY : evt.deltaY;
+            const newScrollY = Math.max(0, Math.min(maxScrollY, scrollY + effectiveDelta));
+            setScrollY(newScrollY);
+          }
+          if (Math.abs(evt.deltaX) > 0) {
+            const newScrollX = Math.max(0, Math.min(contentWidth - width, scrollX + evt.deltaX));
             setScrollX(newScrollX);
           }
         }
@@ -668,12 +743,14 @@ export function TimelineStage({
       scrollX,
       scrollY,
       contentWidth,
-      totalHeight,
+      sectionContentHeight,
+      sectionHeight,
       width,
-      height,
       setZoom,
       setScrollX,
       setScrollY,
+      videoSectionTop,
+      audioSectionTop,
     ],
   );
 
@@ -759,7 +836,7 @@ export function TimelineStage({
         const ctX = frameToX(overlapStart);
         const ctWidth = (overlapEnd - overlapStart) * zoom;
         const ctY = trackIndexToY(trackIndex) + CLIP_PADDING;
-        const ctHeight = TRACK_HEIGHT - CLIP_PADDING * 2;
+        const ctHeight = getTrackHeight(trackIndex) - CLIP_PADDING * 2;
 
         if (x >= ctX && x <= ctX + ctWidth && y >= ctY && y <= ctY + ctHeight) {
           // Check if near left or right edge for resize
@@ -773,7 +850,7 @@ export function TimelineStage({
       }
       return null;
     },
-    [crossTransitions, clips, allTracks, frameToX, trackIndexToY, zoom],
+    [crossTransitions, clips, allTracks, frameToX, trackIndexToY, getTrackHeight, zoom],
   );
 
   // Handle mouse down on stage
@@ -799,6 +876,29 @@ export function TimelineStage({
         const frame = Math.max(0, Math.min(duration, xToFrame(pos.x)));
         seekTo(frame);
         return;
+      }
+
+      // Check if clicking on a track resize handle
+      // Video tracks: top edge (away from divider). Audio tracks: bottom edge.
+      if (pos.x < TRACK_HEADER_WIDTH && pos.y > RULER_HEIGHT) {
+        const RESIZE_ZONE = 6;
+        const numVideo = splitLayout.videoTrackCount;
+        for (let i = 0; i < allTracks.length; i++) {
+          const isVideo = i < numVideo;
+          const trackY = trackIndexToY(i);
+          const edgeY = isVideo ? trackY : trackY + getTrackHeight(i);
+          if (Math.abs(pos.y - edgeY) <= RESIZE_ZONE) {
+            trackResizeRef.current = {
+              trackIndex: i,
+              trackId: allTracks[i].id,
+              startY: pos.y,
+              originalHeight: getTrackHeight(i),
+              invertDelta: isVideo,
+            };
+            setCursor("ns-resize");
+            return;
+          }
+        }
       }
 
       // Check if clicking on a cross transition overlay (before clip check)
@@ -1148,6 +1248,9 @@ export function TimelineStage({
       selectedClipIds,
       scrollX,
       scrollY,
+      splitLayout.videoTrackCount,
+      getTrackHeight,
+      trackIndexToY,
     ],
   );
 
@@ -1166,6 +1269,19 @@ export function TimelineStage({
         const dy = pos.y - middlePanRef.current.startY;
         setScrollX(Math.max(0, middlePanRef.current.scrollX - dx));
         setScrollY(Math.max(0, middlePanRef.current.scrollY - dy));
+        return;
+      }
+
+      // Track height resize
+      if (trackResizeRef.current) {
+        const rawDelta = pos.y - trackResizeRef.current.startY;
+        // Video: dragging up (negative delta) increases height; audio: dragging down increases
+        const delta = trackResizeRef.current.invertDelta ? -rawDelta : rawDelta;
+        const newHeight = Math.max(
+          40,
+          Math.min(300, trackResizeRef.current.originalHeight + delta),
+        );
+        setTrackHeight(trackResizeRef.current.trackId, newHeight);
         return;
       }
 
@@ -1555,8 +1671,9 @@ export function TimelineStage({
 
           if (compatibleTrackIndices.length === 0) return;
 
-          const deltaY = pos.y - startMouseY;
-          const deltaTrackIndex = Math.round(deltaY / TRACK_HEIGHT);
+          // Use absolute mouse position to find target track (supports variable heights)
+          const rawTargetIndex = yToTrackIndex(pos.y);
+          const deltaTrackIndex = rawTargetIndex >= 0 ? rawTargetIndex - originalTrackIndex : 0;
 
           let newStartTime = Math.max(0, originalStartTime + deltaTime);
 
@@ -1589,12 +1706,12 @@ export function TimelineStage({
 
           newStartTime = Math.max(0, newStartTime);
 
-          const rawTargetIndex = originalTrackIndex + deltaTrackIndex;
+          const effectiveTargetIndex = originalTrackIndex + deltaTrackIndex;
           let newTrackIndex = compatibleTrackIndices[0];
-          let minDistance = Math.abs(rawTargetIndex - newTrackIndex);
+          let minDistance = Math.abs(effectiveTargetIndex - newTrackIndex);
 
           for (const idx of compatibleTrackIndices) {
-            const distance = Math.abs(rawTargetIndex - idx);
+            const distance = Math.abs(effectiveTargetIndex - idx);
             if (distance < minDistance) {
               minDistance = distance;
               newTrackIndex = idx;
@@ -1615,7 +1732,8 @@ export function TimelineStage({
               .filter((i) => i !== -1);
 
             if (linkedCompatibleTrackIndices.length > 0) {
-              const linkedRawTargetIndex = linkedOriginalTrackIndex + deltaTrackIndex;
+              // Video is sorted descending, audio ascending — invert delta for linked track
+              const linkedRawTargetIndex = linkedOriginalTrackIndex - deltaTrackIndex;
               linkedTrackIndex = linkedCompatibleTrackIndices[0];
               let linkedMinDistance = Math.abs(linkedRawTargetIndex - linkedTrackIndex);
 
@@ -1669,7 +1787,7 @@ export function TimelineStage({
             const cx = frameToX(clip.startTime);
             const cy = trackIndexToY(trackIndex) + CLIP_PADDING;
             const cw = clip.duration * zoom;
-            const ch = TRACK_HEIGHT - CLIP_PADDING * 2;
+            const ch = getTrackHeight(trackIndex) - CLIP_PADDING * 2;
             // AABB intersection
             if (
               cx + cw > rect.x &&
@@ -1720,7 +1838,7 @@ export function TimelineStage({
               setRazorPreview({
                 x: pos.x,
                 trackY: trackY + CLIP_PADDING,
-                trackHeight: TRACK_HEIGHT - CLIP_PADDING * 2,
+                trackHeight: getTrackHeight(trackIndex) - CLIP_PADDING * 2,
               });
             } else {
               const clipX = frameToX(clip.startTime);
@@ -1762,6 +1880,28 @@ export function TimelineStage({
             setRazorPreview(null);
           }
         } // close cross transition else
+      } else if (pos.x < TRACK_HEADER_WIDTH && pos.y > RULER_HEIGHT) {
+        // Check for track resize hover — video: top edge, audio: bottom edge
+        const RESIZE_ZONE = 6;
+        const numVideo = splitLayout.videoTrackCount;
+        let isResizeHover = false;
+        for (let i = 0; i < allTracks.length; i++) {
+          const isVideo = i < numVideo;
+          const trackY = trackIndexToY(i);
+          const edgeY = isVideo ? trackY : trackY + getTrackHeight(i);
+          if (Math.abs(pos.y - edgeY) <= RESIZE_ZONE) {
+            setCursor("ns-resize");
+            isResizeHover = true;
+            break;
+          }
+        }
+        if (!isResizeHover) {
+          setCursor("default");
+        }
+        setTrimHover(null);
+        setTransitionHover(null);
+        setCrossTransitionHover(null);
+        setRazorPreview(null);
       } else {
         setCursor("default");
         setTrimHover(null);
@@ -1788,11 +1928,22 @@ export function TimelineStage({
       setScrollX,
       setScrollY,
       setCrossTransitionResizePreview,
+      yToTrackIndex,
+      setTrackHeight,
+      getTrackHeight,
+      splitLayout.videoTrackCount,
     ],
   );
 
   // Handle mouse up
   const handleStageMouseUp = useCallback(() => {
+    // End track height resize
+    if (trackResizeRef.current) {
+      trackResizeRef.current = null;
+      setCursor("default");
+      return;
+    }
+
     // End middle mouse panning
     if (middlePanRef.current) {
       middlePanRef.current = null;
@@ -1962,16 +2113,23 @@ export function TimelineStage({
       const effectiveTrackIndex = opts?.overrideTrackIndex ?? trackIndex;
       const isGhost = opts?.isGhost ?? false;
 
-      // Content-space position
+      // Content-space position within the track's section
+      const trackH = getTrackHeight(effectiveTrackIndex);
+      const numVideo = splitLayout.videoTrackCount;
+      const isVideoTrack = effectiveTrackIndex < numVideo;
+      const sectionIdx = isVideoTrack ? effectiveTrackIndex : effectiveTrackIndex - numVideo;
+      const sectionLayout = isVideoTrack ? splitLayout.video : splitLayout.audio;
       const x = effectiveStartTime * zoom;
-      const y = effectiveTrackIndex * TRACK_HEIGHT + CLIP_PADDING;
+      const y = (sectionLayout.trackYOffsets[sectionIdx] ?? 0) + CLIP_PADDING;
       const clipWidth = effectiveDuration * zoom;
 
       // Visibility culling (screen-space check)
+      const sectionTop = isVideoTrack ? videoSectionTop : audioSectionTop;
+      const baseY = isVideoTrack ? videoBaseY : audioBaseY;
       const screenX = x + TRACK_HEADER_WIDTH - scrollX;
-      const screenY = y + RULER_HEIGHT - scrollY;
+      const screenY = y + baseY;
       if (screenX + clipWidth < TRACK_HEADER_WIDTH || screenX > width) return null;
-      if (screenY + TRACK_HEIGHT < RULER_HEIGHT || screenY > height) return null;
+      if (screenY + trackH < sectionTop || screenY > sectionTop + sectionHeight) return null;
 
       const isSelected = selectedClipIds.includes(clip.id);
       const hasLinkedClip =
@@ -2019,6 +2177,7 @@ export function TimelineStage({
         x,
         y,
         clipWidth,
+        clipHeight: trackH - CLIP_PADDING * 2,
         viewportLeft,
         viewportRight,
         isSelected,
@@ -2063,13 +2222,18 @@ export function TimelineStage({
       waveformMap,
       zoom,
       width,
-      height,
       scrollX,
-      scrollY,
       allTracks,
       getClipColor,
       isZooming,
       fps,
+      splitLayout,
+      videoBaseY,
+      audioBaseY,
+      videoSectionTop,
+      audioSectionTop,
+      sectionHeight,
+      getTrackHeight,
     ],
   );
 
@@ -2093,44 +2257,83 @@ export function TimelineStage({
         <TrackBackgrounds
           tracks={allTracks}
           trackIndexToY={trackIndexToY}
-          height={height}
+          splitLayout={splitLayout}
           width={width}
+          videoSectionTop={videoSectionTop}
+          audioSectionTop={audioSectionTop}
+          sectionHeight={sectionHeight}
         />
 
         {/* Grid lines in track area */}
         <GridLinesTrackArea gridLines={gridLines} height={height} />
 
-        {/* Clips — positioned in content space, scroll via Group offset */}
-        <Group x={TRACK_HEADER_WIDTH - scrollX} y={RULER_HEIGHT - scrollY} listening={false}>
-          <ClipRenderer
+        {/* Video section — clipped viewport */}
+        <Group
+          clipX={TRACK_HEADER_WIDTH}
+          clipY={videoSectionTop}
+          clipWidth={width - TRACK_HEADER_WIDTH}
+          clipHeight={sectionHeight}
+        >
+          <Group x={TRACK_HEADER_WIDTH - scrollX} y={videoBaseY} listening={false}>
+            <ClipRenderer
+              clips={clips}
+              allTracks={allTracks}
+              section="video"
+              dragPreview={dragPreview}
+              trimPreview={trimPreview}
+              buildClipNodeProps={buildClipNodeProps}
+            />
+          </Group>
+          <CrossTransitionOverlays
+            crossTransitions={crossTransitions}
             clips={clips}
             allTracks={allTracks}
-            dragPreview={dragPreview}
-            trimPreview={trimPreview}
-            buildClipNodeProps={buildClipNodeProps}
+            frameToX={frameToX}
+            trackIndexToY={trackIndexToY}
+            getTrackHeight={getTrackHeight}
+            zoom={zoom}
+            crossTransitionHover={crossTransitionHover}
+            crossTransitionResizePreview={crossTransitionResizePreview}
           />
+          <Group x={TRACK_HEADER_WIDTH - scrollX} y={videoBaseY} listening={false}>
+            <DragPreviewClips
+              clips={clips}
+              allTracks={allTracks}
+              section="video"
+              dragPreview={dragPreview}
+              buildClipNodeProps={buildClipNodeProps}
+              xToFrame={xToFrame}
+            />
+          </Group>
         </Group>
 
-        {/* Cross transition overlays */}
-        <CrossTransitionOverlays
-          crossTransitions={crossTransitions}
-          clips={clips}
-          allTracks={allTracks}
-          frameToX={frameToX}
-          trackIndexToY={trackIndexToY}
-          zoom={zoom}
-          crossTransitionHover={crossTransitionHover}
-          crossTransitionResizePreview={crossTransitionResizePreview}
-        />
-
-        {/* Drag preview (the moving clip(s)) — in content-space Group */}
-        <Group x={TRACK_HEADER_WIDTH - scrollX} y={RULER_HEIGHT - scrollY} listening={false}>
-          <DragPreviewClips
-            clips={clips}
-            dragPreview={dragPreview}
-            buildClipNodeProps={buildClipNodeProps}
-            xToFrame={xToFrame}
-          />
+        {/* Audio section — clipped viewport */}
+        <Group
+          clipX={TRACK_HEADER_WIDTH}
+          clipY={audioSectionTop}
+          clipWidth={width - TRACK_HEADER_WIDTH}
+          clipHeight={sectionHeight}
+        >
+          <Group x={TRACK_HEADER_WIDTH - scrollX} y={audioBaseY} listening={false}>
+            <ClipRenderer
+              clips={clips}
+              allTracks={allTracks}
+              section="audio"
+              dragPreview={dragPreview}
+              trimPreview={trimPreview}
+              buildClipNodeProps={buildClipNodeProps}
+            />
+          </Group>
+          <Group x={TRACK_HEADER_WIDTH - scrollX} y={audioBaseY} listening={false}>
+            <DragPreviewClips
+              clips={clips}
+              allTracks={allTracks}
+              section="audio"
+              dragPreview={dragPreview}
+              buildClipNodeProps={buildClipNodeProps}
+              xToFrame={xToFrame}
+            />
+          </Group>
         </Group>
       </Layer>
 
@@ -2171,9 +2374,9 @@ export function TimelineStage({
         {dropPreview && (
           <Rect
             x={dropPreview.x}
-            y={RULER_HEIGHT + dropPreview.trackIndex * TRACK_HEIGHT - scrollY + 4}
+            y={trackIndexToY(dropPreview.trackIndex) + 4}
             width={dropPreview.width}
-            height={TRACK_HEIGHT - 8}
+            height={getTrackHeight(dropPreview.trackIndex) - 8}
             fill={dropPreview.isValid ? "rgba(59, 130, 246, 0.2)" : "rgba(239, 68, 68, 0.2)"}
             stroke={dropPreview.isValid ? "#3b82f6" : "#ef4444"}
             strokeWidth={2}
@@ -2228,8 +2431,47 @@ export function TimelineStage({
           fill={COLORS.headerBackground}
         />
 
-        {/* Track headers */}
-        <TrackHeaders tracks={allTracks} trackIndexToY={trackIndexToY} height={height} />
+        {/* Track headers — clipped per section */}
+        <Group
+          clipX={0}
+          clipY={videoSectionTop}
+          clipWidth={TRACK_HEADER_WIDTH}
+          clipHeight={sectionHeight}
+        >
+          <TrackHeaders
+            tracks={allTracks}
+            trackIndexToY={trackIndexToY}
+            splitLayout={splitLayout}
+            section="video"
+            sectionTop={videoSectionTop}
+            sectionHeight={sectionHeight}
+          />
+        </Group>
+        <Group
+          clipX={0}
+          clipY={audioSectionTop}
+          clipWidth={TRACK_HEADER_WIDTH}
+          clipHeight={sectionHeight}
+        >
+          <TrackHeaders
+            tracks={allTracks}
+            trackIndexToY={trackIndexToY}
+            splitLayout={splitLayout}
+            section="audio"
+            sectionTop={audioSectionTop}
+            sectionHeight={sectionHeight}
+          />
+        </Group>
+
+        {/* Section divider line between video and audio */}
+        <Rect
+          x={0}
+          y={audioSectionTop - 1}
+          width={width}
+          height={2}
+          fill="#444444"
+          listening={false}
+        />
 
         {/* Corner piece (top-left) */}
         <Rect

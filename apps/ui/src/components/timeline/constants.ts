@@ -9,8 +9,20 @@ export const TRACK_HEADER_WIDTH = 150;
 /** Height of the time ruler at the top */
 export const RULER_HEIGHT = 40;
 
-/** Height of each track */
-export const TRACK_HEIGHT = 80;
+/** Default height of each track */
+export const DEFAULT_TRACK_HEIGHT = 60;
+
+/** @deprecated Use DEFAULT_TRACK_HEIGHT instead */
+export const TRACK_HEIGHT = DEFAULT_TRACK_HEIGHT;
+
+/** Minimum track height when resizing */
+export const MIN_TRACK_HEIGHT = 40;
+
+/** Maximum track height when resizing */
+export const MAX_TRACK_HEIGHT = 300;
+
+/** Height of the section divider between video and audio tracks */
+export const SECTION_DIVIDER_HEIGHT = 8;
 
 /** Padding inside clips */
 export const CLIP_PADDING = 4;
