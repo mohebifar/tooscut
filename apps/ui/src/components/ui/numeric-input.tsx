@@ -197,28 +197,32 @@ export const NumericInput = React.forwardRef<HTMLDivElement, NumericInputProps>(
           }
         }}
         className={cn(
-          "inline-flex h-8 min-w-16 items-center justify-center rounded-md border border-input bg-background px-2 text-sm",
+          "relative inline-flex h-8 min-w-16 items-center justify-center rounded-md border border-input bg-background px-2 text-sm",
           !disabled && !isEditing && "cursor-ew-resize",
           disabled && "cursor-not-allowed opacity-50",
           className,
         )}
         onMouseDown={handleMouseDown}
       >
-        {isEditing ? (
-          <input
-            ref={inputRef}
-            type="text"
-            value={editValue}
-            onChange={handleInputChange}
-            onBlur={handleInputBlur}
-            onKeyDown={handleInputKeyDown}
-            className="w-full bg-transparent text-center outline-none"
-          />
-        ) : (
-          <span className="tabular-nums select-none">
-            {formatValue(value)}
-            {suffix && <span className="ml-0.5 text-muted-foreground">{suffix}</span>}
-          </span>
+        <span className={cn("tabular-nums select-none", isEditing && "invisible")}>
+          {formatValue(value)}
+          {suffix && <span className="ml-0.5 text-muted-foreground">{suffix}</span>}
+        </span>
+        {isEditing && (
+          <div className="absolute inset-px flex items-center justify-center px-2">
+            <input
+              ref={inputRef}
+              type="text"
+              value={editValue}
+              onChange={handleInputChange}
+              onBlur={handleInputBlur}
+              onKeyDown={handleInputKeyDown}
+              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-right text-sm tabular-nums outline-none"
+            />
+            {suffix && (
+              <span className="ml-0.5 shrink-0 text-sm text-muted-foreground">{suffix}</span>
+            )}
+          </div>
         )}
       </div>
     );
