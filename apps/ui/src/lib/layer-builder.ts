@@ -140,6 +140,17 @@ function computeCrossTransition(
   return undefined;
 }
 
+function getCachedKeyframeEvaluator(
+  clip: Pick<TimelineClip, "keyframes" | "id">,
+  evaluatorManager: EvaluatorManager,
+): KeyframeEvaluator | null {
+  if (!clip.keyframes?.tracks?.length) {
+    return null;
+  }
+
+  return evaluatorManager.getEvaluator(clip as TimelineClip);
+}
+
 /**
  * Build render frame and layers for a given timeline time.
  * Shared between preview-panel (live playback) and export (frame rendering).
@@ -192,7 +203,8 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
   const shapeLayers: ShapeLayerData[] = [];
   const visibleLineClips: LineClip[] = [];
   const lineLayers: LineLayerData[] = [];
-  // Map clipId → textureId for clips in cross transitions (need per-clip textures)
+  const visibleMediaAssetCounts = new Map<string, number>();
+  // Map clipId → textureId for clips that need per-clip textures
   const crossTransitionTextureMap = new Map<string, string>();
 
   for (let i = 0; i < clips.length; i++) {
@@ -211,22 +223,23 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
 
     // For cross transition clips that are not normally visible, check if
     // the cross transition is actually active at this time
-    if (!normallyVisible && hasCrossTransition) {
-      const ct = computeCrossTransition(c.id, clips, crossTransitions, timelineTime);
-      if (!ct) continue;
-    }
-
-    // Skip clips on muted tracks
-    if (mutedTrackIds !== null && mutedTrackIds.has(c.trackId)) continue;
-
     const activeCrossTransition = hasCrossTransition
       ? computeCrossTransition(c.id, clips, crossTransitions, timelineTime)
       : undefined;
+    if (!normallyVisible && hasCrossTransition && !activeCrossTransition) continue;
+
+    // Skip clips on muted tracks
+    if (mutedTrackIds !== null && mutedTrackIds.has(c.trackId)) continue;
 
     const type = c.type;
     if (type === "video" || type === "image") {
       const mc = c;
       visibleMediaClips.push(mc);
+      const sourceAssetId = mc.assetId;
+      visibleMediaAssetCounts.set(
+        sourceAssetId,
+        (visibleMediaAssetCounts.get(sourceAssetId) ?? 0) + 1,
+      );
       // When a clip is in a cross transition, use its clip ID as texture key
       // so that two clips from the same asset get separate textures.
       const textureId = activeCrossTransition ? mc.id : mc.assetId;
@@ -269,10 +282,10 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
       let style = sc.shapeStyle;
       let opacity = sc.effects?.opacity ?? 1;
 
-      if (sc.keyframes?.tracks?.length) {
+      const evaluator = getCachedKeyframeEvaluator(sc, evaluatorManager);
+      if (evaluator) {
         // Keyframes are in seconds — convert frame-based local time to seconds
         const localTimeSeconds = framesToSeconds(timelineTime - sc.startTime, settings.fps);
-        const evaluator = new KeyframeEvaluator(sc.keyframes);
         const ex = evaluator.evaluate("x", localTimeSeconds);
         const ey = evaluator.evaluate("y", localTimeSeconds);
         const ew = evaluator.evaluate("width", localTimeSeconds);
@@ -319,10 +332,10 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
       let style: LineStyle = lc.lineStyle;
       let opacity = lc.effects?.opacity ?? 1;
 
-      if (lc.keyframes?.tracks?.length) {
+      const evaluator = getCachedKeyframeEvaluator(lc, evaluatorManager);
+      if (evaluator) {
         // Keyframes are in seconds — convert frame-based local time to seconds
         const localTimeSeconds = framesToSeconds(timelineTime - lc.startTime, settings.fps);
-        const evaluator = new KeyframeEvaluator(lc.keyframes);
         const x1 = evaluator.evaluate("x1", localTimeSeconds);
         const y1 = evaluator.evaluate("y1", localTimeSeconds);
         const x2 = evaluator.evaluate("x2", localTimeSeconds);
@@ -357,6 +370,15 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
       });
     }
     // audio clips are skipped — not rendered visually
+  }
+
+  for (const mediaClip of mediaClipsForRender) {
+    if ((visibleMediaAssetCounts.get(mediaClip.assetId) ?? 0) <= 1) {
+      continue;
+    }
+
+    mediaClip.assetId = mediaClip.id;
+    crossTransitionTextureMap.set(mediaClip.id, mediaClip.id);
   }
 
   // Convert frame-based timeline time to seconds for the RenderFrame

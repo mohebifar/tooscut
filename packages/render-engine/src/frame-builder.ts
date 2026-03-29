@@ -231,7 +231,7 @@ export class EvaluatorManager {
    * Get or create an evaluator for a clip.
    * Recreates the evaluator if keyframes have changed.
    */
-  getEvaluator(clip: TimelineClip): KeyframeEvaluator | null {
+  getEvaluator(clip: Pick<TimelineClip, "keyframes" | "id">): KeyframeEvaluator | null {
     if (!clip.keyframes || clip.keyframes.tracks.length === 0) {
       // No keyframes - remove any cached evaluator
       this.evaluators.delete(clip.id);

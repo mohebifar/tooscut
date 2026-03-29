@@ -95,41 +95,6 @@ impl AudioMixer {
         self.sources.remove(source_id);
     }
 
-    /// Create a new streaming audio source
-    ///
-    /// The source starts empty and can receive PCM data incrementally
-    /// via `append_audio_chunk()`. Audio is playable immediately (silence
-    /// for regions not yet received).
-    pub fn create_streaming_source(
-        &mut self,
-        source_id: &str,
-        sample_rate: u32,
-        channels: u32,
-        estimated_duration: Option<f64>,
-    ) {
-        let source = AudioClipSource::new_streaming(
-            source_id.to_string(),
-            sample_rate,
-            channels,
-            estimated_duration,
-        );
-        self.sources.insert(source_id.to_string(), source);
-    }
-
-    /// Append a chunk of interleaved PCM data to a streaming source
-    pub fn append_audio_chunk(&mut self, source_id: &str, chunk: &[f32]) {
-        if let Some(source) = self.sources.get_mut(source_id) {
-            source.append_chunk(chunk);
-        }
-    }
-
-    /// Mark a streaming source as complete (all data received)
-    pub fn finalize_audio(&mut self, source_id: &str) {
-        if let Some(source) = self.sources.get_mut(source_id) {
-            source.finalize();
-        }
-    }
-
     /// Create a windowed audio source (metadata only, fixed-size buffer)
     pub fn create_windowed_source(
         &mut self,

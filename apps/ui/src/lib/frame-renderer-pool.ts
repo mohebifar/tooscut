@@ -1,12 +1,13 @@
 /**
  * Frame Renderer Worker Pool
  *
- * Manages a pool of frame renderer workers for parallel export.
+ * Manages multiple decode+render workers for parallel export.
  * Each worker has its own WASM compositor instance.
+ * Workers return GPU-backed VideoFrames; encoding happens on main thread.
  *
  * Architecture:
- * - Round-robin task distribution
- * - Async generator yields results as they complete
+ * - N workers decode + render in parallel (decode is the bottleneck)
+ * - Queue-based dispatch with result notification
  * - Handles font and texture preloading across all workers
  */
 
@@ -17,6 +18,7 @@ import type {
   FrameRendererWorkerApi,
   RenderFrameTask,
   RenderFrameResult,
+  RenderProfileData,
   FrameRendererConfig,
 } from "../workers/frame-renderer.worker";
 
@@ -39,27 +41,25 @@ interface WorkerEntry {
  * Pool of frame renderer workers for parallel export.
  */
 export class FrameRendererPool {
+  private static readonly DEFAULT_BATCH_SIZE = 8;
   private workers: WorkerEntry[] = [];
   private workerCount: number;
   private width: number;
   private height: number;
+  private batchSize: number;
   private initialized = false;
 
   /**
    * Main-thread fallback loaders for videos that WebCodecs can't decode.
-   * Uses HTMLVideoElement which supports more codecs via platform media decoders.
    */
   private fallbackLoaders = new Map<string, VideoFrameLoader>();
-
-  /**
-   * Per-asset lock to serialize fallback frame extraction (avoids seek races).
-   */
   private fallbackLocks = new Map<string, Promise<void>>();
 
   constructor(config: FrameRendererPoolConfig) {
     this.workerCount = config.workerCount;
     this.width = config.width;
     this.height = config.height;
+    this.batchSize = FrameRendererPool.DEFAULT_BATCH_SIZE;
   }
 
   /**
@@ -98,23 +98,11 @@ export class FrameRendererPool {
   }
 
   /**
-   * Resize all workers.
-   */
-  async resize(width: number, height: number): Promise<void> {
-    this.width = width;
-    this.height = height;
-
-    await Promise.all(this.workers.map((entry) => entry.api.resize(width, height)));
-  }
-
-  /**
    * Load a font into all workers.
    */
   async loadFont(fontFamily: string, fontData: Uint8Array): Promise<void> {
-    // Load font into each worker (need to transfer a copy of the data)
     await Promise.all(
       this.workers.map(async (entry) => {
-        // Create a copy for each worker since we're transferring
         const dataCopy = new Uint8Array(fontData);
         return entry.api.loadFont(fontFamily, Comlink.transfer(dataCopy, [dataCopy.buffer]));
       }),
@@ -123,11 +111,6 @@ export class FrameRendererPool {
 
   /**
    * Load a video asset into all workers for frame extraction.
-   *
-   * If MediaBunny/WebCodecs can't decode the video in the worker (codec not
-   * supported), falls back to an HTMLVideoElement-based loader on the main
-   * thread. Frames are then extracted on the main thread and transferred to
-   * workers before each render call.
    */
   async loadVideoAsset(assetId: string, blob: Blob): Promise<void> {
     const results = await Promise.all(
@@ -152,10 +135,8 @@ export class FrameRendererPool {
    * Upload an image texture to all workers.
    */
   async uploadBitmap(bitmap: ImageBitmap, textureId: string): Promise<void> {
-    // Create a bitmap copy for each worker
     await Promise.all(
       this.workers.map(async (entry) => {
-        // Create a copy of the bitmap for each worker
         const copy = await createImageBitmap(bitmap);
         await entry.api.uploadBitmap(Comlink.transfer(copy, [copy]), textureId);
       }),
@@ -164,145 +145,169 @@ export class FrameRendererPool {
 
   /**
    * Render frames using the worker pool.
+   * Tasks are pulled lazily from the iterable. Workers dispatch via queue.
    * Yields results as they complete (not necessarily in order).
-   *
-   * @param tasks - Array of frame render tasks
-   * @param onProgress - Optional callback for progress updates
    */
   async *renderFrames(
-    tasks: RenderFrameTask[],
+    tasks: Iterable<RenderFrameTask>,
+    total: number,
     onProgress?: (rendered: number, total: number) => void,
   ): AsyncGenerator<RenderFrameResult> {
     if (!this.initialized) {
       throw new Error("FrameRendererPool not initialized");
     }
 
-    const total = tasks.length;
     let rendered = 0;
-    let taskIndex = 0;
+    const taskIterator = tasks[Symbol.iterator]();
+    let tasksDone = false;
 
-    // Queue of pending promises with their task indices
-    const pending = new Map<number, Promise<RenderFrameResult>>();
+    // Result queue — workers push completed frames, main loop pulls
+    const resultQueue: RenderFrameResult[] = [];
+    let resolveWait: (() => void) | null = null;
 
-    // Function to assign work to an available worker (capped to prevent unbounded buffering)
+    const notifyResult = () => {
+      if (resolveWait) {
+        resolveWait();
+        resolveWait = null;
+      }
+    };
+
+    const waitForResult = () =>
+      new Promise<void>((resolve) => {
+        if (resultQueue.length > 0) {
+          resolve();
+        } else {
+          resolveWait = resolve;
+        }
+      });
+
+    let inFlight = 0;
+
+    const pullBatch = (): RenderFrameTask[] => {
+      const batch: RenderFrameTask[] = [];
+
+      while (batch.length < this.batchSize) {
+        const next = taskIterator.next();
+        if (next.done) {
+          tasksDone = true;
+          break;
+        }
+        batch.push(next.value);
+      }
+
+      return batch;
+    };
+
+    // Assign work to available workers, pulling tasks lazily
     const assignWork = () => {
-      while (taskIndex < total && pending.size < this.workerCount) {
-        // Find an available worker
+      while (!tasksDone && inFlight < this.workerCount) {
         const workerIndex = this.workers.findIndex((w) => !w.busy);
         if (workerIndex === -1) break;
 
+        const batch = pullBatch();
+        if (batch.length === 0) {
+          break;
+        }
+
         const availableWorker = this.workers[workerIndex];
-        const task = tasks[taskIndex];
-        const currentIndex = taskIndex;
-        taskIndex++;
 
         availableWorker.busy = true;
-        const busyCount = this.workers.filter((w) => w.busy).length;
-        console.log(
-          `[FrameRendererPool] Worker ${workerIndex} rendering frame ${task.frameIndex} (${busyCount}/${this.workerCount} workers busy)`,
-        );
+        inFlight++;
 
-        const promise = (async () => {
+        void (async () => {
           try {
-            // Pre-extract and upload frames for videos that need main-thread fallback
-            await this.uploadFallbackTextures(task, availableWorker);
-
-            const result = await availableWorker.api.renderFrame(task);
-            return result;
+            await this.uploadFallbackTextures(batch, availableWorker);
+            const results = await availableWorker.api.renderFrames(batch);
+            resultQueue.push(...results);
+          } catch (error) {
+            const failedFrames = batch.map((task) => task.frameIndex).join(", ");
+            console.error(`[FrameRendererPool] Frames ${failedFrames} failed:`, error);
+            resultQueue.push(
+              ...batch.map((task) => ({
+                frameIndex: task.frameIndex,
+                videoFrame: null,
+              })),
+            );
           } finally {
             availableWorker.busy = false;
+            inFlight--;
+            assignWork();
+            notifyResult();
           }
         })();
-
-        pending.set(currentIndex, promise);
       }
     };
 
     // Initial work assignment
     assignWork();
-    console.log(`[FrameRendererPool] Initial assignment: ${pending.size} frames queued`);
 
-    // Process results as they complete
-    while (pending.size > 0) {
-      // Wait for any pending promise to complete
-      const results = await Promise.race(
-        Array.from(pending.entries()).map(async ([idx, promise]) => {
-          const result = await promise;
-          return { idx, result };
-        }),
-      );
-
-      pending.delete(results.idx);
-      rendered++;
-
-      if (onProgress) {
-        onProgress(rendered, total);
+    // Yield results as they arrive
+    while (rendered < total) {
+      if (resultQueue.length === 0) {
+        await waitForResult();
       }
 
-      // Assign more work if available
-      assignWork();
+      while (resultQueue.length > 0) {
+        const result = resultQueue.shift()!;
+        rendered++;
 
-      yield results.result;
+        if (onProgress) {
+          onProgress(rendered, total);
+        }
+
+        yield result;
+      }
     }
   }
 
   /**
    * Extract a frame on the main thread using HTMLVideoElement fallback
-   * and upload it to the target worker. Serializes per-asset to avoid
-   * HTMLVideoElement seek races.
+   * and upload it to the target worker.
    */
-  private async uploadFallbackTextures(task: RenderFrameTask, worker: WorkerEntry): Promise<void> {
-    for (const req of task.textureRequests) {
-      if (req.type !== "video" || !this.fallbackLoaders.has(req.assetId)) continue;
+  private async uploadFallbackTextures(
+    tasks: RenderFrameTask[],
+    worker: WorkerEntry,
+  ): Promise<void> {
+    for (const task of tasks) {
+      for (const req of task.textureRequests) {
+        if (req.type !== "video" || !this.fallbackLoaders.has(req.assetId)) continue;
 
-      const uploadId = req.textureId ?? req.assetId;
+        const uploadId = req.textureId ?? req.assetId;
 
-      // Serialize per-asset to avoid concurrent HTMLVideoElement seeks
-      const prevLock = this.fallbackLocks.get(req.assetId);
-      if (prevLock) await prevLock;
+        const prevLock = this.fallbackLocks.get(req.assetId);
+        if (prevLock) await prevLock;
 
-      let releaseLock: () => void;
-      const lock = new Promise<void>((r) => {
-        releaseLock = r;
-      });
-      this.fallbackLocks.set(req.assetId, lock);
+        let releaseLock: () => void;
+        const lock = new Promise<void>((r) => {
+          releaseLock = r;
+        });
+        this.fallbackLocks.set(req.assetId, lock);
 
-      try {
-        const loader = this.fallbackLoaders.get(req.assetId)!;
-        const bitmap = await loader.getImageBitmap(req.sourceTime);
-        await worker.api.uploadBitmap(Comlink.transfer(bitmap, [bitmap]), uploadId);
-      } catch (error) {
-        console.warn(
-          `[FrameRendererPool] Fallback frame extraction failed for ${req.assetId} at ${req.sourceTime}:`,
-          error,
-        );
-      } finally {
-        releaseLock!();
-        if (this.fallbackLocks.get(req.assetId) === lock) {
-          this.fallbackLocks.delete(req.assetId);
+        try {
+          const loader = this.fallbackLoaders.get(req.assetId)!;
+          const bitmap = await loader.getImageBitmap(req.sourceTime);
+          await worker.api.uploadBitmap(Comlink.transfer(bitmap, [bitmap]), uploadId);
+        } catch (error) {
+          console.warn(
+            `[FrameRendererPool] Fallback frame extraction failed for ${req.assetId}:`,
+            error,
+          );
+        } finally {
+          releaseLock!();
+          if (this.fallbackLocks.get(req.assetId) === lock) {
+            this.fallbackLocks.delete(req.assetId);
+          }
         }
       }
     }
   }
 
   /**
-   * Render frames in order.
-   * Waits for all frames to complete and returns them sorted by frameIndex.
+   * Collect and reset render profiling data from all workers.
    */
-  async renderFramesInOrder(
-    tasks: RenderFrameTask[],
-    onProgress?: (rendered: number, total: number) => void,
-  ): Promise<RenderFrameResult[]> {
-    const results: RenderFrameResult[] = [];
-
-    for await (const result of this.renderFrames(tasks, onProgress)) {
-      results.push(result);
-    }
-
-    // Sort by frame index
-    results.sort((a, b) => a.frameIndex - b.frameIndex);
-
-    return results;
+  async getAndResetProfile(): Promise<RenderProfileData | null> {
+    const profiles = await Promise.all(this.workers.map((entry) => entry.api.getAndResetProfile()));
+    return profiles.find((p) => p != null) ?? null;
   }
 
   /**
@@ -327,7 +332,6 @@ export class FrameRendererPool {
     this.workers = [];
     this.initialized = false;
 
-    // Clean up fallback loaders
     for (const loader of this.fallbackLoaders.values()) {
       loader.dispose();
     }
@@ -335,9 +339,6 @@ export class FrameRendererPool {
     this.fallbackLocks.clear();
   }
 
-  /**
-   * Get the number of workers in the pool.
-   */
   get size(): number {
     return this.workerCount;
   }

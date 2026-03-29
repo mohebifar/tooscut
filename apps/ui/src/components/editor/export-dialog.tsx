@@ -3,6 +3,7 @@
  *
  * Provides UI for video export settings and progress display.
  * Supports resolution presets, frame rate, quality settings.
+ * Streams output directly to disk via File System Access API.
  */
 
 import { DownloadIcon, XIcon } from "lucide-react";
@@ -51,13 +52,6 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
 function getStageLabel(stage: string): string {
   switch (stage) {
     case "preparing":
@@ -87,6 +81,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
   // Export state
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
+  const [exportFileName, setExportFileName] = useState<string | null>(null);
   const { startExport, cancelExport, progress, isExporting } = useMp4Export();
 
   // Reset state when dialog opens
@@ -98,6 +93,23 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   }, [open, cancelExport]);
 
   const handleExport = useCallback(async () => {
+    // Prompt user to pick save location first
+    let fileHandle: FileSystemFileHandle;
+    try {
+      fileHandle = await window.showSaveFilePicker({
+        suggestedName: `export-${Date.now()}.mp4`,
+        types: [
+          {
+            description: "MP4 Video",
+            accept: { "video/mp4": [".mp4"] },
+          },
+        ],
+      });
+    } catch {
+      // User cancelled the file picker
+      return;
+    }
+
     const qualityPreset = QUALITY_PRESETS.find((q) => q.label === quality);
 
     const options: ExportOptions = {
@@ -105,7 +117,10 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
       height: settings.height,
       frameRate: settings.fps.numerator / settings.fps.denominator,
       videoBitrate: qualityPreset?.bitrate,
+      fileHandle,
     };
+
+    setExportFileName(fileHandle.name);
 
     try {
       const result = await startExport(options);
@@ -123,19 +138,6 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
     cancelExport();
     setExportResult(null);
   }, [cancelExport]);
-
-  const handleDownload = useCallback(() => {
-    if (!exportResult) return;
-
-    const url = URL.createObjectURL(exportResult.blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `export-${Date.now()}.mp4`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [exportResult]);
 
   const handleClose = useCallback(() => {
     if (isExporting) {
@@ -203,10 +205,14 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
                 <Progress value={progress?.progress ?? 0} />
 
                 {progress && progress.stage === "rendering" && (
-                  <div className="grid grid-cols-2 gap-4 text-sm text-muted-foreground">
+                  <div className="grid grid-cols-2 gap-4 font-mono text-sm text-muted-foreground">
                     <div>
                       <span className="font-medium">Frame: </span>
                       {progress.currentFrame} / {progress.totalFrames}
+                    </div>
+                    <div>
+                      <span className="font-medium">Speed: </span>
+                      {progress.fps !== null ? `${progress.fps} fps` : "—"}
                     </div>
                     <div>
                       <span className="font-medium">Elapsed: </span>
@@ -229,16 +235,15 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
                 {isComplete && exportResult && (
                   <div className="rounded-md bg-muted p-3 text-sm">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <span className="font-medium">Size: </span>
-                        {formatFileSize(exportResult.size)}
-                      </div>
+                    {exportFileName && (
+                      <p className="mb-2 font-medium">Saved as {exportFileName}</p>
+                    )}
+                    <div className="grid grid-cols-2 gap-2 text-muted-foreground">
                       <div>
                         <span className="font-medium">Duration: </span>
                         {formatTime(exportResult.duration)}
                       </div>
-                      <div className="col-span-2">
+                      <div>
                         <span className="font-medium">Render time: </span>
                         {formatTime(exportResult.renderTime)}
                       </div>
@@ -271,15 +276,9 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
           )}
 
           {isComplete && (
-            <>
-              <Button variant="outline" onClick={handleClose}>
-                Close
-              </Button>
-              <Button onClick={handleDownload}>
-                <DownloadIcon className="mr-2 size-4" />
-                Download
-              </Button>
-            </>
+            <Button variant="outline" onClick={handleClose}>
+              Done
+            </Button>
           )}
 
           {hasError && (

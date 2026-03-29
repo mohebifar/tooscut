@@ -1,3 +1,5 @@
+/// <reference lib="webworker" />
+
 /**
  * Web Worker for extracting audio waveform data using MediaBunny.
  * Runs off the main thread for better performance.

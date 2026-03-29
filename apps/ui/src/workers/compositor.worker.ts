@@ -1,3 +1,5 @@
+/// <reference lib="webworker" />
+
 /**
  * Compositor Web Worker
  *
@@ -10,8 +12,7 @@
  * - No data returned to main thread (canvas updates visible automatically)
  */
 
-import type { RenderFrame } from "@tooscut/render-engine";
-
+import { Compositor, initCompositorWasm, type RenderFrame } from "@tooscut/render-engine";
 import * as Comlink from "comlink";
 
 // ===================== TYPES =====================
@@ -27,9 +28,7 @@ export interface CompositorWorkerConfig {
 
 // ===================== WORKER STATE =====================
 
-let compositor: Awaited<
-  ReturnType<typeof import("@tooscut/render-engine").Compositor.fromOffscreenCanvas>
-> | null = null;
+let compositor: Awaited<ReturnType<typeof Compositor.fromOffscreenCanvas>> | null = null;
 let canvas: OffscreenCanvas | null = null;
 let isInitialized = false;
 
@@ -50,9 +49,6 @@ async function initialize(config: CompositorWorkerConfig): Promise<void> {
   try {
     canvas = config.canvas;
     const { width, height } = config;
-
-    // Import and initialize the compositor module
-    const { Compositor, initCompositorWasm } = await import("@tooscut/render-engine");
 
     // Initialize WASM module
     await initCompositorWasm();
@@ -191,7 +187,10 @@ async function captureThumbnail(
   const thumbCtx = thumbCanvas.getContext("2d")!;
   thumbCtx.drawImage(fullCanvas, 0, 0, thumbWidth, thumbHeight);
 
-  const blob = await thumbCanvas.convertToBlob({ type: "image/jpeg", quality: 0.7 });
+  const blob = await thumbCanvas.convertToBlob({
+    type: "image/jpeg",
+    quality: 0.7,
+  });
   return blob.arrayBuffer();
 }
 
