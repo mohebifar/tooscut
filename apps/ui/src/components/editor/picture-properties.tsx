@@ -1,8 +1,10 @@
+import { useState } from "react";
+
 import type { Effects } from "@tooscut/render-engine";
 
 import { NumericInput } from "../ui/numeric-input";
 import { KeyframeInput } from "./keyframe-input";
-import { PropertySection, PropertyRow } from "./property-shared";
+import { PropertySection, PropertyRow, LinkablePropertySection } from "./property-shared";
 
 interface PicturePropertiesProps {
   clipId: string;
@@ -33,6 +35,28 @@ export function PictureProperties({
   onEffectsChange,
   onSpeedChange,
 }: PicturePropertiesProps) {
+  const [scaleLinked, setScaleLinked] = useState(true);
+
+  const handleScaleXChange = (value: number) => {
+    if (scaleLinked) {
+      const ratio = value / transform.scaleX;
+      onTransformChange("scaleX", value);
+      onTransformChange("scaleY", transform.scaleY * ratio);
+    } else {
+      onTransformChange("scaleX", value);
+    }
+  };
+
+  const handleScaleYChange = (value: number) => {
+    if (scaleLinked) {
+      const ratio = value / transform.scaleY;
+      onTransformChange("scaleY", value);
+      onTransformChange("scaleX", transform.scaleX * ratio);
+    } else {
+      onTransformChange("scaleY", value);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <PropertySection title="Position">
@@ -64,14 +88,18 @@ export function PictureProperties({
         </PropertyRow>
       </PropertySection>
 
-      <PropertySection title="Scale">
+      <LinkablePropertySection
+        title="Scale"
+        linked={scaleLinked}
+        onLinkedChange={setScaleLinked}
+      >
         <PropertyRow label="X">
           <KeyframeInput
             clipId={clipId}
             clipStartTime={clipStartTime}
             property="scaleX"
             baseValue={transform.scaleX}
-            onChange={(v) => onTransformChange("scaleX", v)}
+            onChange={handleScaleXChange}
             suffix="%"
             precision={0}
             step={0.01}
@@ -87,7 +115,7 @@ export function PictureProperties({
             clipStartTime={clipStartTime}
             property="scaleY"
             baseValue={transform.scaleY}
-            onChange={(v) => onTransformChange("scaleY", v)}
+            onChange={handleScaleYChange}
             suffix="%"
             precision={0}
             step={0.01}
@@ -97,7 +125,7 @@ export function PictureProperties({
             defaultValue={1}
           />
         </PropertyRow>
-      </PropertySection>
+      </LinkablePropertySection>
 
       <PropertySection title="Rotation">
         <PropertyRow label="Angle">
