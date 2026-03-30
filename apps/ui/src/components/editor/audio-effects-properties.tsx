@@ -4,6 +4,7 @@ import { useCallback } from "react";
 
 import { Button } from "../ui/button";
 import { NumericInput } from "../ui/numeric-input";
+import { EqVisualizer } from "./eq-visualizer";
 import { KeyframeInput } from "./keyframe-input";
 import { PropertyRow } from "./property-shared";
 
@@ -81,86 +82,16 @@ export function AudioEffectsProperties({
           onToggle={(v) => onToggleEffect("eq", v)}
         />
         {eqEnabled && (
-          <div className="space-y-2">
-            <PropertyRow label="Low">
-              <KeyframeInput
-                clipId={clipId}
-                clipStartTime={clipStartTime}
-                property="eqLowGain"
-                baseValue={audioEffects?.eq?.lowGain ?? 0}
-                onChange={(v) => handleEqChange("lowGain", v)}
-                suffix="dB"
-                precision={1}
-                step={0.5}
-                min={-24}
-                max={24}
-                defaultValue={0}
-              />
-            </PropertyRow>
-            <PropertyRow label="Mid">
-              <KeyframeInput
-                clipId={clipId}
-                clipStartTime={clipStartTime}
-                property="eqMidGain"
-                baseValue={audioEffects?.eq?.midGain ?? 0}
-                onChange={(v) => handleEqChange("midGain", v)}
-                suffix="dB"
-                precision={1}
-                step={0.5}
-                min={-24}
-                max={24}
-                defaultValue={0}
-              />
-            </PropertyRow>
-            <PropertyRow label="High">
-              <KeyframeInput
-                clipId={clipId}
-                clipStartTime={clipStartTime}
-                property="eqHighGain"
-                baseValue={audioEffects?.eq?.highGain ?? 0}
-                onChange={(v) => handleEqChange("highGain", v)}
-                suffix="dB"
-                precision={1}
-                step={0.5}
-                min={-24}
-                max={24}
-                defaultValue={0}
-              />
-            </PropertyRow>
-            <PropertyRow label="Low Freq">
-              <NumericInput
-                value={audioEffects?.eq?.lowFreq ?? 200}
-                onChange={(v) => handleEqChange("lowFreq", v)}
-                suffix="Hz"
-                precision={0}
-                step={10}
-                min={20}
-                max={2000}
-              />
-            </PropertyRow>
-            <PropertyRow label="Mid Freq">
-              <NumericInput
-                value={audioEffects?.eq?.midFreq ?? 1000}
-                onChange={(v) => handleEqChange("midFreq", v)}
-                suffix="Hz"
-                precision={0}
-                step={50}
-                min={100}
-                max={10000}
-              />
-            </PropertyRow>
-            <PropertyRow label="High Freq">
-              <NumericInput
-                value={audioEffects?.eq?.highFreq ?? 5000}
-                onChange={(v) => handleEqChange("highFreq", v)}
-                suffix="Hz"
-                precision={0}
-                step={100}
-                min={1000}
-                max={20000}
-              />
-            </PropertyRow>
-          </div>
+          <EqVisualizer
+            lowGain={audioEffects?.eq?.lowGain ?? 0}
+            midGain={audioEffects?.eq?.midGain ?? 0}
+            highGain={audioEffects?.eq?.highGain ?? 0}
+            lowFreq={audioEffects?.eq?.lowFreq ?? 200}
+            midFreq={audioEffects?.eq?.midFreq ?? 1000}
+            highFreq={audioEffects?.eq?.highFreq ?? 5000}
+            onGainChange={(band, value) => handleEqChange(band, value)}
+            onFreqChange={(band, value) => handleEqChange(band, value)}
+          />
         )}
       </div>
 

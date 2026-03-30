@@ -820,6 +820,31 @@ export class BrowserAudioEngine {
   }
 
   /**
+   * Get frequency-domain data (magnitude in dB) from the left channel analyser.
+   * Returns null if the engine isn't ready.
+   * The returned array has `fftSize/2` bins, each representing a frequency band
+   * from 0 Hz to sampleRate/2 Hz (linear spacing).
+   */
+  getFrequencyData(): Float32Array | null {
+    if (!this.analyserL) return null;
+    const buf = new Float32Array(this.analyserL.frequencyBinCount);
+    this.analyserL.getFloatFrequencyData(buf);
+    return buf;
+  }
+
+  /**
+   * Get the analyser's FFT bin count and the audio context sample rate,
+   * needed to map bin indices to frequencies.
+   */
+  getAnalyserInfo(): { binCount: number; sampleRate: number } | null {
+    if (!this.analyserL || !this.audioContext) return null;
+    return {
+      binCount: this.analyserL.frequencyBinCount,
+      sampleRate: this.audioContext.sampleRate,
+    };
+  }
+
+  /**
    * Clean up resources
    */
   dispose(): void {
