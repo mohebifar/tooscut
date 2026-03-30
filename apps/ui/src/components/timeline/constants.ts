@@ -12,18 +12,6 @@ export const RULER_HEIGHT = 40;
 /** Default height of each track */
 export const DEFAULT_TRACK_HEIGHT = 60;
 
-/** @deprecated Use DEFAULT_TRACK_HEIGHT instead */
-export const TRACK_HEIGHT = DEFAULT_TRACK_HEIGHT;
-
-/** Minimum track height when resizing */
-export const MIN_TRACK_HEIGHT = 40;
-
-/** Maximum track height when resizing */
-export const MAX_TRACK_HEIGHT = 300;
-
-/** Height of the section divider between video and audio tracks */
-export const SECTION_DIVIDER_HEIGHT = 8;
-
 /** Padding inside clips */
 export const CLIP_PADDING = 4;
 
@@ -35,9 +23,6 @@ export const MAX_ZOOM = 20;
 
 /** Minimum zoom level (pixels per frame) */
 export const MIN_ZOOM = 0.03;
-
-/** Default zoom level (pixels per frame) */
-export const DEFAULT_ZOOM = 1.67;
 
 /** Colors for the timeline */
 export const COLORS = {

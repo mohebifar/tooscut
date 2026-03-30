@@ -38,7 +38,7 @@ import type {
   ProjectSettings,
 } from "../state/video-editor-store";
 
-export interface LayerBuilderInput {
+interface LayerBuilderInput {
   clips: EditorClip[];
   tracks: EditableTrack[];
   crossTransitions: CrossTransitionRef[];
@@ -50,7 +50,7 @@ export interface LayerBuilderInput {
   includeMutedTracks?: boolean;
 }
 
-export interface LayerBuilderOutput {
+interface LayerBuilderOutput {
   frame: RenderFrame;
   visibleMediaClips: (VideoClip | ImageClip)[];
   visibleTextClips: TextClip[];
@@ -421,40 +421,4 @@ export function calculateSourceTime(
   const speed = clip.speed ?? 1;
   const sourceFrames = clip.inPoint + clipLocalFrames * speed;
   return framesToSeconds(sourceFrames, fps);
-}
-
-/**
- * Get all unique asset IDs from visible clips.
- * Useful for preloading textures.
- */
-export function getVisibleAssetIds(visibleClips: EditorClip[]): Set<string> {
-  const assetIds = new Set<string>();
-  for (const clip of visibleClips) {
-    if ("assetId" in clip) {
-      assetIds.add(clip.assetId);
-    }
-  }
-  return assetIds;
-}
-
-/**
- * Get all frames that need to be rendered for export.
- * @param durationFrames - Total project duration in frames
- * @returns Array of frame indices
- */
-export function getExportFrames(durationFrames: number): Array<{ frameIndex: number }> {
-  return Array.from({ length: durationFrames }, (_, i) => ({ frameIndex: i }));
-}
-
-/**
- * Get all unique font families used in text clips.
- */
-export function getTextClipFontFamilies(clips: EditorClip[]): Set<string> {
-  const families = new Set<string>();
-  for (const clip of clips) {
-    if (clip.type === "text") {
-      families.add(clip.textStyle.font_family);
-    }
-  }
-  return families;
 }

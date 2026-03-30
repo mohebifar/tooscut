@@ -152,13 +152,3 @@ export function getAdjacentKeyframeTimes(
 
   return [prevTime, nextTime];
 }
-
-/**
- * Get the number of keyframes for a property.
- */
-export function getKeyframeCount(
-  keyframes: KeyframeTracks | undefined,
-  property: AnimatableProperty,
-): number {
-  return getKeyframesForProperty(keyframes, property).length;
-}

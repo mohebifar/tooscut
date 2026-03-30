@@ -16,7 +16,7 @@ import * as Comlink from "comlink";
 
 import type { CompositorWorkerApi } from "./compositor.worker";
 
-export interface CompositorApiConfig {
+interface CompositorApiConfig {
   canvas: HTMLCanvasElement;
   width: number;
   height: number;
@@ -192,75 +192,4 @@ export function setSharedCompositor(compositor: CompositorApi | null): void {
 
 export function getSharedCompositor(): CompositorApi | null {
   return sharedCompositor;
-}
-
-/**
- * Create ImageBitmaps from video elements for transfer to worker.
- * Uses createImageBitmap for optimal performance.
- */
-export async function createTexturesFromVideos(
-  videoElements: Map<string, HTMLVideoElement>,
-): Promise<Map<string, ImageBitmap>> {
-  const textures = new Map<string, ImageBitmap>();
-
-  const entries = Array.from(videoElements.entries());
-
-  // Create all bitmaps in parallel
-  const results = await Promise.allSettled(
-    entries.map(async ([textureId, video]) => {
-      // Skip if video not ready
-      if (video.readyState < 2 || video.videoWidth === 0) {
-        return { textureId, bitmap: null };
-      }
-
-      try {
-        const bitmap = await createImageBitmap(video);
-        return { textureId, bitmap };
-      } catch {
-        return { textureId, bitmap: null };
-      }
-    }),
-  );
-
-  for (const result of results) {
-    if (result.status === "fulfilled" && result.value.bitmap) {
-      textures.set(result.value.textureId, result.value.bitmap);
-    }
-  }
-
-  return textures;
-}
-
-/**
- * Create ImageBitmaps from image elements for transfer to worker.
- */
-export async function createTexturesFromImages(
-  imageElements: Map<string, HTMLImageElement>,
-): Promise<Map<string, ImageBitmap>> {
-  const textures = new Map<string, ImageBitmap>();
-
-  const entries = Array.from(imageElements.entries());
-
-  const results = await Promise.allSettled(
-    entries.map(async ([textureId, image]) => {
-      if (!image.complete || image.naturalWidth === 0) {
-        return { textureId, bitmap: null };
-      }
-
-      try {
-        const bitmap = await createImageBitmap(image);
-        return { textureId, bitmap };
-      } catch {
-        return { textureId, bitmap: null };
-      }
-    }),
-  );
-
-  for (const result of results) {
-    if (result.status === "fulfilled" && result.value.bitmap) {
-      textures.set(result.value.textureId, result.value.bitmap);
-    }
-  }
-
-  return textures;
 }

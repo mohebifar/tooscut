@@ -1,4 +1,4 @@
-export type TrackedProperties = {
+type TrackedProperties = {
   /**
    * Hostname of server
    *
@@ -55,7 +55,7 @@ export type TrackedProperties = {
   website: string;
 };
 
-export type WithRequired<T, K extends keyof T> = T & { [P in K]-?: T[P] };
+type WithRequired<T, K extends keyof T> = T & { [P in K]-?: T[P] };
 
 /**
  *
@@ -65,23 +65,21 @@ export type WithRequired<T, K extends keyof T> = T & { [P in K]-?: T[P] };
  * - Arrays are converted to a String, with the same max length of 500.
  * - Objects have a max of 50 properties. Arrays are considered 1 property.
  */
-export interface EventData {
+interface EventData {
   [key: string]: number | string | EventData | number[] | string[] | EventData[];
 }
 
-export type EventProperties = {
+type EventProperties = {
   /**
    * NOTE: event names will be truncated past 50 characters
    */
   name: string;
   data?: EventData;
 } & WithRequired<TrackedProperties, "website">;
-export type PageViewProperties = WithRequired<TrackedProperties, "website">;
-export type CustomEventFunction = (
-  props: PageViewProperties,
-) => EventProperties | PageViewProperties;
+type PageViewProperties = WithRequired<TrackedProperties, "website">;
+type CustomEventFunction = (props: PageViewProperties) => EventProperties | PageViewProperties;
 
-export type UmamiTracker = {
+type UmamiTracker = {
   track: {
     /**
      * Track a page view

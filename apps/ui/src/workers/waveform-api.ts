@@ -31,22 +31,3 @@ export async function extractWaveform(
   const worker = getWorker();
   return worker.extractWaveform(assetId, url);
 }
-
-/**
- * Clear cached data for an asset.
- */
-export async function clearWaveformCache(assetId?: string): Promise<void> {
-  const worker = getWorker();
-  return worker.clearCache(assetId);
-}
-
-/**
- * Terminate the worker.
- */
-export function terminateWaveformWorker(): void {
-  if (workerRef) {
-    workerRef.terminate();
-    workerRef = null;
-    workerInstance = null;
-  }
-}

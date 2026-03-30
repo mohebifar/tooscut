@@ -4,13 +4,12 @@
   "rules": {
     "no-unused-vars": "warn",
     "no-console": "off",
-    "eqeqeq": ["error", "always", {"null": "ignore"}],
+    "eqeqeq": ["error", "always", { "null": "ignore" }],
     "no-var": "error",
     "prefer-const": "warn",
-
     "typescript/no-floating-promises": "error",
     "typescript/no-misused-promises": "error",
-    "typescript/await-thenable": "error",
+    "typescript/await-thenable": "error"
   },
   "settings": {
     "react": {

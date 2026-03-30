@@ -405,7 +405,7 @@ export async function importFilesWithPicker(
   }
 }
 
-export interface HydratedAsset extends StoreMediaAsset {
+interface HydratedAsset extends StoreMediaAsset {
   file: File;
   size: number;
 }

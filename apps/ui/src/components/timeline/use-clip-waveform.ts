@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { extractWaveform } from "../../workers/waveform-api";
 import { useAssetStore } from "./use-asset-store";
 
-export interface WaveformData {
+interface WaveformData {
   data: number[];
   duration: number;
 }

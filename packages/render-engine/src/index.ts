@@ -62,8 +62,6 @@ export {
   getVisibleClipsWithTransitions,
   buildMediaLayerData,
   buildMediaLayerDataSync,
-  buildLayerData, // deprecated alias
-  buildLayerDataSync, // deprecated alias
   buildRenderFrame,
   buildRenderFrameSync,
   type ClipBounds,

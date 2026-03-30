@@ -228,23 +228,6 @@ export function getEvaluatedLineBox(clip: LineClip, currentTime?: number): LineB
 }
 
 /**
- * Get the project-space center of a clip's bounding box.
- * Used for snap target collection.
- */
-export function getClipProjectCenter(
-  clip: EditorClip,
-  evaluatedTransform: Partial<Transform>,
-  ctx: BoundsContext,
-): { x: number; y: number } | null {
-  const bounds = getClipDisplayBounds(clip, evaluatedTransform, ctx);
-  if (!bounds) return null;
-  return {
-    x: (bounds.x + bounds.width / 2) / ctx.displayScale,
-    y: (bounds.y + bounds.height / 2) / ctx.displayScale,
-  };
-}
-
-/**
  * Get the project-space edges of a clip's bounding box.
  */
 export function getClipProjectEdges(

@@ -357,18 +357,6 @@ export function buildMediaLayerDataSync(
 }
 
 /**
- * Legacy alias for buildMediaLayerData.
- * @deprecated Use buildMediaLayerData instead.
- */
-export const buildLayerData = buildMediaLayerData;
-
-/**
- * Legacy alias for buildMediaLayerDataSync.
- * @deprecated Use buildMediaLayerData instead.
- */
-export const buildLayerDataSync = buildMediaLayerDataSync;
-
-/**
  * Input options for building a complete render frame.
  */
 export interface BuildRenderFrameOptions {

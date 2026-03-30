@@ -44,6 +44,8 @@ jobs:
 
       - run: pnpm typecheck
 
+      - run: pnpm knip
+
   test:
     name: Test
     runs-on: ubuntu-latest

@@ -83,49 +83,6 @@ export function getCachedBitmap(
 }
 
 /**
- * Find the nearest cached bitmap for an asset within a time tolerance.
- * Uses binary search on the sorted timestamp index for O(log n) lookup.
- */
-export function getNearestCachedBitmap(
-  assetId: string,
-  timestamp: number,
-  width: number,
-  maxDelta: number = 2.0,
-): ImageBitmap | null {
-  const timestamps = assetTimestamps.get(assetId);
-  if (!timestamps || timestamps.length === 0) return null;
-
-  // Binary search for the closest timestamp
-  let lo = 0;
-  let hi = timestamps.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    if (timestamps[mid] < timestamp) lo = mid + 1;
-    else hi = mid;
-  }
-
-  // Check lo and lo-1 for closest match
-  let bestIdx = lo;
-  if (lo > 0) {
-    const diffLo = Math.abs(timestamps[lo] - timestamp);
-    const diffPrev = Math.abs(timestamps[lo - 1] - timestamp);
-    if (diffPrev < diffLo) bestIdx = lo - 1;
-  }
-
-  const bestTimestamp = timestamps[bestIdx];
-  if (Math.abs(bestTimestamp - timestamp) > maxDelta) return null;
-
-  const key = getCacheKey(assetId, bestTimestamp, width);
-  const entry = cache.get(key);
-  if (entry) {
-    entry.lastAccessed = Date.now();
-    return entry.bitmap;
-  }
-
-  return null;
-}
-
-/**
  * Store a thumbnail bitmap in the cache.
  */
 export function setCachedBitmap(
@@ -207,14 +164,4 @@ export function clearThumbnailCache(assetId?: string): void {
     cache.clear();
     assetTimestamps.clear();
   }
-}
-
-/**
- * Get cache statistics.
- */
-export function getThumbnailCacheStats(): { size: number; maxSize: number } {
-  return {
-    size: cache.size,
-    maxSize: MAX_CACHE_SIZE,
-  };
 }

@@ -19,7 +19,7 @@ export interface LocalProject {
   updatedAt: number;
 }
 
-export interface StoredFileHandle {
+interface StoredFileHandle {
   id: string;
   handle: FileSystemFileHandle;
   fileName: string;

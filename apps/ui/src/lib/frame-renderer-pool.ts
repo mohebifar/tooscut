@@ -22,7 +22,7 @@ import type {
   FrameRendererConfig,
 } from "../workers/frame-renderer.worker";
 
-export interface FrameRendererPoolConfig {
+interface FrameRendererPoolConfig {
   /** Number of workers in the pool */
   workerCount: number;
   /** Output width in pixels */

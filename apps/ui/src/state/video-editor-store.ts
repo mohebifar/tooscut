@@ -119,7 +119,7 @@ export interface LineClip extends VisualClipBase {
 export type EditorClip = VideoClip | AudioClip | ImageClip | TextClip | ShapeClip | LineClip;
 
 /** Input type for adding a new clip (id, inPoint, trackId, transform generated automatically) */
-export interface NewClipInput {
+interface NewClipInput {
   type: EditorClip["type"];
   startTime: number;
   duration: number;

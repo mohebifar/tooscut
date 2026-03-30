@@ -1,6 +1,6 @@
 import type { EditorClip } from "../../state/video-editor-store";
 
-export interface SnapResult {
+interface SnapResult {
   frame: number;
   snapLines: number[];
 }

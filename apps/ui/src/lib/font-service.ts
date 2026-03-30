@@ -53,7 +53,7 @@ export async function fetchFontCatalog(): Promise<FontsourceFontEntry[]> {
  *
  * URL pattern: https://cdn.jsdelivr.net/fontsource/fonts/{fontId}@latest/{subset}-{weight}-{style}.ttf
  */
-export function getTtfUrl(fontId: string, weight: number, italic: boolean, subset: string): string {
+function getTtfUrl(fontId: string, weight: number, italic: boolean, subset: string): string {
   const style = italic ? "italic" : "normal";
   return `${CDN_BASE}/${fontId}@latest/${subset}-${weight}-${style}.ttf`;
 }
@@ -61,7 +61,7 @@ export function getTtfUrl(fontId: string, weight: number, italic: boolean, subse
 /**
  * Download a single subset's TTF font data as Uint8Array.
  */
-export async function downloadSubsetTtf(
+async function downloadSubsetTtf(
   fontId: string,
   weight: number,
   italic: boolean,

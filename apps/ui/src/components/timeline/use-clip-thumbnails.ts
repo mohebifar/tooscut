@@ -49,7 +49,7 @@ export interface ThumbnailSlot {
   slotIndex: number;
 }
 
-export interface ClipThumbnailData {
+interface ClipThumbnailData {
   clipId: string;
   clipType: string;
   assetId: string;

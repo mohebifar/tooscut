@@ -151,14 +151,3 @@ export function KonvaLockOpenIcon({ x, y, size }: { x: number; y: number; size: 
     </Group>
   );
 }
-
-export function KonvaTrashIcon({ x, y, size }: { x: number; y: number; size: number }) {
-  const scale = size / 24;
-  return (
-    <Group x={x} y={y} scaleX={scale} scaleY={scale}>
-      <Path data="M3 6h18" stroke="#ffffff" strokeWidth={2} />
-      <Path data="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" stroke="#ffffff" strokeWidth={2} />
-      <Path data="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" stroke="#ffffff" strokeWidth={2} />
-    </Group>
-  );
-}

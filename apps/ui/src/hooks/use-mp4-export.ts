@@ -52,7 +52,7 @@ export interface ExportOptions {
   fileHandle: FileSystemFileHandle;
 }
 
-export interface ExportProgress {
+interface ExportProgress {
   /** Current stage of export */
   stage: "preparing" | "rendering" | "encoding" | "finalizing" | "complete" | "error";
   /** Progress percentage (0-100) */
@@ -78,7 +78,7 @@ export interface ExportResult {
   renderTime: number;
 }
 
-export interface Mp4ExportHandle {
+interface Mp4ExportHandle {
   /** Start the export process */
   startExport: (options: ExportOptions) => Promise<ExportResult>;
   /** Cancel the current export */

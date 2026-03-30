@@ -1,0 +1,41 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    "apps/ui": {
+      "entry": ["src/routes/**/*.tsx", "src/router.tsx"],
+      "project": ["src/**/*.{ts,tsx}"],
+      "ignoreDependencies": [
+        "tw-animate-css",
+        "tailwindcss",
+        "web-vitals",
+        "@types/color",
+        "@testing-library/dom",
+        "@testing-library/react",
+        "@tanstack/react-devtools",
+        "@tanstack/react-query",
+        "@tanstack/react-router-devtools",
+        "@tanstack/react-router-ssr-query",
+        "@tanstack/router-plugin"
+      ]
+    },
+    "packages/render-engine": {
+      "project": ["src/**/*.ts"]
+    }
+  },
+  "ignoreDependencies": ["shadcn", "oxfmt", "oxlint", "oxlint-tsgolint"],
+  "ignore": [
+    "apps/ui/src/components/ui/context-menu.tsx",
+    "apps/ui/src/components/ui/button.tsx",
+    "apps/ui/src/components/ui/scroll-area.tsx",
+    "apps/ui/src/components/ui/dialog.tsx",
+    "apps/ui/src/components/ui/menubar.tsx",
+    "apps/ui/src/components/ui/popover.tsx",
+    "apps/ui/src/components/ui/select.tsx",
+    "apps/ui/src/components/ui/tabs.tsx",
+    "apps/ui/src/components/ui/toggle.tsx",
+    "apps/ui/src/components/ui/input.tsx",
+    "apps/ui/src/components/ui/numeric-input.tsx",
+    "apps/ui/src/components/ui/color-input.tsx",
+    "apps/ui/src/components/ui/tooltip.tsx"
+  ]
+}
