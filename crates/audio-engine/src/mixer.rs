@@ -128,6 +128,19 @@ impl AudioMixer {
         }
     }
 
+    /// Update sample rate for a source (when decoded rate differs from probe metadata)
+    pub fn update_source_sample_rate(&mut self, source_id: &str, sample_rate: u32) {
+        if let Some(source) = self.sources.get_mut(source_id) {
+            log::debug!(
+                "[AudioMixer] Updating sample rate for {}: {} -> {}",
+                source_id,
+                source.sample_rate,
+                sample_rate
+            );
+            source.set_sample_rate(sample_rate);
+        }
+    }
+
     /// Get buffer misses since last query (diagnostics)
     pub fn get_buffer_misses(&mut self, source_id: &str) -> u64 {
         if let Some(source) = self.sources.get_mut(source_id) {

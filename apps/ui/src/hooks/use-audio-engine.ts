@@ -18,6 +18,14 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { useAssetStore } from "../components/timeline/use-asset-store";
 import { useVideoEditorStore } from "../state/video-editor-store";
 
+/** Module-level ref so other components can access the engine for metering */
+let _audioEngineInstance: BrowserAudioEngine | null = null;
+
+/** Get the current audio engine instance (for metering, etc.) */
+export function getAudioEngine(): BrowserAudioEngine | null {
+  return _audioEngineInstance;
+}
+
 /**
  * Hook to manage audio playback in the video editor
  */
@@ -48,6 +56,7 @@ export function useAudioEngine() {
     });
 
     engineRef.current = engine;
+    _audioEngineInstance = engine;
 
     engine
       .init()
@@ -64,6 +73,7 @@ export function useAudioEngine() {
     return () => {
       engine.dispose();
       engineRef.current = null;
+      _audioEngineInstance = null;
       uploadedSources.clear();
     };
   }, []);
@@ -176,5 +186,6 @@ export function useAudioEngine() {
     isWasmReady,
     error,
     resume,
+    engineRef,
   };
 }

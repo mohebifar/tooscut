@@ -54,6 +54,12 @@ interface ClearSourceBufferMessage {
   sourceId: string;
 }
 
+interface UpdateSourceSampleRateMessage {
+  type: "update-source-sample-rate";
+  sourceId: string;
+  sampleRate: number;
+}
+
 type WorkletMessage =
   | InitMessage
   | RemoveAudioMessage
@@ -63,7 +69,8 @@ type WorkletMessage =
   | SetMasterVolumeMessage
   | CreateWindowedSourceMessage
   | UpdateSourceBufferMessage
-  | ClearSourceBufferMessage;
+  | ClearSourceBufferMessage
+  | UpdateSourceSampleRateMessage;
 
 /**
  * AudioWorkletProcessor that uses WASM for audio mixing.
@@ -130,6 +137,10 @@ class AudioEngineProcessor extends AudioWorkletProcessor {
 
       case "clear-source-buffer":
         this.engine?.clear_source_buffer(message.sourceId);
+        break;
+
+      case "update-source-sample-rate":
+        this.engine?.update_source_sample_rate(message.sourceId, message.sampleRate);
         break;
     }
   }

@@ -170,6 +170,11 @@ impl AudioClipSource {
         self.evict_if_needed();
     }
 
+    /// Update the sample rate (used when decoded audio rate differs from probe metadata)
+    pub fn set_sample_rate(&mut self, sample_rate: u32) {
+        self.sample_rate = sample_rate;
+    }
+
     /// Clear all buffered PCM data (windowed mode, used on seek)
     pub fn clear_buffer(&mut self) {
         self.segments.clear();

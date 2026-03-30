@@ -248,6 +248,13 @@ export class BrowserAudioEngine {
   private isReady = false;
   private config: Required<AudioEngineConfig>;
 
+  // Audio level metering
+  private splitter: ChannelSplitterNode | null = null;
+  private analyserL: AnalyserNode | null = null;
+  private analyserR: AnalyserNode | null = null;
+  private analyserBufferL: Float32Array<ArrayBuffer> | null = null;
+  private analyserBufferR: Float32Array<ArrayBuffer> | null = null;
+
   // Decode-ahead state
   private sources = new Map<string, SourceDecodeState>();
   private currentClips: AudioClipState[] = [];
@@ -292,6 +299,21 @@ export class BrowserAudioEngine {
 
     // Connect to destination
     this.workletNode.connect(this.audioContext.destination);
+
+    // Set up stereo level metering: worklet → splitter → analyserL / analyserR
+    this.splitter = this.audioContext.createChannelSplitter(2);
+    this.analyserL = this.audioContext.createAnalyser();
+    this.analyserR = this.audioContext.createAnalyser();
+    this.analyserL.fftSize = 2048;
+    this.analyserR.fftSize = 2048;
+    this.analyserL.smoothingTimeConstant = 0.8;
+    this.analyserR.smoothingTimeConstant = 0.8;
+    this.analyserBufferL = new Float32Array(this.analyserL.fftSize) as Float32Array<ArrayBuffer>;
+    this.analyserBufferR = new Float32Array(this.analyserR.fftSize) as Float32Array<ArrayBuffer>;
+
+    this.workletNode.connect(this.splitter);
+    this.splitter.connect(this.analyserL, 0);
+    this.splitter.connect(this.analyserR, 1);
 
     // Set up message handling
     this.workletNode.port.onmessage = this.handleWorkletMessage.bind(this);
@@ -586,9 +608,29 @@ export class BrowserAudioEngine {
 
     const sink = new AudioSampleSink(audioTrack);
 
+    let sampleRateCorrected = false;
+
     // Use startTimestamp/endTimestamp to seek directly to the range
     for await (const sample of sink.samples(fromTime, toTime)) {
       if (signal.aborted) break;
+
+      // Detect sample rate mismatch between probe metadata and actual decoded audio
+      // (common with HE-AAC/SBR files where container reports 44100 but decoder outputs 48000)
+      if (!sampleRateCorrected && sample.sampleRate !== state.sampleRate) {
+        const actualRate = sample.sampleRate;
+        console.warn(
+          `[AudioEngine] Sample rate mismatch for ${state.sourceId}: ` +
+            `probe=${state.sampleRate}, decoded=${actualRate}. Correcting.`,
+        );
+        state.sampleRate = actualRate;
+        // Update the WASM source's sample rate so get_sample indexes correctly
+        this.workletNode!.port.postMessage({
+          type: "update-source-sample-rate",
+          sourceId: state.sourceId,
+          sampleRate: actualRate,
+        });
+        sampleRateCorrected = true;
+      }
 
       const sampleTimestamp = sample.timestamp;
       const pcmData = interleaveAudioSample(sample);
@@ -748,9 +790,54 @@ export class BrowserAudioEngine {
   }
 
   /**
+   * Get current stereo audio levels (RMS in dB).
+   * Returns { left, right } where values range from -Infinity (silence) to 0 (full scale).
+   */
+  getLevels(): { left: number; right: number } {
+    if (!this.analyserL || !this.analyserR || !this.analyserBufferL || !this.analyserBufferR) {
+      return { left: -Infinity, right: -Infinity };
+    }
+
+    this.analyserL.getFloatTimeDomainData(this.analyserBufferL);
+    this.analyserR.getFloatTimeDomainData(this.analyserBufferR);
+
+    let sumL = 0;
+    let sumR = 0;
+    const len = this.analyserBufferL.length;
+    for (let i = 0; i < len; i++) {
+      sumL += this.analyserBufferL[i] * this.analyserBufferL[i];
+      sumR += this.analyserBufferR[i] * this.analyserBufferR[i];
+    }
+
+    const rmsL = Math.sqrt(sumL / len);
+    const rmsR = Math.sqrt(sumR / len);
+
+    // Convert to dB (clamped to -60 dB floor)
+    const dbL = rmsL > 0 ? 20 * Math.log10(rmsL) : -Infinity;
+    const dbR = rmsR > 0 ? 20 * Math.log10(rmsR) : -Infinity;
+
+    return { left: dbL, right: dbR };
+  }
+
+  /**
    * Clean up resources
    */
   dispose(): void {
+    if (this.splitter) {
+      this.splitter.disconnect();
+      this.splitter = null;
+    }
+    if (this.analyserL) {
+      this.analyserL.disconnect();
+      this.analyserL = null;
+    }
+    if (this.analyserR) {
+      this.analyserR.disconnect();
+      this.analyserR = null;
+    }
+    this.analyserBufferL = null;
+    this.analyserBufferR = null;
+
     if (this.workletNode) {
       this.workletNode.disconnect();
       this.workletNode = null;

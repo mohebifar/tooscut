@@ -111,6 +111,15 @@ impl AudioEngine {
         self.mixer.clear_source_buffer(source_id);
     }
 
+    /// Update the sample rate for a source
+    ///
+    /// Used when the actual decoded sample rate differs from the container metadata
+    /// (e.g. HE-AAC files where probe reports 44100 but decoder outputs 48000).
+    #[wasm_bindgen]
+    pub fn update_source_sample_rate(&mut self, source_id: &str, sample_rate: u32) {
+        self.mixer.update_source_sample_rate(source_id, sample_rate);
+    }
+
     /// Get buffer misses since last query (diagnostics)
     #[wasm_bindgen]
     pub fn get_buffer_misses(&mut self, source_id: &str) -> u64 {
