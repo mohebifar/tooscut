@@ -46,6 +46,8 @@ export function PropertiesPanel() {
   const showText = clipType === "text";
   const showShape = clipType === "shape";
   const showLine = clipType === "line";
+  const showEffect = !showAudio;
+  const showTransition = !showAudio && clipType !== "video";
 
   // Track active tab, defaulting to first available
   const [activeTab, setActiveTab] = useState<TabValue>("picture");
@@ -53,73 +55,33 @@ export function PropertiesPanel() {
   // Auto-switch to valid tab when selection changes
   const effectiveTab = useMemo(() => {
     if (!selectedClip) return activeTab;
-    if (showText && activeTab !== "text" && activeTab !== "effect" && activeTab !== "transition")
-      return "text";
-    if (showShape && activeTab !== "shape" && activeTab !== "effect" && activeTab !== "transition")
-      return "shape";
-    if (showLine && activeTab !== "line" && activeTab !== "effect" && activeTab !== "transition")
-      return "line";
-    if (showAudio && activeTab !== "audio") return "audio";
-    if (
-      showPicture &&
-      activeTab !== "picture" &&
-      activeTab !== "effect" &&
-      activeTab !== "transition"
-    )
-      return "picture";
-    // Validate the active tab is valid for this clip type
-    if (activeTab === "picture" && !showPicture)
-      return showText
-        ? "text"
-        : showShape
-          ? "shape"
-          : showLine
-            ? "line"
-            : showAudio
-              ? "audio"
-              : "effect";
-    if (activeTab === "audio" && !showAudio)
-      return showPicture
-        ? "picture"
-        : showText
-          ? "text"
-          : showShape
-            ? "shape"
-            : showLine
-              ? "line"
-              : "effect";
-    if (activeTab === "text" && !showText)
-      return showPicture
-        ? "picture"
-        : showShape
-          ? "shape"
-          : showLine
-            ? "line"
-            : showAudio
-              ? "audio"
-              : "effect";
-    if (activeTab === "shape" && !showShape)
-      return showPicture
-        ? "picture"
-        : showText
-          ? "text"
-          : showLine
-            ? "line"
-            : showAudio
-              ? "audio"
-              : "effect";
-    if (activeTab === "line" && !showLine)
-      return showPicture
-        ? "picture"
-        : showText
-          ? "text"
-          : showShape
-            ? "shape"
-            : showAudio
-              ? "audio"
-              : "effect";
-    return activeTab;
-  }, [activeTab, selectedClip, showPicture, showAudio, showText, showShape, showLine]);
+
+    // Build set of valid tabs for the current clip
+    const validTabs: TabValue[] = [];
+    if (showPicture) validTabs.push("picture");
+    if (showAudio) validTabs.push("audio");
+    if (showText) validTabs.push("text");
+    if (showShape) validTabs.push("shape");
+    if (showLine) validTabs.push("line");
+    if (showEffect) validTabs.push("effect");
+    if (showTransition) validTabs.push("transition");
+
+    // If current tab is valid, keep it
+    if (validTabs.includes(activeTab)) return activeTab;
+
+    // Otherwise pick the first valid tab
+    return validTabs[0] ?? "picture";
+  }, [
+    activeTab,
+    selectedClip,
+    showPicture,
+    showAudio,
+    showText,
+    showShape,
+    showLine,
+    showEffect,
+    showTransition,
+  ]);
 
   // Get transform values with defaults (only visual clips have transform)
   const transform = useMemo(() => {
@@ -225,9 +187,15 @@ export function PropertiesPanel() {
   const speed = selectedClip?.speed ?? 1;
 
   // Determine how many tabs to show
-  const tabCount =
-    [showPicture, showAudio, showText, showShape, showLine].filter(Boolean).length +
-    (showAudio ? 0 : 2); // +2 for Effect and Transition (not shown for audio)
+  const tabCount = [
+    showPicture,
+    showAudio,
+    showText,
+    showShape,
+    showLine,
+    showEffect,
+    showTransition,
+  ].filter(Boolean).length;
 
   return (
     <div className="flex h-full flex-col">
@@ -281,12 +249,12 @@ export function PropertiesPanel() {
                 Line
               </TabsTrigger>
             )}
-            {!showAudio && (
+            {showEffect && (
               <TabsTrigger value="effect" className="text-xs">
                 Effect
               </TabsTrigger>
             )}
-            {!showAudio && (
+            {showTransition && (
               <TabsTrigger value="transition" className="text-xs">
                 Transition
               </TabsTrigger>
@@ -367,31 +335,23 @@ export function PropertiesPanel() {
           </TabsContent>
 
           <TabsContent value="effect" className="m-0 flex-1 overflow-auto p-3">
-            {selectedClip && selectedClip.type !== "audio" ? (
+            {selectedClip && (
               <EffectProperties
                 clipId={selectedClip.id}
                 clipStartTime={selectedClip.startTime}
                 effects={effects}
                 onEffectsChange={handleEffectsChange}
               />
-            ) : (
-              <div className="text-center text-sm text-muted-foreground">
-                Effects not available for audio clips
-              </div>
             )}
           </TabsContent>
 
           <TabsContent value="transition" className="m-0 flex-1 overflow-auto p-3">
-            {selectedClip && selectedClip.type !== "audio" ? (
+            {selectedClip && selectedClip.type !== "audio" && selectedClip.type !== "video" && (
               <TransitionProperties
                 clipId={selectedClip.id}
                 transitionIn={selectedClip.transitionIn}
                 transitionOut={selectedClip.transitionOut}
               />
-            ) : (
-              <div className="text-center text-sm text-muted-foreground">
-                Transitions not available for audio clips
-              </div>
             )}
           </TabsContent>
         </Tabs>

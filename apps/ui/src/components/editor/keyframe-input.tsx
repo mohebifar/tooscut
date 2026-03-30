@@ -10,6 +10,8 @@
 
 import type { AnimatableProperty } from "@tooscut/render-engine";
 
+import { RotateCcw } from "lucide-react";
+
 import {
   evaluateKeyframe,
   isAtKeyframe,
@@ -47,6 +49,8 @@ interface KeyframeInputProps {
   displayMultiplier?: number;
   /** Additional class names for the container */
   className?: string;
+  /** Custom reset handler (overrides default reset behavior) */
+  onReset?: () => void;
 }
 
 export function KeyframeInput({
@@ -64,6 +68,7 @@ export function KeyframeInput({
   showKeyframeButton = true,
   displayMultiplier = 1,
   className,
+  onReset: customReset,
 }: KeyframeInputProps) {
   const currentTime = useVideoEditorStore((s) => s.currentFrame);
   const clips = useVideoEditorStore((s) => s.clips);
@@ -110,9 +115,19 @@ export function KeyframeInput({
     }
   };
 
+  const removeAllKeyframesAction = useVideoEditorStore((s) => s.removeAllKeyframes);
+
   const handleReset = () => {
     if (defaultValue !== undefined) {
-      onChange(defaultValue);
+      // Remove all keyframes for this property if any exist
+      if (hasKeyframes) {
+        removeAllKeyframesAction(clipId, property);
+      }
+      if (customReset) {
+        customReset();
+      } else {
+        onChange(defaultValue);
+      }
     }
   };
 
@@ -124,8 +139,28 @@ export function KeyframeInput({
   // Store actual value for keyframe button (not display value)
   const currentActualValue = displayValue;
 
+  // Show reset when value has drifted from default (or has keyframes).
+  // Compare in display space (after multiplier + rounding to display precision)
+  // to avoid false positives from floating-point drift.
+  const displayRoundFactor = 10 ** precision;
+  const isDirty =
+    defaultValue !== undefined &&
+    (hasKeyframes ||
+      Math.round(displayValue * displayMultiplier * displayRoundFactor) !==
+        Math.round(defaultValue * displayMultiplier * displayRoundFactor));
+
   return (
     <div className={`flex items-center gap-1 ${className ?? ""}`}>
+      {isDirty && (
+        <button
+          type="button"
+          onClick={handleReset}
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
+          title="Reset to default"
+        >
+          <RotateCcw className="h-3 w-3" />
+        </button>
+      )}
       <NumericInput
         value={displayedValue}
         onChange={handleChange}

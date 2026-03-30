@@ -1,4 +1,4 @@
-import { Link, Unlink } from "lucide-react";
+import { Link, RotateCcw, Unlink } from "lucide-react";
 
 export function PropertySection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -44,10 +44,34 @@ export function LinkablePropertySection({
   );
 }
 
-export function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
+export function PropertyRow({
+  label,
+  children,
+  onReset,
+  isDirty,
+}: {
+  label: string;
+  children: React.ReactNode;
+  /** Callback to reset to default value */
+  onReset?: () => void;
+  /** Whether the value has drifted from default */
+  isDirty?: boolean;
+}) {
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-xs text-foreground">{label}</span>
+      <span className="flex items-center gap-1 text-xs text-foreground">
+        {label}
+        {isDirty && onReset && (
+          <button
+            type="button"
+            onClick={onReset}
+            className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
+            title="Reset to default"
+          >
+            <RotateCcw className="h-2.5 w-2.5" />
+          </button>
+        )}
+      </span>
       {children}
     </div>
   );

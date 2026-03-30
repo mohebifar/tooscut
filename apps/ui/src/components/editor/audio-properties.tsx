@@ -41,7 +41,11 @@ export function AudioProperties({
       </PropertySection>
 
       <PropertySection title="Speed">
-        <PropertyRow label="Rate">
+        <PropertyRow
+          label="Rate"
+          isDirty={Math.abs(speed - 1) > 1e-6}
+          onReset={() => onSpeedChange(1)}
+        >
           <NumericInput
             value={speed}
             onChange={onSpeedChange}

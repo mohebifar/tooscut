@@ -119,7 +119,11 @@ export function AudioEffectsProperties({
                 defaultValue={-20}
               />
             </PropertyRow>
-            <PropertyRow label="Ratio">
+            <PropertyRow
+              label="Ratio"
+              isDirty={Math.abs((audioEffects?.compressor?.ratio ?? 4) - 4) > 1e-6}
+              onReset={() => handleCompChange("ratio", 4)}
+            >
               <NumericInput
                 value={audioEffects?.compressor?.ratio ?? 4}
                 onChange={(v) => handleCompChange("ratio", v)}
@@ -130,7 +134,11 @@ export function AudioEffectsProperties({
                 max={20}
               />
             </PropertyRow>
-            <PropertyRow label="Attack">
+            <PropertyRow
+              label="Attack"
+              isDirty={Math.abs((audioEffects?.compressor?.attack ?? 10) - 10) > 1e-6}
+              onReset={() => handleCompChange("attack", 10)}
+            >
               <NumericInput
                 value={audioEffects?.compressor?.attack ?? 10}
                 onChange={(v) => handleCompChange("attack", v)}
@@ -141,7 +149,11 @@ export function AudioEffectsProperties({
                 max={200}
               />
             </PropertyRow>
-            <PropertyRow label="Release">
+            <PropertyRow
+              label="Release"
+              isDirty={Math.abs((audioEffects?.compressor?.release ?? 100) - 100) > 1e-6}
+              onReset={() => handleCompChange("release", 100)}
+            >
               <NumericInput
                 value={audioEffects?.compressor?.release ?? 100}
                 onChange={(v) => handleCompChange("release", v)}
@@ -152,7 +164,11 @@ export function AudioEffectsProperties({
                 max={2000}
               />
             </PropertyRow>
-            <PropertyRow label="Makeup">
+            <PropertyRow
+              label="Makeup"
+              isDirty={Math.abs((audioEffects?.compressor?.makeupGain ?? 0) - 0) > 1e-6}
+              onReset={() => handleCompChange("makeupGain", 0)}
+            >
               <NumericInput
                 value={audioEffects?.compressor?.makeupGain ?? 0}
                 onChange={(v) => handleCompChange("makeupGain", v)}
@@ -191,7 +207,11 @@ export function AudioEffectsProperties({
                 defaultValue={-40}
               />
             </PropertyRow>
-            <PropertyRow label="Attack">
+            <PropertyRow
+              label="Attack"
+              isDirty={Math.abs((audioEffects?.noiseGate?.attack ?? 1) - 1) > 1e-6}
+              onReset={() => handleGateChange("attack", 1)}
+            >
               <NumericInput
                 value={audioEffects?.noiseGate?.attack ?? 1}
                 onChange={(v) => handleGateChange("attack", v)}
@@ -202,7 +222,11 @@ export function AudioEffectsProperties({
                 max={100}
               />
             </PropertyRow>
-            <PropertyRow label="Release">
+            <PropertyRow
+              label="Release"
+              isDirty={Math.abs((audioEffects?.noiseGate?.release ?? 50) - 50) > 1e-6}
+              onReset={() => handleGateChange("release", 50)}
+            >
               <NumericInput
                 value={audioEffects?.noiseGate?.release ?? 50}
                 onChange={(v) => handleGateChange("release", v)}
@@ -226,7 +250,11 @@ export function AudioEffectsProperties({
         />
         {reverbEnabled && (
           <div className="space-y-2">
-            <PropertyRow label="Room Size">
+            <PropertyRow
+              label="Room Size"
+              isDirty={Math.abs((audioEffects?.reverb?.roomSize ?? 0.5) - 0.5) > 1e-6}
+              onReset={() => handleReverbChange("roomSize", 0.5)}
+            >
               <NumericInput
                 value={audioEffects?.reverb?.roomSize ?? 0.5}
                 onChange={(v) => handleReverbChange("roomSize", v)}
@@ -236,7 +264,11 @@ export function AudioEffectsProperties({
                 max={1}
               />
             </PropertyRow>
-            <PropertyRow label="Damping">
+            <PropertyRow
+              label="Damping"
+              isDirty={Math.abs((audioEffects?.reverb?.damping ?? 0.5) - 0.5) > 1e-6}
+              onReset={() => handleReverbChange("damping", 0.5)}
+            >
               <NumericInput
                 value={audioEffects?.reverb?.damping ?? 0.5}
                 onChange={(v) => handleReverbChange("damping", v)}
@@ -246,7 +278,11 @@ export function AudioEffectsProperties({
                 max={1}
               />
             </PropertyRow>
-            <PropertyRow label="Width">
+            <PropertyRow
+              label="Width"
+              isDirty={Math.abs((audioEffects?.reverb?.width ?? 1) - 1) > 1e-6}
+              onReset={() => handleReverbChange("width", 1)}
+            >
               <NumericInput
                 value={audioEffects?.reverb?.width ?? 1}
                 onChange={(v) => handleReverbChange("width", v)}

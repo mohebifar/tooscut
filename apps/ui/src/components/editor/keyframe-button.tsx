@@ -133,12 +133,12 @@ export function KeyframeButton({
       <Button
         variant="ghost"
         size="icon"
-        className={cn("h-5 w-5 p-0", prevTime === null && "cursor-default opacity-30")}
+        className={cn("size-4 p-0", prevTime === null && "cursor-default opacity-30")}
         onClick={handlePrevClick}
         disabled={prevTime === null}
         title="Previous keyframe"
       >
-        <ChevronLeft className="h-3 w-3" />
+        <ChevronLeft className="size-3" />
       </Button>
 
       {/* Diamond toggle button */}
@@ -146,21 +146,25 @@ export function KeyframeButton({
         variant="ghost"
         size="icon"
         className={cn(
-          "h-5 w-5 p-0",
+          "size-4 p-0",
           atKeyframe && "text-yellow-500",
           hasKeyframes && !atKeyframe && "text-yellow-500/60",
         )}
         onClick={handleDiamondClick}
         title={atKeyframe ? "Remove keyframe" : "Add keyframe"}
       >
-        <DiamondIcon filled={atKeyframe} halfFilled={hasKeyframes && !atKeyframe} />
+        <DiamondIcon
+          className="size-3"
+          filled={atKeyframe}
+          halfFilled={hasKeyframes && !atKeyframe}
+        />
       </Button>
 
       {/* Next keyframe button */}
       <Button
         variant="ghost"
         size="icon"
-        className={cn("h-5 w-5 p-0", nextTime === null && "cursor-default opacity-30")}
+        className={cn("size-4 p-0", nextTime === null && "cursor-default opacity-30")}
         onClick={handleNextClick}
         disabled={nextTime === null}
         title="Next keyframe"
@@ -173,7 +177,7 @@ export function KeyframeButton({
         <Button
           variant="ghost"
           size="icon"
-          className="h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
+          className="size-4 p-0 text-muted-foreground hover:text-destructive"
           onClick={handleResetClick}
           title="Remove all keyframes"
         >
