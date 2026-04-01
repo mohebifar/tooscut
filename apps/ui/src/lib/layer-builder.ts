@@ -250,10 +250,10 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
         id: mc.id,
         assetId: textureId,
         trackId: mc.trackId,
-        // Convert frame-based clip fields to seconds for buildRenderFrame/buildMediaLayerData
-        startTime: framesToSeconds(mc.startTime, settings.fps),
-        duration: framesToSeconds(mc.duration, settings.fps),
-        inPoint: framesToSeconds(mc.inPoint, settings.fps),
+        // Everything in frames — frame builder is unit-agnostic, just needs consistency
+        startTime: mc.startTime,
+        duration: mc.duration,
+        inPoint: mc.inPoint,
         transform: mc.transform,
         effects: mc.effects,
         keyframes: mc.keyframes,
@@ -284,15 +284,15 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
 
       const evaluator = getCachedKeyframeEvaluator(sc, evaluatorManager);
       if (evaluator) {
-        // Keyframes are in seconds — convert frame-based local time to seconds
-        const localTimeSeconds = framesToSeconds(timelineTime - sc.startTime, settings.fps);
-        const ex = evaluator.evaluate("x", localTimeSeconds);
-        const ey = evaluator.evaluate("y", localTimeSeconds);
-        const ew = evaluator.evaluate("width", localTimeSeconds);
-        const eh = evaluator.evaluate("height", localTimeSeconds);
-        const cr = evaluator.evaluate("cornerRadius", localTimeSeconds);
-        const sw = evaluator.evaluate("strokeWidth", localTimeSeconds);
-        const op = evaluator.evaluate("opacity", localTimeSeconds);
+        // Keyframes are stored in frames — use frame-based local time
+        const localTimeFrames = timelineTime - sc.startTime;
+        const ex = evaluator.evaluate("x", localTimeFrames);
+        const ey = evaluator.evaluate("y", localTimeFrames);
+        const ew = evaluator.evaluate("width", localTimeFrames);
+        const eh = evaluator.evaluate("height", localTimeFrames);
+        const cr = evaluator.evaluate("cornerRadius", localTimeFrames);
+        const sw = evaluator.evaluate("strokeWidth", localTimeFrames);
+        const op = evaluator.evaluate("opacity", localTimeFrames);
 
         if (!Number.isNaN(ex) || !Number.isNaN(ey) || !Number.isNaN(ew) || !Number.isNaN(eh)) {
           box = {
@@ -334,14 +334,14 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
 
       const evaluator = getCachedKeyframeEvaluator(lc, evaluatorManager);
       if (evaluator) {
-        // Keyframes are in seconds — convert frame-based local time to seconds
-        const localTimeSeconds = framesToSeconds(timelineTime - lc.startTime, settings.fps);
-        const x1 = evaluator.evaluate("x1", localTimeSeconds);
-        const y1 = evaluator.evaluate("y1", localTimeSeconds);
-        const x2 = evaluator.evaluate("x2", localTimeSeconds);
-        const y2 = evaluator.evaluate("y2", localTimeSeconds);
-        const sw = evaluator.evaluate("strokeWidth", localTimeSeconds);
-        const op = evaluator.evaluate("opacity", localTimeSeconds);
+        // Keyframes are stored in frames — use frame-based local time
+        const localTimeFrames = timelineTime - lc.startTime;
+        const x1 = evaluator.evaluate("x1", localTimeFrames);
+        const y1 = evaluator.evaluate("y1", localTimeFrames);
+        const x2 = evaluator.evaluate("x2", localTimeFrames);
+        const y2 = evaluator.evaluate("y2", localTimeFrames);
+        const sw = evaluator.evaluate("strokeWidth", localTimeFrames);
+        const op = evaluator.evaluate("opacity", localTimeFrames);
 
         if (!Number.isNaN(x1) || !Number.isNaN(y1) || !Number.isNaN(x2) || !Number.isNaN(y2)) {
           box = {
@@ -382,9 +382,7 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
   }
 
   // Convert frame-based timeline time to seconds for the RenderFrame
-  // (compositor and keyframe evaluator expect seconds)
-  const timelineTimeSeconds = framesToSeconds(timelineTime, settings.fps);
-
+  // Everything in frames — the frame builder and keyframe evaluator are unit-agnostic
   const frame = buildRenderFrame({
     mediaClips: mediaClipsForRender,
     textLayers,
@@ -392,7 +390,7 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
     lineLayers,
     tracks: renderTracks,
     trackIndexMap,
-    timelineTime: timelineTimeSeconds,
+    timelineTime,
     width: settings.width,
     height: settings.height,
     evaluatorManager,

@@ -176,4 +176,15 @@ impl AudioEngine {
     pub fn set_master_volume(&mut self, volume: f32) {
         self.mixer.set_master_volume(volume);
     }
+
+    /// Set global playback rate
+    ///
+    /// # Arguments
+    /// * `rate` - Playback rate multiplier (1.0 = normal, 2.0 = 2x, -1.0 = reverse)
+    ///
+    /// Note: Reverse playback outputs silence as audio cannot play backwards.
+    #[wasm_bindgen]
+    pub fn set_playback_rate(&mut self, rate: f64) {
+        self.mixer.set_playback_rate(rate);
+    }
 }

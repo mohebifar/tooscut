@@ -1,7 +1,15 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Undo2, Redo2, MousePointer2, Scissors, DownloadIcon, ChevronLeft } from "lucide-react";
+import {
+  Undo2,
+  Redo2,
+  MousePointer2,
+  Scissors,
+  DownloadIcon,
+  ChevronLeft,
+  Keyboard,
+} from "lucide-react";
 import { useState, useCallback, useRef, useEffect } from "react";
 
 import { Route } from "../../routes/editor/$projectId";
@@ -22,6 +30,7 @@ import { Separator } from "../ui/separator";
 import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { ExportDialog } from "./export-dialog";
+import { openKeyboardShortcuts } from "./keyboard-shortcuts-modal";
 import { ProjectSettingsDialog } from "./project-settings-dialog";
 
 interface ToolbarProps {
@@ -244,6 +253,19 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
               <MenubarItem disabled>Show Timeline</MenubarItem>
               <MenubarItem disabled>Show Properties</MenubarItem>
               <MenubarItem disabled>Show Assets</MenubarItem>
+            </MenubarContent>
+          </MenubarMenu>
+
+          <MenubarMenu>
+            <MenubarTrigger className="h-7 px-2 py-1 text-xs data-[state=open]:bg-accent">
+              Help
+            </MenubarTrigger>
+            <MenubarContent>
+              <MenubarItem onClick={openKeyboardShortcuts}>
+                <Keyboard className="mr-2 h-4 w-4" />
+                Keyboard Shortcuts
+                <MenubarShortcut>?</MenubarShortcut>
+              </MenubarItem>
             </MenubarContent>
           </MenubarMenu>
         </Menubar>

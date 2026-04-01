@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { MediaAsset } from "../../state/video-editor-store";
 
 import { AssetPanel } from "../../components/editor/asset-panel";
+import { KeyboardShortcutsModal } from "../../components/editor/keyboard-shortcuts-modal";
 import { PlaybackControls } from "../../components/editor/playback-controls";
 import { PreviewPanel } from "../../components/editor/preview-panel";
 import { PropertiesPanel } from "../../components/editor/properties-panel";
@@ -156,6 +157,9 @@ function EditorPage() {
         timeline={<TimelinePanel />}
         playbackControls={<PlaybackControls />}
       />
+
+      {/* Keyboard shortcuts modal (press ? to open) */}
+      <KeyboardShortcutsModal />
 
       {/* Permission prompt — must be triggered by user gesture */}
       {pendingPermissionIds.length > 0 && (

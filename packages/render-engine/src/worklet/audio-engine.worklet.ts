@@ -33,6 +33,11 @@ interface SetMasterVolumeMessage {
   volume: number;
 }
 
+interface SetPlaybackRateMessage {
+  type: "set-playback-rate";
+  rate: number;
+}
+
 interface CreateWindowedSourceMessage {
   type: "create-windowed-source";
   sourceId: string;
@@ -67,6 +72,7 @@ type WorkletMessage =
   | SetPlayingMessage
   | SeekMessage
   | SetMasterVolumeMessage
+  | SetPlaybackRateMessage
   | CreateWindowedSourceMessage
   | UpdateSourceBufferMessage
   | ClearSourceBufferMessage
@@ -119,6 +125,10 @@ class AudioEngineProcessor extends AudioWorkletProcessor {
 
       case "set-master-volume":
         this.engine?.set_master_volume(message.volume);
+        break;
+
+      case "set-playback-rate":
+        this.engine?.set_playback_rate(message.rate);
         break;
 
       case "create-windowed-source":

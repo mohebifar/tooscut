@@ -304,8 +304,8 @@ export function buildMediaLayerData(
     }
   }
 
-  // Local time within the clip
-  const localTime = timelineTime - clip.startTime + clip.inPoint;
+  // Local time within the clip (for keyframe evaluation — inPoint is only for source media extraction)
+  const localTime = timelineTime - clip.startTime;
 
   // Build transform/effects with Object.assign to avoid multiple spread allocations.
   // Single Object.assign call merges DEFAULT → clip overrides → keyframe overrides
