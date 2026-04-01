@@ -78,16 +78,21 @@ export function PreviewPanel() {
   const fps = settings.fps;
   const previewMode = useVideoEditorStore((s) => s.previewMode);
   const isPlaying = useVideoEditorStore((s) => s.isPlaying);
+  const playbackSpeed = useVideoEditorStore((s) => s.playbackSpeed);
   const setCurrentFrame = useVideoEditorStore((s) => s.setCurrentFrame);
   const duration = useVideoEditorStore((s) => s.durationFrames);
 
   // Keep refs in sync with store state
   const isPlayingRef = useRef(isPlaying);
+  const playbackSpeedRef = useRef(playbackSpeed);
   const durationRef = useRef(duration);
   const fpsRef = useRef(fps);
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+  useEffect(() => {
+    playbackSpeedRef.current = playbackSpeed;
+  }, [playbackSpeed]);
   useEffect(() => {
     durationRef.current = duration;
   }, [duration]);
@@ -313,7 +318,10 @@ export function PreviewPanel() {
           const videoElement = loader.getVideoElement();
 
           if (videoElement) {
-            if (isPlayingRef.current) {
+            const speed = playbackSpeedRef.current;
+            const isForwardPlayback = isPlayingRef.current && speed > 0;
+
+            if (isForwardPlayback) {
               const alreadyStarted = playingVideoAssetsRef.current.has(loaderKey);
 
               if (videoElement.paused && !alreadyStarted) {
@@ -322,12 +330,19 @@ export function PreviewPanel() {
                 // Start it playing so frames advance naturally.
                 playingVideoAssetsRef.current.add(loaderKey);
                 videoElement.currentTime = sourceTime;
+                // Set playback rate to match global speed (for 2x, 4x, etc.)
+                videoElement.playbackRate = speed;
                 videoElement.play().catch(() => {});
                 // Use seek-based extraction for the first frame to ensure
                 // the compositor has a valid texture while play() resolves.
                 const bitmap = await loader.getImageBitmap(sourceTime);
                 void compositor.uploadBitmap(bitmap, textureId);
               } else {
+                // Update playback rate if it changed
+                if (videoElement.playbackRate !== speed) {
+                  videoElement.playbackRate = speed;
+                }
+
                 let drifted = false;
                 if (!videoElement.paused) {
                   // Video is playing — check drift to handle clip boundaries
@@ -356,7 +371,13 @@ export function PreviewPanel() {
                 }
               }
             } else {
-              // Scrubbing or paused - seek to exact time
+              // Reverse playback, scrubbing, or paused - use seek-based extraction
+              // Video elements can't play backwards, so we must seek to each frame.
+              // Pause the video if it's playing to avoid it advancing forward.
+              if (!videoElement.paused) {
+                videoElement.pause();
+                playingVideoAssetsRef.current.delete(loaderKey);
+              }
               const bitmap = await loader.getImageBitmap(sourceTime);
               void compositor.uploadBitmap(bitmap, textureId);
             }
@@ -419,7 +440,8 @@ export function PreviewPanel() {
 
   /**
    * Animation loop for playback.
-   * Computes the current frame from elapsed wall-clock time and the fps rate.
+   * Computes the current frame from elapsed wall-clock time, fps rate, and playback speed.
+   * Supports variable speed (2x, 4x, 8x) and reverse playback (negative speeds).
    * Frame values are integers; seconds conversion happens at the render boundary.
    */
   const tick = useCallback(
@@ -428,6 +450,7 @@ export function PreviewPanel() {
 
       const currentFps = fpsRef.current;
       const fpsFloat = currentFps.numerator / currentFps.denominator;
+      const speed = playbackSpeedRef.current;
 
       // Detect external seek (e.g., playhead drag) by comparing store frame
       // with what we last wrote. If they differ, re-anchor playback from there.
@@ -438,13 +461,36 @@ export function PreviewPanel() {
       }
 
       const elapsed = (timestamp - playbackStartTimeRef.current) / 1000;
-      const newFrame = playbackStartPositionRef.current + Math.floor(elapsed * fpsFloat);
+      // Multiply by speed: positive = forward, negative = reverse
+      const newFrame = playbackStartPositionRef.current + Math.floor(elapsed * fpsFloat * speed);
 
-      if (newFrame >= durationRef.current) {
+      // Check bounds: stop at end (forward) or start (reverse)
+      if (speed > 0 && newFrame >= durationRef.current) {
         isPlaybackEngineRunningRef.current = false;
         playingVideoAssetsRef.current.clear();
         setCurrentFrame(durationRef.current);
         lastTickTimeRef.current = durationRef.current;
+        useVideoEditorStore.getState().setIsPlaying(false);
+        // Pause all videos and dispose per-clip loaders
+        const loaderManager = loaderManagerRef.current;
+        for (const clip of useVideoEditorStore.getState().clips) {
+          if (clip.type === "video") {
+            const assetId = clip.assetId || clip.id;
+            loaderManager.getExistingLoader(assetId)?.pause();
+            const perClipKey = `${assetId}:${clip.id}`;
+            if (loaderManager.hasLoader(perClipKey)) {
+              loaderManager.disposeLoader(perClipKey);
+            }
+          }
+        }
+        return;
+      }
+
+      if (speed < 0 && newFrame <= 0) {
+        isPlaybackEngineRunningRef.current = false;
+        playingVideoAssetsRef.current.clear();
+        setCurrentFrame(0);
+        lastTickTimeRef.current = 0;
         useVideoEditorStore.getState().setIsPlaying(false);
         // Pause all videos and dispose per-clip loaders
         const loaderManager = loaderManagerRef.current;
@@ -511,20 +557,30 @@ export function PreviewPanel() {
       crossTransitionClipIds.add(ct.incomingClipId);
     }
 
-    for (const clip of visibleVideoClips) {
-      const assetId = clip.assetId || clip.id;
-      const asset = assetMapRef.current.get(assetId);
-      if (!asset?.file) continue;
+    // Only start video elements playing for forward playback
+    // Reverse playback uses seek-based frame extraction
+    const speed = state.playbackSpeed;
+    if (speed > 0) {
+      for (const clip of visibleVideoClips) {
+        const assetId = clip.assetId || clip.id;
+        const asset = assetMapRef.current.get(assetId);
+        if (!asset?.file) continue;
 
-      const loaderKey = crossTransitionClipIds.has(clip.id) ? `${assetId}:${clip.id}` : assetId;
+        const loaderKey = crossTransitionClipIds.has(clip.id) ? `${assetId}:${clip.id}` : assetId;
 
-      try {
-        const loader = await loaderManager.getLoader(loaderKey, asset.file);
-        const sourceTime = calculateSourceTime(startFrame, clip, currentFps);
-        loader.play(sourceTime);
-        playingVideoAssetsRef.current.add(loaderKey);
-      } catch {
-        // Ignore errors
+        try {
+          const loader = await loaderManager.getLoader(loaderKey, asset.file);
+          const sourceTime = calculateSourceTime(startFrame, clip, currentFps);
+          // Set playback rate to match global speed
+          const videoElement = loader.getVideoElement();
+          if (videoElement) {
+            videoElement.playbackRate = speed;
+          }
+          loader.play(sourceTime);
+          playingVideoAssetsRef.current.add(loaderKey);
+        } catch {
+          // Ignore errors
+        }
       }
     }
 
@@ -574,6 +630,15 @@ export function PreviewPanel() {
       stopPlaybackEngine();
     }
   }, [isPlaying, startPlaybackEngine, stopPlaybackEngine]);
+
+  // Re-anchor playback timing when speed changes during playback
+  useEffect(() => {
+    if (isPlaying && isPlaybackEngineRunningRef.current) {
+      // Re-anchor from the current frame at the new speed
+      playbackStartPositionRef.current = useVideoEditorStore.getState().currentFrame;
+      playbackStartTimeRef.current = performance.now();
+    }
+  }, [isPlaying, playbackSpeed]);
 
   // Render when scrubbing (paused) or when clips change while paused
   useEffect(() => {

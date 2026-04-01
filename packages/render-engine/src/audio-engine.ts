@@ -790,6 +790,23 @@ export class BrowserAudioEngine {
   }
 
   /**
+   * Set global playback rate.
+   *
+   * @param rate - Playback rate multiplier (1.0 = normal, 2.0 = 2x, -1.0 = reverse)
+   *
+   * Note: Reverse playback (negative rates) will output silence as audio
+   * cannot meaningfully play backwards in real-time.
+   */
+  setPlaybackRate(rate: number): void {
+    if (!this.workletNode) return;
+
+    this.workletNode.port.postMessage({
+      type: "set-playback-rate",
+      rate,
+    });
+  }
+
+  /**
    * Get current stereo audio levels (RMS in dB).
    * Returns { left, right } where values range from -Infinity (silence) to 0 (full scale).
    */

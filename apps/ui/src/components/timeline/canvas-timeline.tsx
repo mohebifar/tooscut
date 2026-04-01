@@ -98,6 +98,8 @@ export function CanvasTimeline() {
   const settings = useVideoEditorStore((s) => s.settings);
   const seekTo = useVideoEditorStore((s) => s.seekTo);
   const setIsPlaying = useVideoEditorStore((s) => s.setIsPlaying);
+  const playbackSpeed = useVideoEditorStore((s) => s.playbackSpeed);
+  const setPlaybackSpeed = useVideoEditorStore((s) => s.setPlaybackSpeed);
   const clearSelection = useVideoEditorStore((s) => s.clearSelection);
   const addClipToTrack = useVideoEditorStore((s) => s.addClipToTrack);
   const removeClip = useVideoEditorStore((s) => s.removeClip);
@@ -134,6 +136,7 @@ export function CanvasTimeline() {
   const removeCrossTransitionById = useVideoEditorStore((s) => s.removeCrossTransitionById);
   const copySelectedClips = useVideoEditorStore((s) => s.copySelectedClips);
   const pasteClipsAtPlayhead = useVideoEditorStore((s) => s.pasteClipsAtPlayhead);
+  const batchMoveClips = useVideoEditorStore((s) => s.batchMoveClips);
   const undo = useTemporalStore((s) => s.undo);
   const redo = useTemporalStore((s) => s.redo);
   const trackHeightsMap = useVideoEditorStore((s) => s.trackHeights);
@@ -201,10 +204,53 @@ export function CanvasTimeline() {
         return;
       }
 
-      // Space: Toggle play/pause
+      // Space: Toggle play/pause (reset to 1x speed)
       if (e.key === " ") {
         e.preventDefault();
-        setIsPlaying(!isPlaying);
+        if (isPlaying) {
+          setIsPlaying(false);
+        } else {
+          setPlaybackSpeed(1);
+          setIsPlaying(true);
+        }
+        return;
+      }
+
+      // J/K/L playback shortcuts
+      // L: Play forward, press again to increase speed (1x -> 2x -> 4x -> 8x)
+      if (e.key === "l" || e.key === "L") {
+        e.preventDefault();
+        if (playbackSpeed <= 0) {
+          // Was paused or in reverse, start forward at 1x
+          setPlaybackSpeed(1);
+          setIsPlaying(true);
+        } else if (playbackSpeed < 8) {
+          // Increase speed: 1x -> 2x -> 4x -> 8x
+          setPlaybackSpeed(playbackSpeed * 2);
+        }
+        return;
+      }
+
+      // J: Play reverse, press again to increase reverse speed
+      if (e.key === "j" || e.key === "J") {
+        e.preventDefault();
+        if (playbackSpeed >= 0) {
+          // Was paused or playing forward, start reverse at 1x
+          setPlaybackSpeed(-1);
+          setIsPlaying(true);
+        } else if (playbackSpeed > -8) {
+          // Increase reverse speed: -1x -> -2x -> -4x -> -8x
+          setPlaybackSpeed(playbackSpeed * 2);
+        }
+        return;
+      }
+
+      // K: Pause. Hold K + tap L/J = step forward/backward one frame
+      if (e.key === "k" || e.key === "K") {
+        e.preventDefault();
+        setIsPlaying(false);
+        setPlaybackSpeed(1); // Reset speed to 1x
+        return;
       }
 
       // Escape: Clear selection
@@ -249,17 +295,138 @@ export function CanvasTimeline() {
         }
       }
 
-      // Arrow keys: Frame navigation (1/30 second per frame)
-      const frameTime = 1 / 30;
-      if (e.key === "ArrowLeft") {
+      // Arrow keys
+      const fpsFloat = settings.fps.numerator / settings.fps.denominator;
+
+      // Left/Right with Shift or Alt: Nudge selected clips
+      // Shift+Left/Right: Nudge by 1 frame
+      // Alt+Left/Right: Nudge by 10 frames
+      if (
+        (e.key === "ArrowLeft" || e.key === "ArrowRight") &&
+        (e.shiftKey || e.altKey) &&
+        selectedClipIds.length > 0
+      ) {
         e.preventDefault();
-        const newTime = Math.max(0, currentTime - (e.shiftKey ? 1 : frameTime));
-        seekTo(newTime);
+        const nudgeAmount = e.altKey ? 10 : 1;
+        const direction = e.key === "ArrowLeft" ? -1 : 1;
+        const moves = selectedClipIds.map((clipId) => {
+          const clip = clips.find((c) => c.id === clipId);
+          return {
+            clipId,
+            newStartTime: Math.max(0, (clip?.startTime ?? 0) + nudgeAmount * direction),
+          };
+        });
+        batchMoveClips(moves);
+        return;
       }
-      if (e.key === "ArrowRight") {
+
+      // Left/Right without modifiers: Frame navigation (1 frame)
+      if (e.key === "ArrowLeft" && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        const newTime = Math.min(duration, currentTime + (e.shiftKey ? 1 : frameTime));
-        seekTo(newTime);
+        const newFrame = Math.max(0, currentTime - 1);
+        seekTo(newFrame);
+        return;
+      }
+      if (e.key === "ArrowRight" && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        const newFrame = Math.min(duration, currentTime + 1);
+        seekTo(newFrame);
+        return;
+      }
+
+      // Up/Down arrows: Navigate between clips
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        // Get all video tracks sorted by z-order (higher index = higher in stack)
+        const videoTracks = tracks
+          .filter((t) => t.type === "video")
+          .sort((a, b) => b.index - a.index);
+        const audioTracks = tracks
+          .filter((t) => t.type === "audio")
+          .sort((a, b) => a.index - b.index);
+        const allTrackIds = [...videoTracks.map((t) => t.id), ...audioTracks.map((t) => t.id)];
+
+        if (selectedClipIds.length === 0) {
+          // No clip selected: select first clip at playhead
+          const clipsAtPlayhead = clips.filter(
+            (c) => currentTime >= c.startTime && currentTime < c.startTime + c.duration,
+          );
+          if (clipsAtPlayhead.length > 0) {
+            // Sort by track order and select the first one
+            clipsAtPlayhead.sort(
+              (a, b) => allTrackIds.indexOf(a.trackId) - allTrackIds.indexOf(b.trackId),
+            );
+            setSelectedClipIds([clipsAtPlayhead[0].id]);
+          }
+          return;
+        }
+
+        // Get the first selected clip
+        const selectedClip = clips.find((c) => c.id === selectedClipIds[0]);
+        if (!selectedClip) return;
+
+        // Find clips on adjacent track
+        const currentTrackIndex = allTrackIds.indexOf(selectedClip.trackId);
+        const targetTrackIndex =
+          e.key === "ArrowUp"
+            ? Math.max(0, currentTrackIndex - 1)
+            : Math.min(allTrackIds.length - 1, currentTrackIndex + 1);
+
+        if (targetTrackIndex === currentTrackIndex) return;
+
+        const targetTrackId = allTrackIds[targetTrackIndex];
+        const clipsOnTargetTrack = clips.filter((c) => c.trackId === targetTrackId);
+
+        if (clipsOnTargetTrack.length === 0) return;
+
+        // Find the clip closest to the current playhead position
+        let closestClip = clipsOnTargetTrack[0];
+        let closestDistance = Math.abs(
+          currentTime - (closestClip.startTime + closestClip.duration / 2),
+        );
+
+        for (const clip of clipsOnTargetTrack) {
+          const distance = Math.abs(currentTime - (clip.startTime + clip.duration / 2));
+          if (distance < closestDistance) {
+            closestClip = clip;
+            closestDistance = distance;
+          }
+        }
+
+        setSelectedClipIds([closestClip.id]);
+        return;
+      }
+
+      // Comma (,): Previous frame
+      // Note: Shift+, produces "<" on most keyboards
+      if (e.key === ",") {
+        e.preventDefault();
+        seekTo(Math.max(0, currentTime - 1));
+        return;
+      }
+
+      // < (Shift+,): Jump back 1 second
+      if (e.key === "<") {
+        e.preventDefault();
+        const newFrame = Math.max(0, currentTime - fpsFloat);
+        seekTo(newFrame);
+        return;
+      }
+
+      // Period (.): Next frame
+      // Note: Shift+. produces ">" on most keyboards
+      if (e.key === ".") {
+        e.preventDefault();
+        seekTo(Math.min(duration, currentTime + 1));
+        return;
+      }
+
+      // > (Shift+.): Jump forward 1 second
+      if (e.key === ">") {
+        e.preventDefault();
+        const newFrame = Math.min(duration, currentTime + fpsFloat);
+        seekTo(newFrame);
+        return;
       }
 
       // V: Select tool (only without modifiers)
@@ -291,13 +458,19 @@ export function CanvasTimeline() {
     currentTime,
     duration,
     isPlaying,
+    playbackSpeed,
     selectedClipIds,
     clips,
+    tracks,
+    settings.fps,
     seekTo,
     setIsPlaying,
+    setPlaybackSpeed,
     clearSelection,
     removeClip,
     setActiveTool,
+    setSelectedClipIds,
+    batchMoveClips,
     undo,
     redo,
     copySelectedClips,

@@ -41,6 +41,7 @@ export function useAudioEngine() {
   const clips = useVideoEditorStore((state) => state.clips);
   const tracks = useVideoEditorStore((state) => state.tracks);
   const isPlaying = useVideoEditorStore((state) => state.isPlaying);
+  const playbackSpeed = useVideoEditorStore((state) => state.playbackSpeed);
   const currentFrame = useVideoEditorStore((state) => state.currentFrame);
   const seekVersion = useVideoEditorStore((state) => state.seekVersion);
   const fps = useVideoEditorStore((state) => state.settings.fps);
@@ -153,6 +154,14 @@ export function useAudioEngine() {
       engine.setPlaying(false);
     }
   }, [isPlaying, isWasmReady]);
+
+  // Sync playback rate to audio engine
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine || !isWasmReady) return;
+
+    engine.setPlaybackRate(playbackSpeed);
+  }, [playbackSpeed, isWasmReady]);
 
   // Seek audio on explicit user action (works during playback and when paused)
   useEffect(() => {

@@ -187,6 +187,8 @@ interface VideoEditorState {
   /** Total project duration in frames (project frame rate) */
   durationFrames: number;
   isPlaying: boolean;
+  /** Playback speed multiplier (negative for reverse). 0 = paused, 1 = normal, -1 = reverse, etc. */
+  playbackSpeed: number;
   /** Incremented on user-initiated seeks so audio engine can detect them */
   seekVersion: number;
 
@@ -229,6 +231,8 @@ interface VideoEditorState {
   seekTo: (frame: number) => void;
   setIsPlaying: (playing: boolean) => void;
   togglePlayback: () => void;
+  /** Set playback speed (negative for reverse, 0 to pause) */
+  setPlaybackSpeed: (speed: number) => void;
 
   // Actions - View
   setZoom: (zoom: number) => void;
@@ -659,6 +663,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
         currentFrame: 0,
         durationFrames: 900, // 30s at 30fps
         isPlaying: false,
+        playbackSpeed: 1,
         seekVersion: 0,
 
         selectedClipIds: [],
@@ -686,6 +691,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             settings: data.settings,
             currentFrame: 0,
             isPlaying: false,
+            playbackSpeed: 1,
             selectedClipIds: [],
             selectedTransition: null,
             selectedCrossTransition: null,
@@ -701,6 +707,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             settings: { width: 1920, height: 1080, fps: { numerator: 30, denominator: 1 } },
             currentFrame: 0,
             isPlaying: false,
+            playbackSpeed: 1,
             selectedClipIds: [],
             selectedTransition: null,
             selectedCrossTransition: null,
@@ -731,6 +738,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
           })),
         setIsPlaying: (isPlaying) => set({ isPlaying }),
         togglePlayback: () => set((state) => ({ isPlaying: !state.isPlaying })),
+        setPlaybackSpeed: (speed) => set({ playbackSpeed: speed }),
 
         // View actions
         setZoom: (zoom) => set({ zoom: Math.max(0.03, Math.min(20, zoom)) }),

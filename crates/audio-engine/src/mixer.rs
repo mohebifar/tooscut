@@ -35,6 +35,8 @@ pub struct AudioMixer {
     current_time: f64,
     /// Whether playback is active
     is_playing: bool,
+    /// Global playback rate multiplier (1.0 = normal, 2.0 = 2x speed, -1.0 = reverse)
+    playback_rate: f64,
 
     /// Audio sources (decoded PCM data) - keyed by source/asset ID
     sources: HashMap<String, AudioClipSource>,
@@ -63,6 +65,7 @@ impl AudioMixer {
             sample_rate,
             current_time: 0.0,
             is_playing: false,
+            playback_rate: 1.0,
             sources: HashMap::new(),
             clips: Vec::new(),
             tracks: Vec::new(),
@@ -205,6 +208,23 @@ impl AudioMixer {
         self.master_volume = volume.clamp(0.0, 1.0);
     }
 
+    /// Set global playback rate
+    ///
+    /// # Arguments
+    /// * `rate` - Playback rate multiplier (1.0 = normal, 2.0 = 2x, -1.0 = reverse)
+    ///
+    /// Note: Reverse playback (negative rates) will output silence as audio
+    /// cannot meaningfully play backwards in real-time.
+    pub fn set_playback_rate(&mut self, rate: f64) {
+        let old_rate = self.playback_rate;
+        self.playback_rate = rate;
+
+        // If rate changed significantly, reset stretchers to re-sync
+        if (old_rate - rate).abs() > 0.01 {
+            self.stretchers.clear();
+        }
+    }
+
     /// Render audio frames
     ///
     /// # Arguments
@@ -214,14 +234,27 @@ impl AudioMixer {
     /// # Returns
     /// Number of frames actually rendered
     pub fn render(&mut self, output: &mut [f32], num_frames: usize) -> usize {
-        if !self.is_playing {
-            // Fill with silence
+        // Fill with silence if not playing or in reverse (audio can't play backwards)
+        if !self.is_playing || self.playback_rate <= 0.0 {
             let samples = (num_frames * 2).min(output.len());
             output[..samples].fill(0.0);
+
+            // Still advance time for reverse playback so it stays in sync with video
+            if self.is_playing && self.playback_rate < 0.0 {
+                let time_per_sample = 1.0 / self.sample_rate as f64;
+                self.current_time += time_per_sample * num_frames as f64 * self.playback_rate;
+                // Clamp to 0
+                if self.current_time < 0.0 {
+                    self.current_time = 0.0;
+                }
+            }
+
             return num_frames;
         }
 
         let time_per_sample = 1.0 / self.sample_rate as f64;
+        // Apply playback rate to time advancement
+        let adjusted_time_per_sample = time_per_sample * self.playback_rate;
 
         for frame in 0..num_frames {
             let (left, right) = self.render_frame();
@@ -232,7 +265,7 @@ impl AudioMixer {
                 output[idx + 1] = right;
             }
 
-            self.current_time += time_per_sample;
+            self.current_time += adjusted_time_per_sample;
         }
 
         num_frames
@@ -272,18 +305,19 @@ impl AudioMixer {
             };
 
             let clip_id = clip.id.clone();
-            let speed = clip.speed;
-            let uses_stretcher = (speed - 1.0).abs() > 0.001;
+            // Combined speed: clip speed × global playback rate
+            let combined_speed = clip.speed * self.playback_rate;
+            let uses_stretcher = (combined_speed - 1.0).abs() > 0.001;
 
             // Get sample: use time stretcher for non-1.0 speed to preserve pitch
             let (mut sample_l, mut sample_r) = if uses_stretcher {
                 let source_time = clip.get_source_time(self.current_time);
                 let stretcher = self.stretchers.entry(clip_id.clone()).or_insert_with(|| {
                     let mut s = TimeStretcher::new(self.sample_rate);
-                    s.reset(source_time, speed);
+                    s.reset(source_time, combined_speed);
                     s
                 });
-                stretcher.set_speed(speed);
+                stretcher.set_speed(combined_speed);
                 stretcher.get_sample(source)
             } else {
                 let source_time = clip.get_source_time(self.current_time);
