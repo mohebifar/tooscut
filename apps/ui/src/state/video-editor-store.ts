@@ -251,6 +251,8 @@ interface VideoEditorState {
 
   // Actions - Clipboard
   copySelectedClips: () => void;
+  cutSelectedClips: () => void;
+  duplicateSelectedClips: () => void;
   pasteClipsAtPlayhead: () => void;
 
   // Actions - Tracks
@@ -774,8 +776,117 @@ export const useVideoEditorStore = create<VideoEditorState>()(
         copySelectedClips: () => {
           const state = get();
           if (state.selectedClipIds.length === 0) return;
-          const clipsToCopy = state.clips.filter((c) => state.selectedClipIds.includes(c.id));
+
+          // Collect selected clips and their linked pairs
+          const idsTosCopy = new Set(state.selectedClipIds);
+          for (const clipId of state.selectedClipIds) {
+            const clip = state.clips.find((c) => c.id === clipId);
+            if (clip?.linkedClipId) {
+              idsTosCopy.add(clip.linkedClipId);
+            }
+          }
+
+          const clipsToCopy = state.clips.filter((c) => idsTosCopy.has(c.id));
           set({ clipboard: clipsToCopy });
+        },
+
+        cutSelectedClips: () => {
+          const state = get();
+          if (state.selectedClipIds.length === 0) return;
+
+          // Collect selected clips and their linked pairs
+          const idsToCopy = new Set(state.selectedClipIds);
+          for (const clipId of state.selectedClipIds) {
+            const clip = state.clips.find((c) => c.id === clipId);
+            if (clip?.linkedClipId) {
+              idsToCopy.add(clip.linkedClipId);
+            }
+          }
+
+          const clipsToCopy = state.clips.filter((c) => idsToCopy.has(c.id));
+          set({ clipboard: clipsToCopy });
+
+          // Then delete all selected clips (and their linked pairs)
+          const clipsToDelete = new Set<string>();
+          for (const clipId of state.selectedClipIds) {
+            clipsToDelete.add(clipId);
+            const clip = state.clips.find((c) => c.id === clipId);
+            if (clip?.linkedClipId) {
+              clipsToDelete.add(clip.linkedClipId);
+            }
+          }
+
+          for (const clipId of clipsToDelete) {
+            get().removeClip(clipId);
+          }
+        },
+
+        duplicateSelectedClips: () => {
+          const state = get();
+          if (state.selectedClipIds.length === 0) return;
+
+          // Collect selected clips and their linked pairs
+          const idsToDuplicate = new Set(state.selectedClipIds);
+          for (const clipId of state.selectedClipIds) {
+            const clip = state.clips.find((c) => c.id === clipId);
+            if (clip?.linkedClipId) {
+              idsToDuplicate.add(clip.linkedClipId);
+            }
+          }
+
+          const selectedClips = state.clips.filter((c) => idsToDuplicate.has(c.id));
+          if (selectedClips.length === 0) return;
+
+          // Find the end of the rightmost selected clip
+          const rightmostEnd = Math.max(...selectedClips.map((c) => c.startTime + c.duration));
+
+          // Build old-id → new-id map
+          const idMap = new Map<string, string>();
+          for (const clip of selectedClips) {
+            idMap.set(clip.id, generateId());
+          }
+
+          const offset = rightmostEnd - Math.min(...selectedClips.map((c) => c.startTime));
+          const newClipIds: string[] = [];
+          const newClips: EditorClip[] = [];
+          for (const clip of selectedClips) {
+            const newId = idMap.get(clip.id)!;
+            newClipIds.push(newId);
+
+            // Resolve linked clip id within the duplicated group
+            let newLinkedId: string | undefined;
+            if ("linkedClipId" in clip && clip.linkedClipId) {
+              newLinkedId = idMap.get(clip.linkedClipId);
+            }
+
+            newClips.push({
+              ...clip,
+              id: newId,
+              startTime: clip.startTime + offset,
+              ...(newLinkedId !== undefined
+                ? { linkedClipId: newLinkedId }
+                : { linkedClipId: undefined }),
+            } as EditorClip);
+          }
+
+          set((s) => {
+            let clips = s.clips;
+            for (const newClip of newClips) {
+              clips = addClip(clips, newClip);
+              clips = resolveOverlaps(
+                clips,
+                s.tracks,
+                newClip.id,
+                newClip.startTime,
+                newClip.trackId,
+              );
+            }
+            return {
+              clips,
+              selectedClipIds: newClipIds,
+              durationFrames: calculateDurationFrames(clips, get().settings.fps),
+            };
+          });
         },
 
         pasteClipsAtPlayhead: () => {
@@ -793,6 +904,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
           }
 
           const newClipIds: string[] = [];
+          const newClips: EditorClip[] = [];
           for (const clip of state.clipboard) {
             const newId = idMap.get(clip.id)!;
             newClipIds.push(newId);
@@ -803,24 +915,34 @@ export const useVideoEditorStore = create<VideoEditorState>()(
               newLinkedId = idMap.get(clip.linkedClipId);
             }
 
-            const newClip: EditorClip = {
+            newClips.push({
               ...clip,
               id: newId,
               startTime: clip.startTime + offset,
               ...(newLinkedId !== undefined
                 ? { linkedClipId: newLinkedId }
                 : { linkedClipId: undefined }),
-            } as EditorClip;
-
-            set((s) => {
-              let clips = addClip(s.clips, newClip);
-              clips = resolveOverlaps(clips, s.tracks, newId, newClip.startTime, newClip.trackId);
-              return { clips, durationFrames: calculateDurationFrames(clips, get().settings.fps) };
-            });
+            } as EditorClip);
           }
 
-          // Select the newly pasted clips
-          set({ selectedClipIds: newClipIds });
+          set((s) => {
+            let clips = s.clips;
+            for (const newClip of newClips) {
+              clips = addClip(clips, newClip);
+              clips = resolveOverlaps(
+                clips,
+                s.tracks,
+                newClip.id,
+                newClip.startTime,
+                newClip.trackId,
+              );
+            }
+            return {
+              clips,
+              selectedClipIds: newClipIds,
+              durationFrames: calculateDurationFrames(clips, get().settings.fps),
+            };
+          });
         },
 
         // Track actions
