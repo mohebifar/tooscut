@@ -83,6 +83,8 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
   const setClipTransitionOut = useVideoEditorStore((s) => s.setClipTransitionOut);
   const clipboard = useVideoEditorStore((s) => s.clipboard);
   const copySelectedClips = useVideoEditorStore((s) => s.copySelectedClips);
+  const cutSelectedClips = useVideoEditorStore((s) => s.cutSelectedClips);
+  const duplicateSelectedClips = useVideoEditorStore((s) => s.duplicateSelectedClips);
   const pasteClipsAtPlayhead = useVideoEditorStore((s) => s.pasteClipsAtPlayhead);
   const undo = useTemporalStore((s) => s.undo);
   const redo = useTemporalStore((s) => s.redo);
@@ -211,7 +213,7 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
                 <MenubarShortcut>⇧⌘Z</MenubarShortcut>
               </MenubarItem>
               <MenubarSeparator />
-              <MenubarItem disabled>
+              <MenubarItem disabled={selectedClipIds.length === 0} onClick={cutSelectedClips}>
                 Cut
                 <MenubarShortcut>⌘X</MenubarShortcut>
               </MenubarItem>
@@ -222,6 +224,10 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
               <MenubarItem disabled={clipboard.length === 0} onClick={pasteClipsAtPlayhead}>
                 Paste
                 <MenubarShortcut>⌘V</MenubarShortcut>
+              </MenubarItem>
+              <MenubarItem disabled={selectedClipIds.length === 0} onClick={duplicateSelectedClips}>
+                Duplicate
+                <MenubarShortcut>⌘D</MenubarShortcut>
               </MenubarItem>
               <MenubarItem disabled={!hasSelection} onClick={handleDeleteSelected}>
                 Delete

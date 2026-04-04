@@ -82,8 +82,10 @@ const shortcutSections: ShortcutSection[] = [
   {
     title: "Clipboard",
     shortcuts: [
+      { keys: [modKey, "X"], description: "Cut selected clip(s)" },
       { keys: [modKey, "C"], description: "Copy selected clip(s)" },
       { keys: [modKey, "V"], description: "Paste at playhead" },
+      { keys: [modKey, "D"], description: "Duplicate selected clip(s)" },
     ],
   },
   {

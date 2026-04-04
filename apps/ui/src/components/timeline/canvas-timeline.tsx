@@ -135,6 +135,8 @@ export function CanvasTimeline() {
   const selectedCrossTransition = useVideoEditorStore((s) => s.selectedCrossTransition);
   const removeCrossTransitionById = useVideoEditorStore((s) => s.removeCrossTransitionById);
   const copySelectedClips = useVideoEditorStore((s) => s.copySelectedClips);
+  const cutSelectedClips = useVideoEditorStore((s) => s.cutSelectedClips);
+  const duplicateSelectedClips = useVideoEditorStore((s) => s.duplicateSelectedClips);
   const pasteClipsAtPlayhead = useVideoEditorStore((s) => s.pasteClipsAtPlayhead);
   const batchMoveClips = useVideoEditorStore((s) => s.batchMoveClips);
   const undo = useTemporalStore((s) => s.undo);
@@ -194,6 +196,20 @@ export function CanvasTimeline() {
       if ((e.metaKey || e.ctrlKey) && e.key === "c") {
         e.preventDefault();
         copySelectedClips();
+        return;
+      }
+
+      // Cmd/Ctrl+X: Cut selected clips
+      if ((e.metaKey || e.ctrlKey) && e.key === "x") {
+        e.preventDefault();
+        cutSelectedClips();
+        return;
+      }
+
+      // Cmd/Ctrl+D: Duplicate selected clips
+      if ((e.metaKey || e.ctrlKey) && e.key === "d") {
+        e.preventDefault();
+        duplicateSelectedClips();
         return;
       }
 
@@ -474,6 +490,8 @@ export function CanvasTimeline() {
     undo,
     redo,
     copySelectedClips,
+    cutSelectedClips,
+    duplicateSelectedClips,
     pasteClipsAtPlayhead,
     selectedTransition,
     setClipTransitionIn,
