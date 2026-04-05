@@ -10,7 +10,7 @@
 
 import type { AnyAnimatableProperty } from "@tooscut/render-engine";
 
-import { RotateCcw } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 import {
   evaluateKeyframe,
@@ -20,6 +20,7 @@ import {
 } from "../../lib/keyframe-utils";
 import { useVideoEditorStore } from "../../state/video-editor-store";
 import { NumericInput } from "../ui/numeric-input";
+import { ResetButton } from "../ui/reset-button";
 import { KeyframeButton } from "./keyframe-button";
 
 interface KeyframeInputProps {
@@ -150,17 +151,8 @@ export function KeyframeInput({
         Math.round(defaultValue * displayMultiplier * displayRoundFactor));
 
   return (
-    <div className={`flex items-center gap-1 ${className ?? ""}`}>
-      {isDirty && (
-        <button
-          type="button"
-          onClick={handleReset}
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
-          title="Reset to default"
-        >
-          <RotateCcw className="h-3 w-3" />
-        </button>
-      )}
+    <div className={cn("flex items-center gap-1", className)}>
+      {isDirty && <ResetButton onClick={handleReset} />}
       <NumericInput
         value={displayedValue}
         onChange={handleChange}

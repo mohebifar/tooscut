@@ -4,6 +4,7 @@ import { Eye, Move } from "lucide-react";
 
 import { useVideoEditorStore } from "../../state/video-editor-store";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../ui/resizable";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Toggle } from "../ui/toggle";
 
 interface VideoEditorLayoutProps {
@@ -97,6 +98,17 @@ function PreviewModeToggle() {
   const previewZoom = useVideoEditorStore((s) => s.previewZoom);
   const setPreviewZoom = useVideoEditorStore((s) => s.setPreviewZoom);
 
+  const zoomItems = [
+    { label: "Fit", value: "fit" },
+    { label: "25%", value: "25" },
+    { label: "50%", value: "50" },
+    { label: "100%", value: "100" },
+    { label: "200%", value: "200" },
+    ...(typeof previewZoom === "number" && ![25, 50, 100, 200].includes(previewZoom)
+      ? [{ label: `${previewZoom}%`, value: String(previewZoom) }]
+      : []),
+  ];
+
   return (
     <div className="flex shrink-0 items-center justify-between border-t border-border bg-card px-2 py-0.5">
       <div className="flex gap-0.5 rounded-md p-0.5">
@@ -118,23 +130,26 @@ function PreviewModeToggle() {
         </Toggle>
       </div>
 
-      <select
-        className="h-6 cursor-pointer rounded border border-border bg-transparent px-1.5 text-xs text-muted-foreground outline-none focus:ring-1 focus:ring-ring"
+      <Select
         value={previewZoom === "fit" ? "fit" : String(previewZoom)}
-        onChange={(e) => {
-          const v = e.target.value;
-          setPreviewZoom(v === "fit" ? "fit" : Number(v));
+        onValueChange={(value) => {
+          setPreviewZoom(value === "fit" ? "fit" : Number(value));
         }}
+        items={zoomItems}
       >
-        <option value="fit">Fit</option>
-        <option value="25">25%</option>
-        <option value="50">50%</option>
-        <option value="100">100%</option>
-        <option value="200">200%</option>
-        {typeof previewZoom === "number" && ![25, 50, 100, 200].includes(previewZoom) && (
-          <option value={String(previewZoom)}>{previewZoom}%</option>
-        )}
-      </select>
+        <SelectTrigger className="h-6! py-0">
+          <SelectValue placeholder="Zoom" />
+        </SelectTrigger>
+        <SelectContent>
+          {zoomItems.map((item) =>
+            item ? (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            ) : null,
+          )}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

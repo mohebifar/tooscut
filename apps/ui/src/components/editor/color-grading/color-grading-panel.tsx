@@ -10,6 +10,7 @@
 
 import type {
   ColorGrading,
+  ColorSpace,
   PrimaryCorrection,
   ColorWheels,
   ColorGradingNode as CGNode,
@@ -36,10 +37,11 @@ import {
 import { useState, useCallback, useMemo } from "react";
 
 import { Button } from "../../ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "../../ui/popover";
+import { SearchableDropdown, type SearchableDropdownItem } from "../../ui/searchable-dropdown";
 import { Separator } from "../../ui/separator";
 import { Toggle } from "../../ui/toggle";
 import { ColorWheelsProperties } from "./color-wheels-properties";
+import { CstProperties } from "./cst-properties";
 import { ColorGradingNodeGraph } from "./node-graph";
 import { PrimaryCorrectionProperties } from "./primary-correction";
 
@@ -109,6 +111,13 @@ const NODE_TYPE_CONFIGS: NodeTypeConfig[] = [
     description: "Regional mask",
     available: false,
   },
+  {
+    type: "ColorSpaceTransform",
+    label: "Color Space",
+    icon: Palette,
+    description: "Convert color space",
+    available: true,
+  },
 ];
 
 // ============================================================================
@@ -131,6 +140,22 @@ export function ColorGradingPanel({
   const selectedNode = useMemo(
     () => grading.nodes.find((n) => n.id === selectedNodeId) ?? null,
     [grading.nodes, selectedNodeId],
+  );
+
+  // Update a CST node
+  const handleUpdateCstNode = useCallback(
+    (updates: { from_space?: ColorSpace; to_space?: ColorSpace }) => {
+      if (!selectedNode || selectedNode.type !== "ColorSpaceTransform") return;
+
+      const newNodes = grading.nodes.map((node) => {
+        if (node.id === selectedNode.id && node.type === "ColorSpaceTransform") {
+          return { ...node, ...updates };
+        }
+        return node;
+      });
+      onColorGradingChange({ ...grading, nodes: newNodes });
+    },
+    [grading, onColorGradingChange, selectedNode],
   );
 
   // Toggle bypass
@@ -165,15 +190,32 @@ export function ColorGradingPanel({
             wheels: { ...DEFAULT_COLOR_WHEELS },
           };
           break;
+        case "ColorSpaceTransform":
+          newNode = {
+            type: "ColorSpaceTransform",
+            id: `cst-${Date.now()}`,
+            enabled: true,
+            mix: 1,
+            from_space: "SLog3",
+            to_space: "Srgb",
+          };
+          break;
         default:
           return;
       }
 
-      const newNodes = [...grading.nodes, newNode];
+      // Insert after the selected node, or at the end if nothing selected
+      const newNodes = [...grading.nodes];
+      const selectedIndex = selectedNodeId
+        ? newNodes.findIndex((n) => n.id === selectedNodeId)
+        : -1;
+      const insertAt = selectedIndex !== -1 ? selectedIndex + 1 : newNodes.length;
+      newNodes.splice(insertAt, 0, newNode);
+
       onColorGradingChange({ ...grading, nodes: newNodes });
       setSelectedNodeId(newNode.id);
     },
-    [grading, onColorGradingChange],
+    [grading, onColorGradingChange, selectedNodeId],
   );
 
   // Toggle node enabled state
@@ -205,6 +247,17 @@ export function ColorGradingPanel({
       const newNodes = [...grading.nodes];
       const [removed] = newNodes.splice(fromIndex, 1);
       newNodes.splice(toIndex, 0, removed);
+      onColorGradingChange({ ...grading, nodes: newNodes });
+    },
+    [grading, onColorGradingChange],
+  );
+
+  // Update node position (persisted to store)
+  const handleUpdateNodePosition = useCallback(
+    (nodeId: string, x: number, y: number) => {
+      const newNodes = grading.nodes.map((node) =>
+        node.id === nodeId ? { ...node, position: { x, y } } : node,
+      );
       onColorGradingChange({ ...grading, nodes: newNodes });
     },
     [grading, onColorGradingChange],
@@ -279,18 +332,23 @@ export function ColorGradingPanel({
         </Toggle>
       </div>
 
-      {/* Node Graph */}
-      <ColorGradingNodeGraph
-        nodes={grading.nodes}
-        selectedNodeId={selectedNodeId}
-        onSelectNode={setSelectedNodeId}
-        onToggleNodeEnabled={handleToggleNodeEnabled}
-        onRemoveNode={handleRemoveNode}
-        onReorderNodes={handleReorderNodes}
-      />
+      <div className="relative">
+        {/* Node Graph */}
+        <ColorGradingNodeGraph
+          nodes={grading.nodes}
+          selectedNodeId={selectedNodeId}
+          onSelectNode={setSelectedNodeId}
+          onToggleNodeEnabled={handleToggleNodeEnabled}
+          onRemoveNode={handleRemoveNode}
+          onReorderNodes={handleReorderNodes}
+          onUpdateNodePosition={handleUpdateNodePosition}
+        />
 
-      {/* Add Node */}
-      <AddNodeMenu onAddNode={handleAddNode} />
+        <div className="absolute right-2 bottom-2">
+          {/* Add Node */}
+          <AddNodeMenu onAddNode={handleAddNode} />
+        </div>
+      </div>
 
       {/* Selected Node Parameters */}
       {selectedNode && (
@@ -302,6 +360,7 @@ export function ColorGradingPanel({
             node={selectedNode}
             onUpdatePrimary={handleUpdatePrimaryNode}
             onUpdateColorWheels={handleUpdateColorWheelsNode}
+            onUpdateCst={handleUpdateCstNode}
           />
         </>
       )}
@@ -324,48 +383,30 @@ interface AddNodeMenuProps {
   onAddNode: (type: CGNode["type"]) => void;
 }
 
+const addNodeItems: SearchableDropdownItem[] = NODE_TYPE_CONFIGS.map((config) => ({
+  key: config.type,
+  label: config.label,
+  description: config.description,
+  disabled: !config.available,
+  icon: config.icon,
+  trailing: !config.available ? (
+    <span className="text-[10px] text-muted-foreground">Soon</span>
+  ) : undefined,
+}));
+
 function AddNodeMenu({ onAddNode }: AddNodeMenuProps) {
-  const [open, setOpen] = useState(false);
-
-  const handleAdd = (type: CGNode["type"]) => {
-    onAddNode(type);
-    setOpen(false);
-  };
-
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="w-full">
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
-          Add Node
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-64 p-2">
-        <div className="space-y-1">
-          {NODE_TYPE_CONFIGS.map((config) => {
-            const Icon = config.icon;
-            return (
-              <button
-                key={config.type}
-                type="button"
-                onClick={() => config.available && handleAdd(config.type)}
-                disabled={!config.available}
-                className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent disabled:opacity-50 disabled:hover:bg-transparent"
-              >
-                <Icon className="h-4 w-4 text-muted-foreground" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium">{config.label}</p>
-                  <p className="text-xs text-muted-foreground">{config.description}</p>
-                </div>
-                {!config.available && (
-                  <span className="text-[10px] text-muted-foreground">Soon</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </PopoverContent>
-    </Popover>
+    <SearchableDropdown
+      items={addNodeItems}
+      onSelect={(key) => onAddNode(key as CGNode["type"])}
+      placeholder="Search nodes..."
+      align="start"
+    >
+      <Button variant="outline" size="sm" className="w-full">
+        <Plus className="mr-1.5 h-3.5 w-3.5" />
+        Add Node
+      </Button>
+    </SearchableDropdown>
   );
 }
 
@@ -379,7 +420,12 @@ interface NodeParameterEditorProps {
   node: CGNode;
   onUpdatePrimary: (key: keyof PrimaryCorrection, value: number | [number, number, number]) => void;
   onUpdateColorWheels: (updates: Partial<ColorWheels>) => void;
+  onUpdateCst: (updates: { from_space?: ColorSpace; to_space?: ColorSpace }) => void;
 }
+
+// ============================================================================
+// Node Parameter Editor
+// ============================================================================
 
 function NodeParameterEditor({
   clipId,
@@ -387,6 +433,7 @@ function NodeParameterEditor({
   node,
   onUpdatePrimary,
   onUpdateColorWheels,
+  onUpdateCst,
 }: NodeParameterEditorProps) {
   const [expanded, setExpanded] = useState(true);
 
@@ -404,6 +451,8 @@ function NodeParameterEditor({
         return "HSL Qualifier";
       case "Window":
         return "Power Window";
+      case "ColorSpaceTransform":
+        return "Color Space Transform";
       default:
         return "Unknown";
     }
@@ -428,7 +477,7 @@ function NodeParameterEditor({
 
       {/* Parameters */}
       {expanded && (
-        <div className="pl-6">
+        <div className="pl-2">
           {node.type === "Primary" && (
             <PrimaryCorrectionProperties
               clipId={clipId}
@@ -456,6 +505,13 @@ function NodeParameterEditor({
           )}
           {node.type === "Window" && (
             <p className="text-sm text-muted-foreground">Power Window coming soon</p>
+          )}
+          {node.type === "ColorSpaceTransform" && (
+            <CstProperties
+              fromSpace={node.from_space}
+              toSpace={node.to_space}
+              onChange={onUpdateCst}
+            />
           )}
         </div>
       )}

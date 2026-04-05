@@ -2,6 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { framesToSeconds } from "@tooscut/render-engine";
 import { useEffect, useState } from "react";
 
+import { cn } from "@/lib/utils";
+
 import type { MediaAsset } from "../../state/video-editor-store";
 
 import { AssetPanel } from "../../components/editor/asset-panel";
@@ -197,7 +199,7 @@ function EditorPage() {
 }
 
 function SkeletonBlock({ className, style }: { className?: string; style?: React.CSSProperties }) {
-  return <div className={`animate-pulse rounded bg-muted ${className ?? ""}`} style={style} />;
+  return <div className={cn("animate-pulse rounded bg-muted", className)} style={style} />;
 }
 
 function EditorSkeleton() {

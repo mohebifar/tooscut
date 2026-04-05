@@ -265,6 +265,7 @@ export type ColorSpace =
   | "Linear"
   | "AcesCg"
   | "LogC"
+  | "SLog2"
   | "SLog3"
   | "CLog3"
   | "VLog"
@@ -378,6 +379,12 @@ export interface PowerWindow {
   invert: boolean;
 }
 
+/** Node position in the graph editor. */
+export interface NodePosition {
+  x: number;
+  y: number;
+}
+
 /** Color grading node types. */
 export type ColorGradingNode =
   | {
@@ -386,6 +393,7 @@ export type ColorGradingNode =
       enabled: boolean;
       mix: number;
       label?: string;
+      position?: NodePosition;
       correction: PrimaryCorrection;
     }
   | {
@@ -394,6 +402,7 @@ export type ColorGradingNode =
       enabled: boolean;
       mix: number;
       label?: string;
+      position?: NodePosition;
       wheels: ColorWheels;
     }
   | {
@@ -402,6 +411,7 @@ export type ColorGradingNode =
       enabled: boolean;
       mix: number;
       label?: string;
+      position?: NodePosition;
       curves: Curves;
     }
   | {
@@ -410,6 +420,7 @@ export type ColorGradingNode =
       enabled: boolean;
       mix: number;
       label?: string;
+      position?: NodePosition;
       lut: LutReference;
     }
   | {
@@ -418,6 +429,7 @@ export type ColorGradingNode =
       enabled: boolean;
       mix: number;
       label?: string;
+      position?: NodePosition;
       qualifier: HslQualifier;
       correction: PrimaryCorrection;
     }
@@ -427,8 +439,19 @@ export type ColorGradingNode =
       enabled: boolean;
       mix: number;
       label?: string;
+      position?: NodePosition;
       window: PowerWindow;
       correction: PrimaryCorrection;
+    }
+  | {
+      type: "ColorSpaceTransform";
+      id: string;
+      enabled: boolean;
+      mix: number;
+      label?: string;
+      position?: NodePosition;
+      from_space: ColorSpace;
+      to_space: ColorSpace;
     };
 
 /** Complete color grading configuration. */

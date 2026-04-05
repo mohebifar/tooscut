@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { cn } from "../../../lib/utils";
+import { useVideoEditorStore } from "../../../state/video-editor-store";
 import { Slider } from "../../ui/slider";
 
 interface ColorWheelProps {
@@ -161,6 +162,7 @@ export function ColorWheel({
       canvas.setPointerCapture(e.pointerId);
       setIsDragging(true);
       dragStartRef.current = { angle, distance };
+      useVideoEditorStore.temporal.getState().pause();
 
       // Calculate position
       const rect = canvas.getBoundingClientRect();
@@ -220,6 +222,7 @@ export function ColorWheel({
   const handlePointerUp = useCallback(() => {
     setIsDragging(false);
     dragStartRef.current = null;
+    useVideoEditorStore.temporal.getState().resume();
   }, []);
 
   const handleDoubleClick = useCallback(() => {
@@ -233,7 +236,7 @@ export function ColorWheel({
   }, [onLuminanceChange]);
 
   return (
-    <div className={cn("flex flex-col items-center gap-2", disabled && "opacity-50")}>
+    <div className={cn("flex w-full flex-col items-center gap-2", disabled && "opacity-50")}>
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
 
       <div ref={containerRef} className="relative">
@@ -260,6 +263,8 @@ export function ColorWheel({
           max={1}
           step={0.01}
           onValueChange={([v]) => onLuminanceChange(v)}
+          onValueCommit={() => useVideoEditorStore.temporal.getState().resume()}
+          onPointerDown={() => useVideoEditorStore.temporal.getState().pause()}
           disabled={disabled}
           className="flex-1"
         />

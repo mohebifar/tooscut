@@ -1,5 +1,14 @@
 import type { Effects, AudioEffectsParams, ColorGrading } from "@tooscut/render-engine";
 
+import {
+  ClapperboardIcon,
+  ImageIcon,
+  PaletteIcon,
+  ShapesIcon,
+  SparklesIcon,
+  TextIcon,
+  Volume2,
+} from "lucide-react";
 import { useMemo, useState, useCallback } from "react";
 
 import { useVideoEditorStore } from "../../state/video-editor-store";
@@ -247,41 +256,49 @@ export function PropertiesPanel() {
           >
             {showPicture && (
               <TabsTrigger value="picture" className="text-xs">
+                <ImageIcon className="size-3" />
                 Picture
               </TabsTrigger>
             )}
             {showAudio && (
               <TabsTrigger value="audio" className="text-xs">
+                <Volume2 className="size-3" />
                 Audio
               </TabsTrigger>
             )}
             {showText && (
               <TabsTrigger value="text" className="text-xs">
+                <TextIcon className="size-3" />
                 Text
               </TabsTrigger>
             )}
             {showShape && (
               <TabsTrigger value="shape" className="text-xs">
+                <ShapesIcon className="size-3" />
                 Shape
               </TabsTrigger>
             )}
             {showLine && (
               <TabsTrigger value="line" className="text-xs">
+                <ShapesIcon className="size-3" />
                 Line
               </TabsTrigger>
             )}
             {showEffect && (
               <TabsTrigger value="effect" className="text-xs">
+                <SparklesIcon className="size-3" />
                 Effect
               </TabsTrigger>
             )}
             {showColor && (
               <TabsTrigger value="color" className="text-xs">
+                <PaletteIcon className="size-3" />
                 Color
               </TabsTrigger>
             )}
             {showTransition && (
               <TabsTrigger value="transition" className="text-xs">
+                <ClapperboardIcon className="size-3" />
                 Transition
               </TabsTrigger>
             )}

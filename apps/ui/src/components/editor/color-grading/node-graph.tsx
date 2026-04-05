@@ -11,16 +11,18 @@ import type { Node, NodeProps, Edge } from "@xyflow/react";
 
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   BackgroundVariant,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   Handle,
   Position,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Eye, EyeOff, Trash2, GripVertical } from "lucide-react";
-import { useCallback, useMemo, useEffect, memo } from "react";
+import { useCallback, useMemo, useEffect, useRef, memo } from "react";
 
 import { cn } from "../../../lib/utils";
 
@@ -80,6 +82,8 @@ function getNodePreview(node: CGNode): string {
       if ("Gradient" in shape) return "Gradient";
       return "Unknown";
     }
+    case "ColorSpaceTransform":
+      return `${node.from_space} → ${node.to_space}`;
     default:
       return "Unknown";
   }
@@ -102,6 +106,8 @@ function getNodeTheme(type: CGNode["type"]): { bg: string; border: string; accen
       return { bg: "bg-pink-950/50", border: "border-pink-700/50", accent: "text-pink-400" };
     case "Window":
       return { bg: "bg-cyan-950/50", border: "border-cyan-700/50", accent: "text-cyan-400" };
+    case "ColorSpaceTransform":
+      return { bg: "bg-sky-950/50", border: "border-sky-700/50", accent: "text-sky-400" };
     default:
       return { bg: "bg-neutral-900", border: "border-neutral-700", accent: "text-neutral-400" };
   }
@@ -125,6 +131,8 @@ function getNodeLabel(node: CGNode): string {
       return "Qualifier";
     case "Window":
       return "Window";
+    case "ColorSpaceTransform":
+      return "CST";
     default:
       return "Unknown";
   }
@@ -149,14 +157,14 @@ const ColorGradingNodeComponent = memo(function ColorGradingNodeComponent({
         <Handle
           type="target"
           position={Position.Left}
-          className="!h-3 !w-3 !rounded-full !border-2 !border-neutral-600 !bg-neutral-800"
+          className="h-3! w-3! rounded-full! border-2! border-neutral-600! bg-neutral-800!"
         />
       )}
 
       {/* Node content */}
       <div
         className={cn(
-          "group relative min-w-[140px] cursor-pointer rounded-lg border-2 transition-all",
+          "group relative min-w-35 cursor-pointer rounded-lg border-2 transition-all",
           theme.bg,
           theme.border,
           node.enabled ? "opacity-100" : "opacity-50",
@@ -231,7 +239,7 @@ const ColorGradingNodeComponent = memo(function ColorGradingNodeComponent({
         <Handle
           type="source"
           position={Position.Right}
-          className="!h-3 !w-3 !rounded-full !border-2 !border-neutral-600 !bg-neutral-800"
+          className="h-3! w-3! rounded-full! border-2! border-neutral-600! bg-neutral-800!"
         />
       )}
     </>
@@ -257,37 +265,53 @@ interface ColorGradingNodeGraphProps {
   onToggleNodeEnabled: (nodeId: string, enabled: boolean) => void;
   onRemoveNode: (nodeId: string) => void;
   onReorderNodes: (fromIndex: number, toIndex: number) => void;
+  onUpdateNodePosition: (nodeId: string, x: number, y: number) => void;
 }
 
 const NODE_WIDTH = 160;
 const NODE_GAP = 60;
 
-export function ColorGradingNodeGraph({
+export function ColorGradingNodeGraph(props: ColorGradingNodeGraphProps) {
+  return (
+    <ReactFlowProvider>
+      <ColorGradingNodeGraphInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+function ColorGradingNodeGraphInner({
   nodes,
   selectedNodeId,
   onSelectNode,
   onToggleNodeEnabled,
   onRemoveNode,
-  onReorderNodes,
+  onUpdateNodePosition,
 }: ColorGradingNodeGraphProps) {
-  // Convert color grading nodes to React Flow nodes
+  const { fitView } = useReactFlow();
+  const prevNodeCountRef = useRef(nodes.length);
+
+  // Build React Flow nodes — positions come from the node data (persisted in store)
   const flowNodes = useMemo((): ColorGradingFlowNode[] => {
-    return nodes.map((node, index) => ({
-      id: node.id,
-      type: "colorGrading",
-      position: { x: index * (NODE_WIDTH + NODE_GAP), y: 0 },
-      data: {
-        node,
-        index,
-        isFirst: index === 0,
-        isLast: index === nodes.length - 1,
-        onToggleEnabled: (enabled: boolean) => onToggleNodeEnabled(node.id, enabled),
-        onRemove: () => onRemoveNode(node.id),
-        onSelect: () => onSelectNode(node.id),
-        isSelected: node.id === selectedNodeId,
-      },
-      draggable: true,
-    }));
+    return nodes.map((node, index) => {
+      const defaultPos = { x: index * (NODE_WIDTH + NODE_GAP), y: 0 };
+      const pos = node.position ?? defaultPos;
+      return {
+        id: node.id,
+        type: "colorGrading",
+        position: { x: pos.x, y: pos.y },
+        data: {
+          node,
+          index,
+          isFirst: index === 0,
+          isLast: index === nodes.length - 1,
+          onToggleEnabled: (enabled: boolean) => onToggleNodeEnabled(node.id, enabled),
+          onRemove: () => onRemoveNode(node.id),
+          onSelect: () => onSelectNode(node.id),
+          isSelected: node.id === selectedNodeId,
+        },
+        draggable: true,
+      };
+    });
   }, [nodes, selectedNodeId, onToggleNodeEnabled, onRemoveNode, onSelectNode]);
 
   // Create edges connecting nodes in sequence
@@ -308,7 +332,7 @@ export function ColorGradingNodeGraph({
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState(flowNodes);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState(flowEdges);
 
-  // Sync React Flow nodes when props change
+  // Sync React Flow state when source data changes
   useEffect(() => {
     setRfNodes(flowNodes);
   }, [flowNodes, setRfNodes]);
@@ -317,21 +341,20 @@ export function ColorGradingNodeGraph({
     setRfEdges(flowEdges);
   }, [flowEdges, setRfEdges]);
 
-  // Handle node drag end for reordering
+  // Fit view when nodes are added or removed
+  useEffect(() => {
+    if (nodes.length !== prevNodeCountRef.current) {
+      prevNodeCountRef.current = nodes.length;
+      requestAnimationFrame(() => void fitView({ padding: 0.3 }));
+    }
+  }, [nodes.length, fitView]);
+
+  // Persist position to store on drag end
   const onNodeDragStop = useCallback(
     (_event: React.MouseEvent, node: Node) => {
-      const currentIndex = nodes.findIndex((n) => n.id === node.id);
-      if (currentIndex === -1) return;
-
-      // Calculate new index based on x position
-      const newIndex = Math.round(node.position.x / (NODE_WIDTH + NODE_GAP));
-      const clampedIndex = Math.max(0, Math.min(nodes.length - 1, newIndex));
-
-      if (clampedIndex !== currentIndex) {
-        onReorderNodes(currentIndex, clampedIndex);
-      }
+      onUpdateNodePosition(node.id, node.position.x, node.position.y);
     },
-    [nodes, onReorderNodes],
+    [onUpdateNodePosition],
   );
 
   // Handle click on background to deselect
@@ -348,7 +371,7 @@ export function ColorGradingNodeGraph({
   }
 
   return (
-    <div className="h-40 w-full overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900/50">
+    <div className="h-52 w-full overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900/50">
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -361,9 +384,9 @@ export function ColorGradingNodeGraph({
         fitViewOptions={{ padding: 0.3 }}
         minZoom={0.5}
         maxZoom={1.5}
-        panOnDrag={false}
-        zoomOnScroll={false}
-        zoomOnPinch={false}
+        panOnDrag
+        zoomOnScroll
+        zoomOnPinch
         zoomOnDoubleClick={false}
         nodesDraggable={true}
         nodesConnectable={false}

@@ -1,5 +1,7 @@
 import { Link, RotateCcw, Unlink } from "lucide-react";
 
+import { cn } from "@/lib/utils";
+
 export function PropertySection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
@@ -29,11 +31,12 @@ export function LinkablePropertySection({
         <button
           type="button"
           onClick={() => onLinkedChange(!linked)}
-          className={`rounded p-0.5 transition-colors ${
+          className={cn(
+            "rounded p-0.5 transition-colors",
             linked
               ? "text-primary hover:text-primary/80"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
+              : "text-muted-foreground hover:text-foreground",
+          )}
           title={linked ? "Unlink X and Y" : "Link X and Y"}
         >
           {linked ? <Link className="h-3 w-3" /> : <Unlink className="h-3 w-3" />}

@@ -1,6 +1,8 @@
 import { X, Plus, Music, Video, Image, FolderOpen, Type, Shapes, Sparkles } from "lucide-react";
 import { useRef, useCallback, useState, type DragEvent } from "react";
 
+import { cn } from "@/lib/utils";
+
 import { useVideoEditorStore } from "../../state/video-editor-store";
 import {
   useAssetStore,
@@ -359,11 +361,12 @@ export function AssetPanel() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 gap-1.5 rounded-none ${
-                  isActive ? "border-b-2 border-primary text-foreground" : "text-muted-foreground"
-                }`}
+                className={cn(
+                  "flex-1 gap-1.5 rounded-none",
+                  isActive ? "border-b-2 border-primary text-foreground" : "text-muted-foreground",
+                )}
               >
-                <Icon className="h-3.5 w-3.5" />
+                <Icon className="size-3.5" />
                 {tab.label}
               </Button>
             );

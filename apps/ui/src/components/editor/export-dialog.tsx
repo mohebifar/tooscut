@@ -52,6 +52,16 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
+function formatBitrate(bitrate: number): string {
+  if (bitrate >= 1_000_000) {
+    return `${(bitrate / 1_000_000).toFixed(1)} Mbps`;
+  } else if (bitrate >= 1_000) {
+    return `${(bitrate / 1_000).toFixed(1)} kbps`;
+  } else {
+    return `${bitrate} bps`;
+  }
+}
+
 function getStageLabel(stage: string): string {
   switch (stage) {
     case "preparing":
@@ -77,7 +87,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   const settings = useVideoEditorStore((s) => s.settings);
 
   // Export settings — resolution and frame rate come from project settings
-  const [quality, setQuality] = useState<string>("High");
+  const [quality, setQuality] = useState<string | null>("High");
 
   // Export state
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
@@ -186,7 +196,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
                   <SelectContent>
                     {QUALITY_PRESETS.map((preset) => (
                       <SelectItem key={preset.label} value={preset.label}>
-                        {preset.label}
+                        {preset.label} ({formatBitrate(preset.bitrate)})
                       </SelectItem>
                     ))}
                   </SelectContent>

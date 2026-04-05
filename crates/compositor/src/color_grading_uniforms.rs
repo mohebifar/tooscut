@@ -302,8 +302,15 @@ pub struct ColorGradingUniforms {
     /// LUT size (cube dimension, e.g., 33).
     pub lut_size: f32,
 
-    // Padding to 256 bytes (64 bytes)
-    pub _pad: [f32; 16],
+    /// Input color space transform (ColorSpace enum as u32, 0 = sRGB).
+    pub input_cst: u32,
+    /// Output color space transform (ColorSpace enum as u32, 0 = sRGB).
+    pub output_cst: u32,
+    /// Padding to maintain vec4 alignment.
+    pub _pad_align: [f32; 2],
+
+    // Padding to 256 bytes (48 bytes)
+    pub _pad: [f32; 12],
 }
 
 impl Default for ColorGradingUniforms {
@@ -327,7 +334,10 @@ impl Default for ColorGradingUniforms {
             highlights: 0.0,
             shadows: 0.0,
             lut_size: 33.0,
-            _pad: [0.0; 16],
+            input_cst: 0,
+            output_cst: 0,
+            _pad_align: [0.0; 2],
+            _pad: [0.0; 12],
         }
     }
 }
@@ -339,6 +349,25 @@ pub const FLAG_WHEELS_ENABLED: u32 = 1 << 2;
 pub const FLAG_CURVES_ENABLED: u32 = 1 << 3;
 pub const FLAG_LUT_ENABLED: u32 = 1 << 4;
 pub const FLAG_QUALIFIER_ENABLED: u32 = 1 << 5;
+pub const FLAG_INPUT_CST: u32 = 1 << 6;
+pub const FLAG_OUTPUT_CST: u32 = 1 << 7;
+
+/// Convert ColorSpace enum to u32 for shader.
+fn color_space_to_u32(cs: &tooscut_types::ColorSpace) -> u32 {
+    use tooscut_types::ColorSpace;
+    match cs {
+        ColorSpace::Srgb => 0,
+        ColorSpace::Linear => 1,
+        ColorSpace::AcesCg => 2,
+        ColorSpace::LogC => 3,
+        ColorSpace::SLog2 => 4,
+        ColorSpace::SLog3 => 5,
+        ColorSpace::CLog3 => 6,
+        ColorSpace::VLog => 7,
+        ColorSpace::BmFilm => 8,
+        ColorSpace::RedLog3G10 => 9,
+    }
+}
 
 impl ColorGradingUniforms {
     /// Create uniforms from a ColorGrading configuration.
@@ -351,6 +380,39 @@ impl ColorGradingUniforms {
         if grading.bypass {
             uniforms.flags |= FLAG_BYPASS;
             return uniforms;
+        }
+
+        // Scan for CST nodes: first enabled CST → input, last enabled CST → output
+        let mut first_cst: Option<(tooscut_types::ColorSpace, tooscut_types::ColorSpace)> = None;
+        let mut last_cst: Option<(tooscut_types::ColorSpace, tooscut_types::ColorSpace)> = None;
+        for node in &grading.nodes {
+            if let ColorGradingNode::ColorSpaceTransform {
+                enabled: true,
+                from_space,
+                to_space,
+                ..
+            } = node
+            {
+                if first_cst.is_none() {
+                    first_cst = Some((from_space.clone(), to_space.clone()));
+                }
+                last_cst = Some((from_space.clone(), to_space.clone()));
+            }
+        }
+
+        // First CST node: use from_space as input CST (convert from source to linear)
+        if let Some((from_space, _)) = &first_cst {
+            if *from_space != tooscut_types::ColorSpace::Srgb {
+                uniforms.flags |= FLAG_INPUT_CST;
+                uniforms.input_cst = color_space_to_u32(from_space);
+            }
+        }
+        // Last CST node: use to_space as output CST (convert from linear to target)
+        if let Some((_, to_space)) = &last_cst {
+            if *to_space != tooscut_types::ColorSpace::Srgb {
+                uniforms.flags |= FLAG_OUTPUT_CST;
+                uniforms.output_cst = color_space_to_u32(to_space);
+            }
         }
 
         for node in &grading.nodes {
@@ -415,6 +477,8 @@ impl ColorGradingUniforms {
                     ];
                     uniforms.qualifier_mix = *mix;
                 }
+                // CST handled above in the pre-scan
+                ColorGradingNode::ColorSpaceTransform { .. } => {}
                 // Curves and Window require additional textures/data, handled separately
                 _ => {}
             }

@@ -58,7 +58,10 @@ struct ColorGradingUniforms {
     highlights: f32,
     shadows: f32,
     lut_size: f32,
-    _pad: array<vec4<f32>, 4>,
+    input_cst: u32,
+    output_cst: u32,
+    _pad_align: vec2<f32>,
+    _pad: array<vec4<f32>, 3>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: LayerUniforms;
@@ -166,12 +169,164 @@ fn hsl_to_rgb(hsl: vec3<f32>) -> vec3<f32> {
 }
 
 // ============================================================================
+// Color Space Transforms
+// ============================================================================
+
+// Color space IDs (must match Rust ColorSpace enum)
+const CS_SRGB: u32 = 0u;
+const CS_LINEAR: u32 = 1u;
+const CS_ACES_CG: u32 = 2u;
+const CS_LOGC: u32 = 3u;
+const CS_SLOG2: u32 = 4u;
+const CS_SLOG3: u32 = 5u;
+const CS_CLOG3: u32 = 6u;
+const CS_VLOG: u32 = 7u;
+const CS_BM_FILM: u32 = 8u;
+const CS_RED_LOG3G10: u32 = 9u;
+
+// sRGB <-> Linear
+fn srgb_to_linear(srgb: vec3<f32>) -> vec3<f32> {
+    let cutoff = vec3<f32>(0.04045);
+    let linear_low = srgb / 12.92;
+    let linear_high = pow((srgb + 0.055) / 1.055, vec3<f32>(2.4));
+    return select(linear_low, linear_high, srgb > cutoff);
+}
+
+fn linear_to_srgb(linear: vec3<f32>) -> vec3<f32> {
+    let cutoff = vec3<f32>(0.0031308);
+    let srgb_low = linear * 12.92;
+    let srgb_high = 1.055 * pow(linear, vec3<f32>(1.0 / 2.4)) - 0.055;
+    return select(srgb_low, srgb_high, linear > cutoff);
+}
+
+// Sony S-Log2 <-> Linear
+fn slog2_to_linear(slog: vec3<f32>) -> vec3<f32> {
+    let linear_low = (slog - 0.030001222851889303) / 3.53881278538813;
+    let linear_high = pow(vec3<f32>(10.0), (slog - 0.616596 - 0.03) / 0.432699) - 0.037584;
+    return select(linear_low, linear_high, slog >= vec3<f32>(0.0929));
+}
+
+fn linear_to_slog2(linear: vec3<f32>) -> vec3<f32> {
+    let cut = 0.0;
+    let slog_low = linear * 3.53881278538813 + 0.030001222851889303;
+    let slog_high = 0.432699 * log(linear + 0.037584) / log(10.0) + 0.616596 + 0.03;
+    return select(slog_low, slog_high, linear >= vec3<f32>(cut));
+}
+
+// ARRI LogC3 <-> Linear (EI 800)
+fn logc_to_linear(logc: vec3<f32>) -> vec3<f32> {
+    let a = 5.555556;
+    let b = 0.052272;
+    let c = 0.247190;
+    let d = 0.385537;
+    let e_val = 5.367655;
+    let cut = 0.1496582;
+    let linear_low = (logc - d) / e_val;
+    let linear_high = (pow(vec3<f32>(10.0), (logc - c) / a) - b) / a;
+    return select(linear_low, linear_high, logc > vec3<f32>(cut));
+}
+
+fn linear_to_logc(linear: vec3<f32>) -> vec3<f32> {
+    let a = 5.555556;
+    let b = 0.052272;
+    let c = 0.247190;
+    let d = 0.385537;
+    let e_val = 5.367655;
+    let cut = 0.010591;
+    let logc_low = e_val * linear + d;
+    let logc_high = a * log(a * linear + b) / log(10.0) + c;
+    return select(logc_low, logc_high, linear > vec3<f32>(cut));
+}
+
+// Sony S-Log3 <-> Linear
+fn slog3_to_linear(slog: vec3<f32>) -> vec3<f32> {
+    let linear_low = (slog - 0.030001222851889303) / 5.26;
+    let linear_high = pow(vec3<f32>(10.0), (slog - 0.410557184750733) / 0.255620723362659) * 0.19 - 0.01;
+    return select(linear_low, linear_high, slog >= vec3<f32>(0.1673609920));
+}
+
+fn linear_to_slog3(linear: vec3<f32>) -> vec3<f32> {
+    let cut = 0.01125000;
+    let slog_low = linear * 5.26 + 0.030001222851889303;
+    let slog_high = (420.0 + log((linear + 0.01) / 0.19) / log(10.0) * 261.5) / 1023.0;
+    return select(slog_low, slog_high, linear >= vec3<f32>(cut));
+}
+
+// Canon CLog3 <-> Linear (simplified)
+fn clog3_to_linear(clog: vec3<f32>) -> vec3<f32> {
+    let cut = 0.097465473;
+    let linear_low = (clog - 0.073059361) / 5.0;
+    let linear_high = (pow(vec3<f32>(10.0), (clog - 0.449369) / 0.42889912) - 1.0) * 0.08;
+    return select(linear_low, linear_high, clog > vec3<f32>(cut));
+}
+
+fn linear_to_clog3(linear: vec3<f32>) -> vec3<f32> {
+    let cut = 0.014;
+    let clog_low = linear * 5.0 + 0.073059361;
+    let clog_high = 0.42889912 * log(linear / 0.08 + 1.0) / log(10.0) + 0.449369;
+    return select(clog_low, clog_high, linear > vec3<f32>(cut));
+}
+
+// Panasonic V-Log <-> Linear
+fn vlog_to_linear(vlog: vec3<f32>) -> vec3<f32> {
+    let cut_in = 0.181;
+    let linear_low = (vlog - 0.125) / 5.6;
+    let linear_high = pow(vec3<f32>(10.0), (vlog - 0.598206) / 0.241514) - 0.00873;
+    return select(linear_low, linear_high, vlog >= vec3<f32>(cut_in));
+}
+
+fn linear_to_vlog(linear: vec3<f32>) -> vec3<f32> {
+    let cut = 0.01;
+    let vlog_low = linear * 5.6 + 0.125;
+    let vlog_high = 0.241514 * log(linear + 0.00873) / log(10.0) + 0.598206;
+    return select(vlog_low, vlog_high, linear >= vec3<f32>(cut));
+}
+
+// Convert any color space to linear
+fn to_linear(color: vec3<f32>, cs: u32) -> vec3<f32> {
+    switch cs {
+        case CS_LINEAR: { return color; }
+        case CS_SRGB: { return srgb_to_linear(color); }
+        case CS_LOGC: { return logc_to_linear(color); }
+        case CS_SLOG2: { return slog2_to_linear(color); }
+        case CS_SLOG3: { return slog3_to_linear(color); }
+        case CS_CLOG3: { return clog3_to_linear(color); }
+        case CS_VLOG: { return vlog_to_linear(color); }
+        // ACES CG is already linear (just different primaries, simplified here)
+        case CS_ACES_CG: { return color; }
+        // BmFilm and RedLog3G10 simplified as log curves
+        case CS_BM_FILM: { return logc_to_linear(color); }
+        case CS_RED_LOG3G10: { return slog3_to_linear(color); }
+        default: { return srgb_to_linear(color); }
+    }
+}
+
+// Convert from linear to any color space
+fn from_linear(color: vec3<f32>, cs: u32) -> vec3<f32> {
+    switch cs {
+        case CS_LINEAR: { return color; }
+        case CS_SRGB: { return linear_to_srgb(color); }
+        case CS_LOGC: { return linear_to_logc(color); }
+        case CS_SLOG2: { return linear_to_slog2(color); }
+        case CS_SLOG3: { return linear_to_slog3(color); }
+        case CS_CLOG3: { return linear_to_clog3(color); }
+        case CS_VLOG: { return linear_to_vlog(color); }
+        case CS_ACES_CG: { return color; }
+        case CS_BM_FILM: { return linear_to_logc(color); }
+        case CS_RED_LOG3G10: { return linear_to_slog3(color); }
+        default: { return linear_to_srgb(color); }
+    }
+}
+
+// ============================================================================
 // Color Grading
 // ============================================================================
 
 const CG_FLAG_BYPASS: u32 = 1u;
 const CG_FLAG_PRIMARY_ENABLED: u32 = 2u;
 const CG_FLAG_WHEELS_ENABLED: u32 = 4u;
+const CG_FLAG_INPUT_CST: u32 = 64u;
+const CG_FLAG_OUTPUT_CST: u32 = 128u;
 
 fn cg_luminance(rgb: vec3<f32>) -> f32 {
     return dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
@@ -255,6 +410,13 @@ fn apply_color_grading(color: vec3<f32>) -> vec3<f32> {
         return color;
     }
     var result = color;
+
+    // Input CST: convert from source color space to linear for grading
+    if ((cg.flags & CG_FLAG_INPUT_CST) != 0u) {
+        result = to_linear(result, cg.input_cst);
+    }
+
+    // Primary correction (operates in linear)
     if ((cg.flags & CG_FLAG_PRIMARY_ENABLED) != 0u) {
         result = apply_primary_correction(
             result,
@@ -264,6 +426,8 @@ fn apply_color_grading(color: vec3<f32>) -> vec3<f32> {
             cg.highlights, cg.shadows, cg.primary_mix
         );
     }
+
+    // Color wheels (operates in linear)
     if ((cg.flags & CG_FLAG_WHEELS_ENABLED) != 0u) {
         result = apply_lift_gamma_gain(
             result,
@@ -273,6 +437,12 @@ fn apply_color_grading(color: vec3<f32>) -> vec3<f32> {
             cg.wheels_mix
         );
     }
+
+    // Output CST: convert from linear to output color space
+    if ((cg.flags & CG_FLAG_OUTPUT_CST) != 0u) {
+        result = from_linear(result, cg.output_cst);
+    }
+
     return clamp(result, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
