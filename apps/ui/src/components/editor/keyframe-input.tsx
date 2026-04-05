@@ -8,7 +8,7 @@
  * - If not keyframed: updates base value via onChange
  */
 
-import type { AnimatableProperty } from "@tooscut/render-engine";
+import type { AnyAnimatableProperty } from "@tooscut/render-engine";
 
 import { RotateCcw } from "lucide-react";
 
@@ -24,7 +24,7 @@ import { KeyframeButton } from "./keyframe-button";
 
 interface KeyframeInputProps {
   clipId: string;
-  property: AnimatableProperty;
+  property: AnyAnimatableProperty;
   /** Base value of the property (used when not keyframed) */
   baseValue: number;
   /** Minimum allowed value */

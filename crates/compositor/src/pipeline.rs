@@ -39,9 +39,33 @@ struct LayerUniforms {
     motion_blur: f32,
 };
 
+struct ColorGradingUniforms {
+    slope: vec4<f32>,
+    offset: vec4<f32>,
+    power: vec4<f32>,
+    adjustments: vec4<f32>,
+    lift: vec4<f32>,
+    gamma: vec4<f32>,
+    gain: vec4<f32>,
+    qualifier_center: vec4<f32>,
+    qualifier_width: vec4<f32>,
+    qualifier_softness: vec4<f32>,
+    flags: u32,
+    primary_mix: f32,
+    wheels_mix: f32,
+    lut_mix: f32,
+    qualifier_mix: f32,
+    highlights: f32,
+    shadows: f32,
+    lut_size: f32,
+    _pad: array<vec4<f32>, 4>,
+};
+
 @group(0) @binding(0) var<uniform> uniforms: LayerUniforms;
 @group(0) @binding(1) var t_diffuse: texture_2d<f32>;
 @group(0) @binding(2) var s_diffuse: sampler;
+
+@group(1) @binding(0) var<uniform> cg: ColorGradingUniforms;
 
 // Quad vertices (two triangles) - corners of a unit quad [0,0] to [1,1]
 // Will be scaled by texture dimensions in vertex shader
@@ -141,6 +165,117 @@ fn hsl_to_rgb(hsl: vec3<f32>) -> vec3<f32> {
     );
 }
 
+// ============================================================================
+// Color Grading
+// ============================================================================
+
+const CG_FLAG_BYPASS: u32 = 1u;
+const CG_FLAG_PRIMARY_ENABLED: u32 = 2u;
+const CG_FLAG_WHEELS_ENABLED: u32 = 4u;
+
+fn cg_luminance(rgb: vec3<f32>) -> f32 {
+    return dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+}
+
+// ASC-CDL: output = (input * slope + offset) ^ power
+fn apply_cdl(color: vec3<f32>, slope: vec3<f32>, offset: vec3<f32>, power: vec3<f32>) -> vec3<f32> {
+    return pow(max(color * slope + offset, vec3<f32>(0.0)), power);
+}
+
+fn apply_primary_correction(
+    color: vec3<f32>,
+    slope: vec3<f32>,
+    offset: vec3<f32>,
+    power: vec3<f32>,
+    sat: f32,
+    exposure: f32,
+    temperature: f32,
+    tint: f32,
+    highlights: f32,
+    shadows: f32,
+    mix_amount: f32
+) -> vec3<f32> {
+    var result = apply_cdl(color, slope, offset, power);
+    // Exposure
+    result = result * pow(2.0, exposure);
+    // Temperature
+    let t = temperature * 0.01;
+    result = result * vec3<f32>(1.0 + t * 0.1, 1.0, 1.0 - t * 0.1);
+    // Tint
+    if (tint > 0.0) {
+        result = result * vec3<f32>(1.0 + tint * 0.1, 1.0, 1.0);
+    } else {
+        result = result * vec3<f32>(1.0, 1.0 + abs(tint) * 0.1, 1.0);
+    }
+    // Saturation
+    let lum_sat = cg_luminance(result);
+    result = mix(vec3<f32>(lum_sat), result, sat);
+    // Highlights: scale bright areas (positive = brighter highlights, negative = darker)
+    if (abs(highlights) > 0.001) {
+        let lum_hi = cg_luminance(result);
+        // Smooth weight: 0 for darks, 1 for full white
+        let hi_weight = smoothstep(0.3, 1.0, lum_hi);
+        result = result * (1.0 + highlights * hi_weight);
+    }
+    // Shadows: scale dark areas (positive = brighter shadows, negative = darker)
+    if (abs(shadows) > 0.001) {
+        let lum_sh = cg_luminance(result);
+        // Smooth weight: 1 for blacks, 0 for brights
+        let sh_weight = 1.0 - smoothstep(0.0, 0.5, lum_sh);
+        result = result + shadows * sh_weight * 0.5;
+    }
+    return mix(color, result, mix_amount);
+}
+
+fn apply_lift_gamma_gain(
+    color: vec3<f32>,
+    lift_rgb: vec3<f32>,
+    lift_lum: f32,
+    gamma_rgb: vec3<f32>,
+    gamma_lum: f32,
+    gain_rgb: vec3<f32>,
+    gain_lum: f32,
+    mix_amount: f32
+) -> vec3<f32> {
+    var result = color;
+    // Lift (shadows)
+    let lift_color = lift_rgb + lift_lum;
+    result = result + lift_color * (1.0 - result) * 0.5;
+    // Gamma (midtones)
+    let gamma_factor = 1.0 / max(1.0 + gamma_rgb + gamma_lum, vec3<f32>(0.01));
+    result = pow(max(result, vec3<f32>(0.0)), gamma_factor);
+    // Gain (highlights)
+    let gain_factor = 1.0 + gain_rgb + gain_lum;
+    result = result * gain_factor;
+    return mix(color, result, mix_amount);
+}
+
+fn apply_color_grading(color: vec3<f32>) -> vec3<f32> {
+    if ((cg.flags & CG_FLAG_BYPASS) != 0u) {
+        return color;
+    }
+    var result = color;
+    if ((cg.flags & CG_FLAG_PRIMARY_ENABLED) != 0u) {
+        result = apply_primary_correction(
+            result,
+            cg.slope.rgb, cg.offset.rgb, cg.power.rgb,
+            cg.adjustments.x, cg.adjustments.y,
+            cg.adjustments.z, cg.adjustments.w,
+            cg.highlights, cg.shadows, cg.primary_mix
+        );
+    }
+    if ((cg.flags & CG_FLAG_WHEELS_ENABLED) != 0u) {
+        result = apply_lift_gamma_gain(
+            result,
+            cg.lift.rgb, cg.lift.w,
+            cg.gamma.rgb, cg.gamma.w,
+            cg.gain.rgb, cg.gain.w,
+            cg.wheels_mix
+        );
+    }
+    return clamp(result, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var color: vec4<f32>;
@@ -192,6 +327,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         hsl.x = fract(hsl.x + uniforms.hue_rotate / 6.28318530718); // Divide by 2π
         color = vec4<f32>(hsl_to_rgb(hsl), color.a);
     }
+
+    // Apply color grading
+    color = vec4<f32>(apply_color_grading(color.rgb), color.a);
 
     // Apply wipe transition masking (for cross-transition wipes)
     // Wipe types: 3=WipeLeft, 4=WipeRight, 5=WipeUp, 6=WipeDown
@@ -270,10 +408,28 @@ pub fn create_bind_group_layout(device: &Device) -> BindGroupLayout {
     })
 }
 
+/// Create the bind group layout for color grading uniforms (group 1).
+pub fn create_color_grading_bind_group_layout(device: &Device) -> BindGroupLayout {
+    device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("color_grading_bind_group_layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+    })
+}
+
 /// Create the render pipeline for compositing.
 pub fn create_pipeline(
     device: &Device,
     bind_group_layout: &BindGroupLayout,
+    color_grading_bind_group_layout: &BindGroupLayout,
     target_format: TextureFormat,
 ) -> Result<RenderPipeline> {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -283,7 +439,7 @@ pub fn create_pipeline(
 
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("compositor_pipeline_layout"),
-        bind_group_layouts: &[bind_group_layout],
+        bind_group_layouts: &[bind_group_layout, color_grading_bind_group_layout],
         push_constant_ranges: &[],
     });
 

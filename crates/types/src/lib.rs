@@ -4,6 +4,7 @@
 //! and TypeScript code. TypeScript definitions are generated via wasm-bindgen.
 
 mod color;
+mod color_grading;
 mod easing;
 mod effects;
 mod keyframe;
@@ -14,6 +15,7 @@ mod transform;
 mod transition;
 
 pub use color::*;
+pub use color_grading::*;
 pub use easing::*;
 pub use effects::*;
 pub use keyframe::*;

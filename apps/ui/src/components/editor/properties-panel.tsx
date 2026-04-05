@@ -1,4 +1,4 @@
-import type { Effects, AudioEffectsParams } from "@tooscut/render-engine";
+import type { Effects, AudioEffectsParams, ColorGrading } from "@tooscut/render-engine";
 
 import { useMemo, useState, useCallback } from "react";
 
@@ -6,6 +6,7 @@ import { useVideoEditorStore } from "../../state/video-editor-store";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { AudioEffectsProperties } from "./audio-effects-properties";
 import { AudioProperties } from "./audio-properties";
+import { ColorGradingPanel } from "./color-grading/color-grading-panel";
 import { EffectProperties } from "./effect-properties";
 import { LineProperties } from "./line-properties";
 import { PictureProperties } from "./picture-properties";
@@ -13,7 +14,7 @@ import { ShapeProperties } from "./shape-properties";
 import { TextProperties } from "./text-properties";
 import { TransitionProperties } from "./transition-properties";
 
-type TabValue = "picture" | "audio" | "text" | "shape" | "line" | "effect" | "transition";
+type TabValue = "picture" | "audio" | "text" | "shape" | "line" | "effect" | "color" | "transition";
 
 export function PropertiesPanel() {
   const selectedClipIds = useVideoEditorStore((s) => s.selectedClipIds);
@@ -32,6 +33,7 @@ export function PropertiesPanel() {
   const updateClipSpeed = useVideoEditorStore((s) => s.updateClipSpeed);
   const updateClipAudioEffects = useVideoEditorStore((s) => s.updateClipAudioEffects);
   const toggleClipAudioEffect = useVideoEditorStore((s) => s.toggleClipAudioEffect);
+  const updateClipColorGrading = useVideoEditorStore((s) => s.updateClipColorGrading);
 
   // Get selected clip (only support single selection for now)
   const selectedClip = useMemo(() => {
@@ -47,6 +49,7 @@ export function PropertiesPanel() {
   const showShape = clipType === "shape";
   const showLine = clipType === "line";
   const showEffect = !showAudio;
+  const showColor = clipType === "video" || clipType === "image";
   const showTransition = !showAudio && clipType !== "video";
 
   // Track active tab, defaulting to first available
@@ -64,6 +67,7 @@ export function PropertiesPanel() {
     if (showShape) validTabs.push("shape");
     if (showLine) validTabs.push("line");
     if (showEffect) validTabs.push("effect");
+    if (showColor) validTabs.push("color");
     if (showTransition) validTabs.push("transition");
 
     // If current tab is valid, keep it
@@ -80,6 +84,7 @@ export function PropertiesPanel() {
     showShape,
     showLine,
     showEffect,
+    showColor,
     showTransition,
   ]);
 
@@ -183,6 +188,21 @@ export function PropertiesPanel() {
   // Get audio effects
   const audioEffects = selectedClip?.type === "audio" ? selectedClip.audioEffects : undefined;
 
+  // Color grading handler
+  const handleColorGradingChange = useCallback(
+    (colorGrading: ColorGrading) => {
+      if (!selectedClip) return;
+      updateClipColorGrading(selectedClip.id, colorGrading);
+    },
+    [selectedClip, updateClipColorGrading],
+  );
+
+  // Get color grading
+  const colorGrading =
+    selectedClip?.type === "video" || selectedClip?.type === "image"
+      ? selectedClip.colorGrading
+      : undefined;
+
   // Get speed value
   const speed = selectedClip?.speed ?? 1;
 
@@ -194,6 +214,7 @@ export function PropertiesPanel() {
     showShape,
     showLine,
     showEffect,
+    showColor,
     showTransition,
   ].filter(Boolean).length;
 
@@ -252,6 +273,11 @@ export function PropertiesPanel() {
             {showEffect && (
               <TabsTrigger value="effect" className="text-xs">
                 Effect
+              </TabsTrigger>
+            )}
+            {showColor && (
+              <TabsTrigger value="color" className="text-xs">
+                Color
               </TabsTrigger>
             )}
             {showTransition && (
@@ -341,6 +367,18 @@ export function PropertiesPanel() {
                 clipStartTime={selectedClip.startTime}
                 effects={effects}
                 onEffectsChange={handleEffectsChange}
+              />
+            )}
+          </TabsContent>
+
+          {/* Color Grading tab - for video/image clips */}
+          <TabsContent value="color" className="m-0 flex-1 overflow-auto p-3">
+            {selectedClip && (selectedClip.type === "video" || selectedClip.type === "image") && (
+              <ColorGradingPanel
+                clipId={selectedClip.id}
+                clipStartTime={selectedClip.startTime}
+                colorGrading={colorGrading}
+                onColorGradingChange={handleColorGradingChange}
               />
             )}
           </TabsContent>

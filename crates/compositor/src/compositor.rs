@@ -5,14 +5,17 @@ use std::sync::Arc;
 use bytemuck::cast_slice;
 use wasm_bindgen::prelude::*;
 use wgpu::{
-    util::DeviceExt, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, Buffer,
-    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Device, LoadOp, Operations, Queue,
-    RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline, StoreOp, Surface,
-    SurfaceConfiguration, TextureViewDescriptor,
+    util::DeviceExt, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
+    BindingResource, Buffer, BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Device,
+    LoadOp, Operations, Queue, RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline,
+    StoreOp, Surface, SurfaceConfiguration, TextureViewDescriptor,
 };
 
+use crate::color_grading_uniforms::ColorGradingUniforms;
 use crate::error::{CompositorError, Result};
-use crate::pipeline::{create_bind_group_layout, create_pipeline};
+use crate::pipeline::{
+    create_bind_group_layout, create_color_grading_bind_group_layout, create_pipeline,
+};
 use crate::shape_pipeline::{create_shape_bind_group_layout, create_shape_pipeline, ShapeUniforms};
 use crate::text::TextRenderer;
 use crate::texture::{TextureInfo, TextureManager};
@@ -55,6 +58,9 @@ pub struct Compositor {
     // Media layer rendering
     pipeline: RenderPipeline,
     bind_group_layout: BindGroupLayout,
+    // Color grading
+    color_grading_bind_group_layout: BindGroupLayout,
+    default_cg_bind_group: BindGroup,
     // Shape/line rendering
     shape_pipeline: RenderPipeline,
     shape_bind_group_layout: BindGroupLayout,
@@ -378,9 +384,31 @@ impl Compositor {
 
         surface.configure(&device, &surface_config);
 
-        // Media layer pipeline
+        // Media layer pipeline with color grading support
         let bind_group_layout = create_bind_group_layout(&device);
-        let pipeline = create_pipeline(&device, &bind_group_layout, surface_format)?;
+        let color_grading_bind_group_layout = create_color_grading_bind_group_layout(&device);
+        let pipeline = create_pipeline(
+            &device,
+            &bind_group_layout,
+            &color_grading_bind_group_layout,
+            surface_format,
+        )?;
+
+        // Create cached default color grading bind group (no-op)
+        let default_cg_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("default_cg_buffer"),
+            contents: cast_slice(&[ColorGradingUniforms::default()]),
+            usage: BufferUsages::UNIFORM,
+        });
+        let default_cg_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("default_cg_bind_group"),
+            layout: &color_grading_bind_group_layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: default_cg_buffer.as_entire_binding(),
+            }],
+        });
+
         let textures = TextureManager::new(&device);
 
         // Shape/line pipeline
@@ -395,6 +423,8 @@ impl Compositor {
             surface_config,
             pipeline,
             bind_group_layout,
+            color_grading_bind_group_layout,
+            default_cg_bind_group,
             shape_pipeline,
             shape_bind_group_layout,
             textures,
@@ -974,6 +1004,30 @@ impl Compositor {
         });
 
         render_pass.set_bind_group(0, &bind_group, &[]);
+
+        // Set color grading bind group (group 1)
+        if let Some(cg) = &layer.color_grading {
+            let cg_uniforms = ColorGradingUniforms::from_color_grading(cg);
+            let cg_buffer = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("cg_uniform_buffer"),
+                    contents: cast_slice(&[cg_uniforms]),
+                    usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+                });
+            let cg_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+                label: Some("cg_bind_group"),
+                layout: &self.color_grading_bind_group_layout,
+                entries: &[BindGroupEntry {
+                    binding: 0,
+                    resource: cg_buffer.as_entire_binding(),
+                }],
+            });
+            render_pass.set_bind_group(1, &cg_bind_group, &[]);
+        } else {
+            render_pass.set_bind_group(1, &self.default_cg_bind_group, &[]);
+        }
+
         render_pass.draw(0..6, 0..1); // Triangle list (6 vertices, 2 triangles)
     }
 

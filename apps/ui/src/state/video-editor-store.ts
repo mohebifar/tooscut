@@ -14,7 +14,7 @@ import {
   type LineBox,
   type KeyframeTracks,
   type Keyframe,
-  type AnimatableProperty,
+  type AnyAnimatableProperty,
   type Interpolation,
   type EasingPreset,
   type Transition,
@@ -22,6 +22,7 @@ import {
   type CrossTransitionType,
   type AudioEffectsParams,
   type FrameRate,
+  type ColorGrading,
   addTrackPair,
   removeTrackPair,
   addClip,
@@ -75,6 +76,7 @@ export interface VideoClip extends VisualClipBase {
   assetId: string;
   volume?: number;
   linkedClipId?: string;
+  colorGrading?: ColorGrading;
 }
 
 export interface AudioClip extends EditableClip {
@@ -94,6 +96,7 @@ export interface AudioClip extends EditableClip {
 export interface ImageClip extends VisualClipBase {
   type: "image";
   assetId: string;
+  colorGrading?: ColorGrading;
 }
 
 export interface TextClip extends VisualClipBase {
@@ -306,22 +309,25 @@ interface VideoEditorState {
   updateClipLineStyle: (clipId: string, style: Partial<LineStyle>) => void;
   updateClipLineBox: (clipId: string, box: Partial<LineBox>) => void;
 
+  // Actions - Color Grading (video/image clips)
+  updateClipColorGrading: (clipId: string, colorGrading: ColorGrading) => void;
+
   // Actions - Keyframes
   addKeyframe: (
     clipId: string,
-    property: AnimatableProperty,
+    property: AnyAnimatableProperty,
     time: number,
     value: number,
     options?: { interpolation?: Interpolation; easing?: EasingPreset },
   ) => void;
   updateKeyframe: (
     clipId: string,
-    property: AnimatableProperty,
+    property: AnyAnimatableProperty,
     keyframeIndex: number,
     updates: Partial<Keyframe>,
   ) => void;
-  deleteKeyframe: (clipId: string, property: AnimatableProperty, keyframeIndex: number) => void;
-  removeAllKeyframes: (clipId: string, property: AnimatableProperty) => void;
+  deleteKeyframe: (clipId: string, property: AnyAnimatableProperty, keyframeIndex: number) => void;
+  removeAllKeyframes: (clipId: string, property: AnyAnimatableProperty) => void;
 
   // Actions - Transitions
   setClipTransitionIn: (clipId: string, transition: Transition | null) => void;
@@ -1539,6 +1545,16 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             clips: state.clips.map((clip) =>
               clip.id === clipId && clip.type === "line"
                 ? { ...clip, lineBox: { ...clip.lineBox, ...box } }
+                : clip,
+            ),
+          })),
+
+        // Color Grading actions
+        updateClipColorGrading: (clipId, colorGrading) =>
+          set((state) => ({
+            clips: state.clips.map((clip) =>
+              clip.id === clipId && (clip.type === "video" || clip.type === "image")
+                ? { ...clip, colorGrading }
                 : clip,
             ),
           })),

@@ -10,7 +10,7 @@
  * Use the curve editor in the timeline to adjust easing.
  */
 
-import type { AnimatableProperty } from "@tooscut/render-engine";
+import type { AnyAnimatableProperty } from "@tooscut/render-engine";
 
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 
@@ -26,7 +26,7 @@ import { Button } from "../ui/button";
 
 interface KeyframeButtonProps {
   clipId: string;
-  property: AnimatableProperty;
+  property: AnyAnimatableProperty;
   /** Current value of the property (for adding new keyframes) */
   currentValue: number;
   /** Callback when resetting to default (called after removing all keyframes) */

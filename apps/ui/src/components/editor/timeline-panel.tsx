@@ -1,4 +1,4 @@
-import type { AnimatableProperty } from "@tooscut/render-engine";
+import type { AnyAnimatableProperty } from "@tooscut/render-engine";
 
 import { ChevronDown, ChevronUp, GripHorizontal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -29,11 +29,11 @@ export function TimelinePanel() {
   const selectedClip = selectedClipId ? clips.find((c) => c.id === selectedClipId) : null;
 
   // Determine which properties to show curves for (those that have keyframes)
-  const keyframedProperties: AnimatableProperty[] = [];
+  const keyframedProperties: AnyAnimatableProperty[] = [];
   if (selectedClip?.keyframes) {
     for (const track of selectedClip.keyframes.tracks) {
       if (track.keyframes.length > 0) {
-        keyframedProperties.push(track.property as AnimatableProperty);
+        keyframedProperties.push(track.property as AnyAnimatableProperty);
       }
     }
   }

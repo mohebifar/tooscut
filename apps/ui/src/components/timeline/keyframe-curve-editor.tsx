@@ -5,7 +5,7 @@
  * Supports cubic bezier handle editing for precise easing control.
  */
 
-import type { AnimatableProperty, CubicBezier } from "@tooscut/render-engine";
+import type { AnyAnimatableProperty, CubicBezier } from "@tooscut/render-engine";
 import type Konva from "konva";
 import type React from "react";
 
@@ -22,7 +22,7 @@ interface KeyframeCurveEditorProps {
   width: number;
   clipId: string;
   /** Properties to show curves for */
-  properties: AnimatableProperty[];
+  properties: AnyAnimatableProperty[];
 }
 
 /** Height of each property graph */
@@ -45,7 +45,17 @@ interface PropertyConfig {
   format: (v: number) => string;
 }
 
-const PROPERTY_CONFIGS: Record<AnimatableProperty, PropertyConfig> = {
+/** Default config for unknown properties (e.g., color grading) */
+const DEFAULT_PROPERTY_CONFIG: PropertyConfig = {
+  label: "Unknown",
+  color: "#888888",
+  min: 0,
+  max: 1,
+  unit: "",
+  format: (v) => v.toFixed(2),
+};
+
+const PROPERTY_CONFIGS: Partial<Record<AnyAnimatableProperty, PropertyConfig>> = {
   x: {
     label: "Position X",
     color: "#ff6b6b",
@@ -257,7 +267,7 @@ const PROPERTY_CONFIGS: Record<AnimatableProperty, PropertyConfig> = {
 };
 
 interface PropertyGraphProps {
-  property: AnimatableProperty;
+  property: AnyAnimatableProperty;
   clipId: string;
   width: number;
   height: number;
@@ -731,7 +741,7 @@ function PropertyGraph({
 }
 
 export function KeyframeCurveEditor({ width, clipId, properties }: KeyframeCurveEditorProps) {
-  const [expandedProperties, setExpandedProperties] = useState<Set<AnimatableProperty>>(
+  const [expandedProperties, setExpandedProperties] = useState<Set<AnyAnimatableProperty>>(
     () => new Set(properties),
   );
   const [valueZooms, setValueZooms] = useState<Record<string, number>>({});
@@ -744,7 +754,7 @@ export function KeyframeCurveEditor({ width, clipId, properties }: KeyframeCurve
   const clip = clips.find((c) => c.id === clipId);
   const clipStartTime = clip?.startTime ?? 0;
 
-  const toggleProperty = (property: AnimatableProperty) => {
+  const toggleProperty = (property: AnyAnimatableProperty) => {
     setExpandedProperties((prev) => {
       const next = new Set(prev);
       if (next.has(property)) {
@@ -767,7 +777,7 @@ export function KeyframeCurveEditor({ width, clipId, properties }: KeyframeCurve
   return (
     <div className="h-full overflow-hidden bg-neutral-900">
       {properties.map((property) => {
-        const config = PROPERTY_CONFIGS[property];
+        const config = PROPERTY_CONFIGS[property] ?? DEFAULT_PROPERTY_CONFIG;
         const isExpanded = expandedProperties.has(property);
         const keyframes = getKeyframesForProperty(clip.keyframes, property);
 
@@ -785,7 +795,9 @@ export function KeyframeCurveEditor({ width, clipId, properties }: KeyframeCurve
                 <ChevronRight className="h-3.5 w-3.5 text-neutral-400" />
               )}
               <div className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: config.color }} />
-              <span className="text-xs font-medium text-neutral-200">{config.label}</span>
+              <span className="text-xs font-medium text-neutral-200">
+                {config.label !== "Unknown" ? config.label : property}
+              </span>
               <span className="ml-auto text-xs text-neutral-500">
                 {keyframes.length} keyframe{keyframes.length !== 1 ? "s" : ""}
               </span>
