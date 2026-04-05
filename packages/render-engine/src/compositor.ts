@@ -98,6 +98,23 @@ export class Compositor {
   }
 
   /**
+   * Upload a 3D LUT from RGBA float data.
+   * @param lutId - Unique identifier for this LUT
+   * @param size - Cube dimension (e.g., 17, 33, 65)
+   * @param data - Float32Array with size^3 * 4 elements (RGBA)
+   */
+  uploadLut(lutId: string, size: number, data: Float32Array): void {
+    this.wasmCompositor.upload_lut(lutId, size, data);
+  }
+
+  /**
+   * Remove the active LUT, reverting to passthrough.
+   */
+  removeLut(): void {
+    this.wasmCompositor.remove_lut();
+  }
+
+  /**
    * Clear a specific texture.
    */
   clearTexture(textureId: string): void {

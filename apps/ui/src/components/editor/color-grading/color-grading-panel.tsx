@@ -13,6 +13,9 @@ import type {
   ColorSpace,
   PrimaryCorrection,
   ColorWheels,
+  Curves,
+  HslQualifier,
+  LutReference,
   ColorGradingNode as CGNode,
 } from "@tooscut/render-engine";
 
@@ -20,6 +23,9 @@ import {
   DEFAULT_PRIMARY_CORRECTION,
   DEFAULT_COLOR_GRADING,
   DEFAULT_COLOR_WHEELS,
+  DEFAULT_HSL_QUALIFIER,
+  DEFAULT_CURVES,
+  DEFAULT_LUT_REFERENCE,
 } from "@tooscut/render-engine";
 import {
   Eye,
@@ -32,7 +38,6 @@ import {
   Spline,
   Grid3X3,
   Crosshair,
-  Square,
 } from "lucide-react";
 import { useState, useCallback, useMemo } from "react";
 
@@ -42,8 +47,11 @@ import { Separator } from "../../ui/separator";
 import { Toggle } from "../../ui/toggle";
 import { ColorWheelsProperties } from "./color-wheels-properties";
 import { CstProperties } from "./cst-properties";
+import { CurvesProperties } from "./curves-properties";
+import { LutProperties } from "./lut-properties";
 import { ColorGradingNodeGraph } from "./node-graph";
 import { PrimaryCorrectionProperties } from "./primary-correction";
+import { QualifierProperties } from "./qualifier-properties";
 
 // ============================================================================
 // Types
@@ -88,28 +96,21 @@ const NODE_TYPE_CONFIGS: NodeTypeConfig[] = [
     label: "Curves",
     icon: Spline,
     description: "RGB curves adjustment",
-    available: false,
+    available: true,
   },
   {
     type: "Lut",
     label: "LUT",
     icon: Grid3X3,
     description: "3D lookup table",
-    available: false,
+    available: true,
   },
   {
     type: "Qualifier",
     label: "HSL Qualifier",
     icon: Crosshair,
     description: "Secondary color keying",
-    available: false,
-  },
-  {
-    type: "Window",
-    label: "Power Window",
-    icon: Square,
-    description: "Regional mask",
-    available: false,
+    available: true,
   },
   {
     type: "ColorSpaceTransform",
@@ -190,6 +191,34 @@ export function ColorGradingPanel({
             wheels: { ...DEFAULT_COLOR_WHEELS },
           };
           break;
+        case "Curves":
+          newNode = {
+            type: "Curves",
+            id: `curves-${Date.now()}`,
+            enabled: true,
+            mix: 1,
+            curves: { ...DEFAULT_CURVES },
+          };
+          break;
+        case "Lut":
+          newNode = {
+            type: "Lut",
+            id: `lut-${Date.now()}`,
+            enabled: true,
+            mix: 1,
+            lut: { ...DEFAULT_LUT_REFERENCE },
+          };
+          break;
+        case "Qualifier":
+          newNode = {
+            type: "Qualifier",
+            id: `qualifier-${Date.now()}`,
+            enabled: true,
+            mix: 1,
+            qualifier: { ...DEFAULT_HSL_QUALIFIER },
+            correction: { ...DEFAULT_PRIMARY_CORRECTION },
+          };
+          break;
         case "ColorSpaceTransform":
           newNode = {
             type: "ColorSpaceTransform",
@@ -242,12 +271,21 @@ export function ColorGradingPanel({
   );
 
   // Reorder nodes
+  // Reorder nodes based on connection order (array of node IDs)
   const handleReorderNodes = useCallback(
-    (fromIndex: number, toIndex: number) => {
-      const newNodes = [...grading.nodes];
-      const [removed] = newNodes.splice(fromIndex, 1);
-      newNodes.splice(toIndex, 0, removed);
-      onColorGradingChange({ ...grading, nodes: newNodes });
+    (nodeIds: string[]) => {
+      const nodeMap = new Map(grading.nodes.map((n) => [n.id, n]));
+      const reordered = nodeIds
+        .map((id) => nodeMap.get(id))
+        .filter(Boolean) as typeof grading.nodes;
+      // Append any disconnected nodes at the end
+      const reorderedIds = new Set(nodeIds);
+      for (const node of grading.nodes) {
+        if (!reorderedIds.has(node.id)) {
+          reordered.push(node);
+        }
+      }
+      onColorGradingChange({ ...grading, nodes: reordered });
     },
     [grading, onColorGradingChange],
   );
@@ -297,6 +335,88 @@ export function ColorGradingPanel({
             wheels: {
               ...node.wheels,
               ...updates,
+            },
+          };
+        }
+        return node;
+      });
+      onColorGradingChange({ ...grading, nodes: newNodes });
+    },
+    [grading, onColorGradingChange, selectedNode],
+  );
+
+  // Update a curves node
+  const handleUpdateCurvesNode = useCallback(
+    (updatedCurves: Curves) => {
+      if (!selectedNode || selectedNode.type !== "Curves") return;
+
+      const newNodes = grading.nodes.map((node) => {
+        if (node.id === selectedNode.id && node.type === "Curves") {
+          return { ...node, curves: updatedCurves };
+        }
+        return node;
+      });
+      onColorGradingChange({ ...grading, nodes: newNodes });
+    },
+    [grading, onColorGradingChange, selectedNode],
+  );
+
+  // Update a LUT node
+  const handleUpdateLutNode = useCallback(
+    (updates: Partial<LutReference>) => {
+      if (!selectedNode || selectedNode.type !== "Lut") return;
+
+      const newNodes = grading.nodes.map((node) => {
+        if (node.id === selectedNode.id && node.type === "Lut") {
+          return {
+            ...node,
+            lut: {
+              ...node.lut,
+              ...updates,
+            },
+          };
+        }
+        return node;
+      });
+      onColorGradingChange({ ...grading, nodes: newNodes });
+    },
+    [grading, onColorGradingChange, selectedNode],
+  );
+
+  // Update a qualifier node's qualifier params
+  const handleUpdateQualifierNode = useCallback(
+    (key: keyof HslQualifier, value: number | boolean) => {
+      if (!selectedNode || selectedNode.type !== "Qualifier") return;
+
+      const newNodes = grading.nodes.map((node) => {
+        if (node.id === selectedNode.id && node.type === "Qualifier") {
+          return {
+            ...node,
+            qualifier: {
+              ...node.qualifier,
+              [key]: value,
+            },
+          };
+        }
+        return node;
+      });
+      onColorGradingChange({ ...grading, nodes: newNodes });
+    },
+    [grading, onColorGradingChange, selectedNode],
+  );
+
+  // Update a qualifier node's correction params
+  const handleUpdateQualifierCorrection = useCallback(
+    (key: keyof PrimaryCorrection, value: number | [number, number, number]) => {
+      if (!selectedNode || selectedNode.type !== "Qualifier") return;
+
+      const newNodes = grading.nodes.map((node) => {
+        if (node.id === selectedNode.id && node.type === "Qualifier") {
+          return {
+            ...node,
+            correction: {
+              ...node.correction,
+              [key]: value,
             },
           };
         }
@@ -360,7 +480,11 @@ export function ColorGradingPanel({
             node={selectedNode}
             onUpdatePrimary={handleUpdatePrimaryNode}
             onUpdateColorWheels={handleUpdateColorWheelsNode}
+            onUpdateCurves={handleUpdateCurvesNode}
             onUpdateCst={handleUpdateCstNode}
+            onUpdateLut={handleUpdateLutNode}
+            onUpdateQualifier={handleUpdateQualifierNode}
+            onUpdateQualifierCorrection={handleUpdateQualifierCorrection}
           />
         </>
       )}
@@ -420,7 +544,14 @@ interface NodeParameterEditorProps {
   node: CGNode;
   onUpdatePrimary: (key: keyof PrimaryCorrection, value: number | [number, number, number]) => void;
   onUpdateColorWheels: (updates: Partial<ColorWheels>) => void;
+  onUpdateCurves: (curves: Curves) => void;
   onUpdateCst: (updates: { from_space?: ColorSpace; to_space?: ColorSpace }) => void;
+  onUpdateLut: (updates: Partial<LutReference>) => void;
+  onUpdateQualifier: (key: keyof HslQualifier, value: number | boolean) => void;
+  onUpdateQualifierCorrection: (
+    key: keyof PrimaryCorrection,
+    value: number | [number, number, number],
+  ) => void;
 }
 
 // ============================================================================
@@ -433,7 +564,11 @@ function NodeParameterEditor({
   node,
   onUpdatePrimary,
   onUpdateColorWheels,
+  onUpdateCurves,
   onUpdateCst,
+  onUpdateLut,
+  onUpdateQualifier,
+  onUpdateQualifierCorrection,
 }: NodeParameterEditorProps) {
   const [expanded, setExpanded] = useState(true);
 
@@ -449,8 +584,6 @@ function NodeParameterEditor({
         return "LUT";
       case "Qualifier":
         return "HSL Qualifier";
-      case "Window":
-        return "Power Window";
       case "ColorSpaceTransform":
         return "Color Space Transform";
       default:
@@ -495,16 +628,18 @@ function NodeParameterEditor({
             />
           )}
           {node.type === "Curves" && (
-            <p className="text-sm text-muted-foreground">Curves editor coming soon</p>
+            <CurvesProperties curves={node.curves} onCurvesChange={onUpdateCurves} />
           )}
-          {node.type === "Lut" && (
-            <p className="text-sm text-muted-foreground">LUT browser coming soon</p>
-          )}
+          {node.type === "Lut" && <LutProperties lut={node.lut} onChange={onUpdateLut} />}
           {node.type === "Qualifier" && (
-            <p className="text-sm text-muted-foreground">HSL Qualifier coming soon</p>
-          )}
-          {node.type === "Window" && (
-            <p className="text-sm text-muted-foreground">Power Window coming soon</p>
+            <QualifierProperties
+              clipId={clipId}
+              clipStartTime={clipStartTime}
+              qualifier={node.qualifier}
+              correction={node.correction}
+              onQualifierChange={onUpdateQualifier}
+              onCorrectionChange={onUpdateQualifierCorrection}
+            />
           )}
           {node.type === "ColorSpaceTransform" && (
             <CstProperties

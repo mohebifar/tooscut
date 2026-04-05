@@ -152,16 +152,18 @@ interface NewClipInput {
  */
 export interface MediaAsset {
   id: string;
-  type: "video" | "audio" | "image";
+  type: "video" | "audio" | "image" | "lut";
   name: string;
   url: string;
-  /** Asset duration in frames (project frame rate) */
+  /** Asset duration in frames (project frame rate). 0 for non-temporal assets like LUTs. */
   duration: number;
   width?: number;
   height?: number;
   thumbnailUrl?: string;
   /** Native frame rate of the source media (for frame-accurate extraction) */
   sourceFps?: FrameRate;
+  /** LUT cube dimension (e.g. 17, 33, 65). Only present for type="lut". */
+  lutSize?: number;
 }
 
 /**

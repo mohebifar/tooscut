@@ -22,6 +22,7 @@ import {
 import { Button } from "../../components/ui/button";
 import { useAudioEngine } from "../../hooks/use-audio-engine";
 import { useAutoSave } from "../../hooks/use-auto-save";
+import { hydrateLutAsset } from "../../lib/lut-manager";
 import { db } from "../../state/db";
 import { useVideoEditorStore } from "../../state/video-editor-store";
 
@@ -103,6 +104,13 @@ function EditorPage() {
           if (pendingIds.length > 0) {
             setPendingPermissionIds(pendingIds);
             setSavedAssets(project.content.assets);
+          }
+
+          // Hydrate LUT assets (parse .cube files and upload to GPU)
+          const lutAssets = project.content.assets.filter((a: MediaAsset) => a.type === "lut");
+          for (const lutAsset of lutAssets) {
+            if (cancelled) return;
+            await hydrateLutAsset(lutAsset);
           }
         }
 

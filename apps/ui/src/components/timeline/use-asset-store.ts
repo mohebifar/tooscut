@@ -12,7 +12,7 @@ import {
 
 export interface MediaAsset {
   id: string;
-  type: "video" | "audio" | "image";
+  type: "video" | "audio" | "image" | "lut";
   name: string;
   /** Object URL for playback/preview */
   url: string;
@@ -428,6 +428,8 @@ export async function hydrateAssets(assets: StoreMediaAsset[]): Promise<{
   for (const asset of assets) {
     // Assets that already have URLs (e.g. remote) don't need file handle hydration
     if (asset.url !== "") continue;
+    // LUT assets are hydrated separately via lut-manager
+    if (asset.type === "lut") continue;
 
     try {
       const stored = await db.fileHandles.get(asset.id);

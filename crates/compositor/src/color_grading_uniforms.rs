@@ -309,8 +309,36 @@ pub struct ColorGradingUniforms {
     /// Padding to maintain vec4 alignment.
     pub _pad_align: [f32; 2],
 
-    // Padding to 256 bytes (48 bytes)
-    pub _pad: [f32; 12],
+    // === Qualifier correction CDL (applied within qualified region) ===
+    /// Qualifier correction slope.
+    pub q_slope: [f32; 4], // 16 bytes
+    /// Qualifier correction offset.
+    pub q_offset: [f32; 4], // 16 bytes
+    /// Qualifier correction power.
+    pub q_power: [f32; 4], // 16 bytes
+    /// Qualifier correction adjustments: sat, exposure, temperature, tint.
+    pub q_adjustments: [f32; 4], // 16 bytes
+
+    // === Power window params ===
+    /// Window center (x, y) and scale (x, y).
+    pub window_center_scale: [f32; 4], // 16 bytes
+    /// Window shape params: (radius_x/width, radius_y/height, corner_radius/angle, shape_type).
+    pub window_shape: [f32; 4], // 16 bytes
+    /// Window: rotation, softness_inner, softness_outer, invert.
+    pub window_params: [f32; 4], // 16 bytes
+    /// Window correction slope.
+    pub w_slope: [f32; 4], // 16 bytes
+    /// Window correction offset.
+    pub w_offset: [f32; 4], // 16 bytes
+    /// Window correction power.
+    pub w_power: [f32; 4], // 16 bytes
+    /// Window correction adjustments: sat, exposure, temperature, tint.
+    pub w_adjustments: [f32; 4], // 16 bytes
+    /// Window mix + pad.
+    pub window_mix: [f32; 4], // 16 bytes
+
+    // Padding to 512 bytes (400 used, 112 remaining = 28 floats)
+    pub _pad: [f32; 28],
 }
 
 impl Default for ColorGradingUniforms {
@@ -337,7 +365,21 @@ impl Default for ColorGradingUniforms {
             input_cst: 0,
             output_cst: 0,
             _pad_align: [0.0; 2],
-            _pad: [0.0; 12],
+            // Qualifier correction
+            q_slope: [1.0, 1.0, 1.0, 1.0],
+            q_offset: [0.0, 0.0, 0.0, 0.0],
+            q_power: [1.0, 1.0, 1.0, 1.0],
+            q_adjustments: [1.0, 0.0, 0.0, 0.0],
+            // Power window
+            window_center_scale: [0.5, 0.5, 1.0, 1.0],
+            window_shape: [0.25, 0.25, 0.0, 0.0], // circle default
+            window_params: [0.0, 0.0, 0.1, 0.0], // rotation, softness_inner, softness_outer, invert
+            w_slope: [1.0, 1.0, 1.0, 1.0],
+            w_offset: [0.0, 0.0, 0.0, 0.0],
+            w_power: [1.0, 1.0, 1.0, 1.0],
+            w_adjustments: [1.0, 0.0, 0.0, 0.0],
+            window_mix: [1.0, 0.0, 0.0, 0.0],
+            _pad: [0.0; 28],
         }
     }
 }
@@ -349,8 +391,9 @@ pub const FLAG_WHEELS_ENABLED: u32 = 1 << 2;
 pub const FLAG_CURVES_ENABLED: u32 = 1 << 3;
 pub const FLAG_LUT_ENABLED: u32 = 1 << 4;
 pub const FLAG_QUALIFIER_ENABLED: u32 = 1 << 5;
-pub const FLAG_INPUT_CST: u32 = 1 << 6;
-pub const FLAG_OUTPUT_CST: u32 = 1 << 7;
+pub const FLAG_WINDOW_ENABLED: u32 = 1 << 6;
+pub const FLAG_INPUT_CST: u32 = 1 << 7;
+pub const FLAG_OUTPUT_CST: u32 = 1 << 8;
 
 /// Convert ColorSpace enum to u32 for shader.
 fn color_space_to_u32(cs: &tooscut_types::ColorSpace) -> u32 {
@@ -448,13 +491,13 @@ impl ColorGradingUniforms {
                     uniforms.gain = [gain_rgb[0], gain_rgb[1], gain_rgb[2], wheels.gain_luminance];
                     uniforms.wheels_mix = *mix;
                 }
-                ColorGradingNode::Lut { lut, mix, .. } => {
+                ColorGradingNode::Lut { lut, .. } => {
                     uniforms.flags |= FLAG_LUT_ENABLED;
-                    uniforms.lut_mix = *mix;
+                    uniforms.lut_mix = lut.mix;
                     // LUT texture binding handled separately
                 }
                 ColorGradingNode::Qualifier {
-                    qualifier, mix, ..
+                    qualifier, correction, mix, ..
                 } => {
                     uniforms.flags |= FLAG_QUALIFIER_ENABLED;
                     uniforms.qualifier_center = [
@@ -476,10 +519,63 @@ impl ColorGradingUniforms {
                         if qualifier.invert { 1.0 } else { 0.0 },
                     ];
                     uniforms.qualifier_mix = *mix;
+                    // Qualifier correction CDL
+                    uniforms.q_slope = [correction.slope[0], correction.slope[1], correction.slope[2], 1.0];
+                    uniforms.q_offset = [correction.offset[0], correction.offset[1], correction.offset[2], 0.0];
+                    uniforms.q_power = [correction.power[0], correction.power[1], correction.power[2], 1.0];
+                    uniforms.q_adjustments = [
+                        correction.saturation,
+                        correction.exposure,
+                        correction.temperature,
+                        correction.tint,
+                    ];
+                }
+                ColorGradingNode::Window {
+                    window, correction, mix, ..
+                } => {
+                    uniforms.flags |= FLAG_WINDOW_ENABLED;
+                    uniforms.window_center_scale = [
+                        window.center_x,
+                        window.center_y,
+                        window.scale_x,
+                        window.scale_y,
+                    ];
+                    // Encode shape type: 0=circle, 1=rectangle, 2=gradient
+                    let (p1, p2, p3, shape_type) = match &window.shape {
+                        tooscut_types::PowerWindowShape::Circle { radius_x, radius_y } => {
+                            (*radius_x, *radius_y, 0.0, 0.0)
+                        }
+                        tooscut_types::PowerWindowShape::Rectangle { width, height, corner_radius } => {
+                            (*width, *height, *corner_radius, 1.0)
+                        }
+                        tooscut_types::PowerWindowShape::Gradient { angle } => {
+                            (*angle / 360.0, 0.0, 0.0, 2.0)
+                        }
+                        tooscut_types::PowerWindowShape::Polygon { .. } => {
+                            (0.25, 0.25, 0.0, 0.0) // fallback to circle
+                        }
+                    };
+                    uniforms.window_shape = [p1, p2, p3, shape_type];
+                    uniforms.window_params = [
+                        window.rotation / 360.0,
+                        window.softness_inner,
+                        window.softness_outer,
+                        if window.invert { 1.0 } else { 0.0 },
+                    ];
+                    uniforms.w_slope = [correction.slope[0], correction.slope[1], correction.slope[2], 1.0];
+                    uniforms.w_offset = [correction.offset[0], correction.offset[1], correction.offset[2], 0.0];
+                    uniforms.w_power = [correction.power[0], correction.power[1], correction.power[2], 1.0];
+                    uniforms.w_adjustments = [
+                        correction.saturation,
+                        correction.exposure,
+                        correction.temperature,
+                        correction.tint,
+                    ];
+                    uniforms.window_mix = [*mix, 0.0, 0.0, 0.0];
                 }
                 // CST handled above in the pre-scan
                 ColorGradingNode::ColorSpaceTransform { .. } => {}
-                // Curves and Window require additional textures/data, handled separately
+                // Curves require additional texture, handled separately
                 _ => {}
             }
         }
@@ -492,7 +588,7 @@ impl ColorGradingUniforms {
 const _: () = assert!(std::mem::size_of::<PrimaryCorrectionUniforms>() == 128);
 const _: () = assert!(std::mem::size_of::<ColorWheelsUniforms>() == 128);
 const _: () = assert!(std::mem::size_of::<HslQualifierUniforms>() == 128);
-const _: () = assert!(std::mem::size_of::<ColorGradingUniforms>() == 256);
+const _: () = assert!(std::mem::size_of::<ColorGradingUniforms>() == 512);
 
 #[cfg(test)]
 mod tests {
@@ -503,7 +599,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<PrimaryCorrectionUniforms>(), 128);
         assert_eq!(std::mem::size_of::<ColorWheelsUniforms>(), 128);
         assert_eq!(std::mem::size_of::<HslQualifierUniforms>(), 128);
-        assert_eq!(std::mem::size_of::<ColorGradingUniforms>(), 256);
+        assert_eq!(std::mem::size_of::<ColorGradingUniforms>(), 512);
     }
 
     #[test]

@@ -45,6 +45,10 @@ export interface CompositorApi {
   ): Promise<ArrayBuffer>;
   /** Clear a specific texture */
   clearTexture(textureId: string): Promise<void>;
+  /** Upload a 3D LUT */
+  uploadLut(lutId: string, size: number, data: Float32Array): Promise<void>;
+  /** Remove the active LUT */
+  removeLut(): Promise<void>;
   /** Clear all textures */
   clearAllTextures(): Promise<void>;
   /** Flush pending GPU operations */
@@ -147,6 +151,17 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
     ): Promise<ArrayBuffer> {
       if (!api || !isReady) throw new Error("Compositor not ready");
       return api.captureThumbnail(frame, thumbWidth, thumbHeight);
+    },
+
+    async uploadLut(lutId: string, size: number, data: Float32Array) {
+      if (!api || !isReady) return;
+      // Transfer the float data to avoid copying
+      await api.uploadLut(lutId, size, Comlink.transfer(data, [data.buffer]));
+    },
+
+    async removeLut() {
+      if (!api || !isReady) return;
+      await api.removeLut();
     },
 
     async clearTexture(textureId: string) {
