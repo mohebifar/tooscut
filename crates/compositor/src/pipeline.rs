@@ -58,24 +58,7 @@ struct ColorGradingUniforms {
     highlights: f32,
     shadows: f32,
     lut_size: f32,
-    input_cst: u32,
-    output_cst: u32,
-    _pad_align: vec2<f32>,
-    // Qualifier correction CDL
-    q_slope: vec4<f32>,
-    q_offset: vec4<f32>,
-    q_power: vec4<f32>,
-    q_adjustments: vec4<f32>,
-    // Power window
-    window_center_scale: vec4<f32>,
-    window_shape: vec4<f32>,
-    window_params: vec4<f32>,
-    w_slope: vec4<f32>,
-    w_offset: vec4<f32>,
-    w_power: vec4<f32>,
-    w_adjustments: vec4<f32>,
-    window_mix: vec4<f32>,
-    _pad: array<vec4<f32>, 7>,
+    _pad: array<vec4<f32>, 4>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: LayerUniforms;
@@ -83,8 +66,6 @@ struct ColorGradingUniforms {
 @group(0) @binding(2) var s_diffuse: sampler;
 
 @group(1) @binding(0) var<uniform> cg: ColorGradingUniforms;
-@group(1) @binding(1) var t_lut_3d: texture_3d<f32>;
-@group(1) @binding(2) var s_lut: sampler;
 
 // Quad vertices (two triangles) - corners of a unit quad [0,0] to [1,1]
 // Will be scaled by texture dimensions in vertex shader
@@ -185,167 +166,12 @@ fn hsl_to_rgb(hsl: vec3<f32>) -> vec3<f32> {
 }
 
 // ============================================================================
-// Color Space Transforms
-// ============================================================================
-
-// Color space IDs (must match Rust ColorSpace enum)
-const CS_SRGB: u32 = 0u;
-const CS_LINEAR: u32 = 1u;
-const CS_ACES_CG: u32 = 2u;
-const CS_LOGC: u32 = 3u;
-const CS_SLOG2: u32 = 4u;
-const CS_SLOG3: u32 = 5u;
-const CS_CLOG3: u32 = 6u;
-const CS_VLOG: u32 = 7u;
-const CS_BM_FILM: u32 = 8u;
-const CS_RED_LOG3G10: u32 = 9u;
-
-// sRGB <-> Linear
-fn srgb_to_linear(srgb: vec3<f32>) -> vec3<f32> {
-    let cutoff = vec3<f32>(0.04045);
-    let linear_low = srgb / 12.92;
-    let linear_high = pow((srgb + 0.055) / 1.055, vec3<f32>(2.4));
-    return select(linear_low, linear_high, srgb > cutoff);
-}
-
-fn linear_to_srgb(linear: vec3<f32>) -> vec3<f32> {
-    let cutoff = vec3<f32>(0.0031308);
-    let srgb_low = linear * 12.92;
-    let srgb_high = 1.055 * pow(linear, vec3<f32>(1.0 / 2.4)) - 0.055;
-    return select(srgb_low, srgb_high, linear > cutoff);
-}
-
-// Sony S-Log2 <-> Linear
-fn slog2_to_linear(slog: vec3<f32>) -> vec3<f32> {
-    let linear_low = (slog - 0.030001222851889303) / 3.53881278538813;
-    let linear_high = pow(vec3<f32>(10.0), (slog - 0.616596 - 0.03) / 0.432699) - 0.037584;
-    return select(linear_low, linear_high, slog >= vec3<f32>(0.0929));
-}
-
-fn linear_to_slog2(linear: vec3<f32>) -> vec3<f32> {
-    let cut = 0.0;
-    let slog_low = linear * 3.53881278538813 + 0.030001222851889303;
-    let slog_high = 0.432699 * log(linear + 0.037584) / log(10.0) + 0.616596 + 0.03;
-    return select(slog_low, slog_high, linear >= vec3<f32>(cut));
-}
-
-// ARRI LogC3 <-> Linear (EI 800)
-fn logc_to_linear(logc: vec3<f32>) -> vec3<f32> {
-    let a = 5.555556;
-    let b = 0.052272;
-    let c = 0.247190;
-    let d = 0.385537;
-    let e_val = 5.367655;
-    let cut = 0.1496582;
-    let linear_low = (logc - d) / e_val;
-    let linear_high = (pow(vec3<f32>(10.0), (logc - c) / a) - b) / a;
-    return select(linear_low, linear_high, logc > vec3<f32>(cut));
-}
-
-fn linear_to_logc(linear: vec3<f32>) -> vec3<f32> {
-    let a = 5.555556;
-    let b = 0.052272;
-    let c = 0.247190;
-    let d = 0.385537;
-    let e_val = 5.367655;
-    let cut = 0.010591;
-    let logc_low = e_val * linear + d;
-    let logc_high = a * log(a * linear + b) / log(10.0) + c;
-    return select(logc_low, logc_high, linear > vec3<f32>(cut));
-}
-
-// Sony S-Log3 <-> Linear
-fn slog3_to_linear(slog: vec3<f32>) -> vec3<f32> {
-    let linear_low = (slog - 0.030001222851889303) / 5.26;
-    let linear_high = pow(vec3<f32>(10.0), (slog - 0.410557184750733) / 0.255620723362659) * 0.19 - 0.01;
-    return select(linear_low, linear_high, slog >= vec3<f32>(0.1673609920));
-}
-
-fn linear_to_slog3(linear: vec3<f32>) -> vec3<f32> {
-    let cut = 0.01125000;
-    let slog_low = linear * 5.26 + 0.030001222851889303;
-    let slog_high = (420.0 + log((linear + 0.01) / 0.19) / log(10.0) * 261.5) / 1023.0;
-    return select(slog_low, slog_high, linear >= vec3<f32>(cut));
-}
-
-// Canon CLog3 <-> Linear (simplified)
-fn clog3_to_linear(clog: vec3<f32>) -> vec3<f32> {
-    let cut = 0.097465473;
-    let linear_low = (clog - 0.073059361) / 5.0;
-    let linear_high = (pow(vec3<f32>(10.0), (clog - 0.449369) / 0.42889912) - 1.0) * 0.08;
-    return select(linear_low, linear_high, clog > vec3<f32>(cut));
-}
-
-fn linear_to_clog3(linear: vec3<f32>) -> vec3<f32> {
-    let cut = 0.014;
-    let clog_low = linear * 5.0 + 0.073059361;
-    let clog_high = 0.42889912 * log(linear / 0.08 + 1.0) / log(10.0) + 0.449369;
-    return select(clog_low, clog_high, linear > vec3<f32>(cut));
-}
-
-// Panasonic V-Log <-> Linear
-fn vlog_to_linear(vlog: vec3<f32>) -> vec3<f32> {
-    let cut_in = 0.181;
-    let linear_low = (vlog - 0.125) / 5.6;
-    let linear_high = pow(vec3<f32>(10.0), (vlog - 0.598206) / 0.241514) - 0.00873;
-    return select(linear_low, linear_high, vlog >= vec3<f32>(cut_in));
-}
-
-fn linear_to_vlog(linear: vec3<f32>) -> vec3<f32> {
-    let cut = 0.01;
-    let vlog_low = linear * 5.6 + 0.125;
-    let vlog_high = 0.241514 * log(linear + 0.00873) / log(10.0) + 0.598206;
-    return select(vlog_low, vlog_high, linear >= vec3<f32>(cut));
-}
-
-// Convert any color space to linear
-fn to_linear(color: vec3<f32>, cs: u32) -> vec3<f32> {
-    switch cs {
-        case CS_LINEAR: { return color; }
-        case CS_SRGB: { return srgb_to_linear(color); }
-        case CS_LOGC: { return logc_to_linear(color); }
-        case CS_SLOG2: { return slog2_to_linear(color); }
-        case CS_SLOG3: { return slog3_to_linear(color); }
-        case CS_CLOG3: { return clog3_to_linear(color); }
-        case CS_VLOG: { return vlog_to_linear(color); }
-        // ACES CG is already linear (just different primaries, simplified here)
-        case CS_ACES_CG: { return color; }
-        // BmFilm and RedLog3G10 simplified as log curves
-        case CS_BM_FILM: { return logc_to_linear(color); }
-        case CS_RED_LOG3G10: { return slog3_to_linear(color); }
-        default: { return srgb_to_linear(color); }
-    }
-}
-
-// Convert from linear to any color space
-fn from_linear(color: vec3<f32>, cs: u32) -> vec3<f32> {
-    switch cs {
-        case CS_LINEAR: { return color; }
-        case CS_SRGB: { return linear_to_srgb(color); }
-        case CS_LOGC: { return linear_to_logc(color); }
-        case CS_SLOG2: { return linear_to_slog2(color); }
-        case CS_SLOG3: { return linear_to_slog3(color); }
-        case CS_CLOG3: { return linear_to_clog3(color); }
-        case CS_VLOG: { return linear_to_vlog(color); }
-        case CS_ACES_CG: { return color; }
-        case CS_BM_FILM: { return linear_to_logc(color); }
-        case CS_RED_LOG3G10: { return linear_to_slog3(color); }
-        default: { return linear_to_srgb(color); }
-    }
-}
-
-// ============================================================================
 // Color Grading
 // ============================================================================
 
 const CG_FLAG_BYPASS: u32 = 1u;
 const CG_FLAG_PRIMARY_ENABLED: u32 = 2u;
 const CG_FLAG_WHEELS_ENABLED: u32 = 4u;
-const CG_FLAG_LUT_ENABLED: u32 = 16u;
-const CG_FLAG_QUALIFIER_ENABLED: u32 = 32u;
-const CG_FLAG_WINDOW_ENABLED: u32 = 64u;
-const CG_FLAG_INPUT_CST: u32 = 128u;
-const CG_FLAG_OUTPUT_CST: u32 = 256u;
 
 fn cg_luminance(rgb: vec3<f32>) -> f32 {
     return dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
@@ -424,170 +250,11 @@ fn apply_lift_gamma_gain(
     return mix(color, result, mix_amount);
 }
 
-// ============================================================================
-// HSL Qualifier
-// ============================================================================
-
-fn rgb_to_hsl_cg(rgb: vec3<f32>) -> vec3<f32> {
-    let max_c = max(max(rgb.r, rgb.g), rgb.b);
-    let min_c = min(min(rgb.r, rgb.g), rgb.b);
-    let delta = max_c - min_c;
-    let l = (max_c + min_c) * 0.5;
-    if (delta < 0.00001) {
-        return vec3<f32>(0.0, 0.0, l);
-    }
-    let s = select(delta / (2.0 - max_c - min_c), delta / (max_c + min_c), l < 0.5);
-    var h: f32;
-    if (max_c == rgb.r) {
-        h = (rgb.g - rgb.b) / delta + select(0.0, 6.0, rgb.g < rgb.b);
-    } else if (max_c == rgb.g) {
-        h = (rgb.b - rgb.r) / delta + 2.0;
-    } else {
-        h = (rgb.r - rgb.g) / delta + 4.0;
-    }
-    h /= 6.0;
-    return vec3<f32>(h, s, l);
-}
-
-fn hsl_qualifier_mask(
-    hsl: vec3<f32>,
-    center: vec3<f32>,
-    width: vec3<f32>,
-    softness: vec3<f32>,
-    invert_flag: f32,
-) -> f32 {
-    // Hue distance (circular)
-    var hue_diff = abs(hsl.x - center.x);
-    hue_diff = min(hue_diff, 1.0 - hue_diff);
-    let sat_diff = abs(hsl.y - center.y);
-    let lum_diff = abs(hsl.z - center.z);
-
-    let hue_inner = width.x * (1.0 - softness.x);
-    let hue_mask = 1.0 - smoothstep(hue_inner, width.x, hue_diff);
-    let sat_inner = width.y * (1.0 - softness.y);
-    let sat_mask = 1.0 - smoothstep(sat_inner, width.y, sat_diff);
-    let lum_inner = width.z * (1.0 - softness.z);
-    let lum_mask = 1.0 - smoothstep(lum_inner, width.z, lum_diff);
-
-    var mask = hue_mask * sat_mask * lum_mask;
-    if (invert_flag > 0.5) {
-        mask = 1.0 - mask;
-    }
-    return mask;
-}
-
-fn apply_qualifier(color: vec3<f32>) -> vec3<f32> {
-    let hsl = rgb_to_hsl_cg(color);
-    let mask = hsl_qualifier_mask(
-        hsl,
-        cg.qualifier_center.xyz,
-        cg.qualifier_width.xyz,
-        cg.qualifier_softness.xyz,
-        cg.qualifier_softness.w,
-    );
-    // Apply correction within qualified region
-    var corrected = apply_cdl(color, cg.q_slope.rgb, cg.q_offset.rgb, cg.q_power.rgb);
-    corrected = corrected * pow(2.0, cg.q_adjustments.y); // exposure
-    let lum_q = cg_luminance(corrected);
-    corrected = mix(vec3<f32>(lum_q), corrected, cg.q_adjustments.x); // saturation
-    // Desaturate non-qualified region so user can see the selection
-    let outside = mix(vec3<f32>(cg_luminance(color)), color, 0.3);
-    return mix(outside, corrected, mask * cg.qualifier_mix);
-}
-
-// ============================================================================
-// Power Window
-// ============================================================================
-
-fn power_window_mask(uv: vec2<f32>) -> f32 {
-    let center = cg.window_center_scale.xy;
-    let scale = cg.window_center_scale.zw;
-    let rotation = cg.window_params.x * 6.28318530718; // normalized to radians
-    let softness_inner = cg.window_params.y;
-    let softness_outer = cg.window_params.z;
-    let invert_flag = cg.window_params.w;
-    let shape_type = cg.window_shape.w;
-
-    // Transform UV relative to window center, accounting for rotation and scale
-    var p = uv - center;
-    let cos_r = cos(rotation);
-    let sin_r = sin(rotation);
-    p = vec2<f32>(p.x * cos_r + p.y * sin_r, -p.x * sin_r + p.y * cos_r);
-    p = p / max(scale, vec2<f32>(0.001));
-
-    var dist: f32;
-    if (shape_type < 0.5) {
-        // Circle/Ellipse
-        let r = cg.window_shape.xy;
-        let d = p / max(r, vec2<f32>(0.001));
-        dist = length(d);
-    } else if (shape_type < 1.5) {
-        // Rectangle
-        let half_size = cg.window_shape.xy * 0.5;
-        let corner = cg.window_shape.z;
-        let d = abs(p) - half_size + corner;
-        dist = (length(max(d, vec2<f32>(0.0))) + min(max(d.x, d.y), 0.0) - corner)
-            / max(min(half_size.x, half_size.y), 0.001) + 1.0;
-    } else {
-        // Gradient
-        let angle = cg.window_shape.x * 6.28318530718;
-        let dir = vec2<f32>(cos(angle), sin(angle));
-        dist = dot(p, dir) + 0.5;
-    }
-
-    // Apply softness
-    let edge_start = 1.0 - softness_inner;
-    let edge_end = 1.0 + softness_outer;
-    var mask = 1.0 - smoothstep(edge_start, edge_end, dist);
-
-    if (invert_flag > 0.5) {
-        mask = 1.0 - mask;
-    }
-    return mask;
-}
-
-fn apply_window(color: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
-    let mask = power_window_mask(uv);
-    if (mask < 0.001) {
-        return color;
-    }
-    var corrected = apply_cdl(color, cg.w_slope.rgb, cg.w_offset.rgb, cg.w_power.rgb);
-    corrected = corrected * pow(2.0, cg.w_adjustments.y); // exposure
-    let lum_w = cg_luminance(corrected);
-    corrected = mix(vec3<f32>(lum_w), corrected, cg.w_adjustments.x); // saturation
-    return mix(color, corrected, mask * cg.window_mix.x);
-}
-
-// ============================================================================
-// 3D LUT
-// ============================================================================
-
-fn apply_lut(color: vec3<f32>, lut_mix: f32) -> vec3<f32> {
-    let lut_size = cg.lut_size;
-    // Scale color to LUT coordinates with half-texel offset for correct sampling
-    let half_texel = 0.5 / lut_size;
-    let scale = (lut_size - 1.0) / lut_size;
-    let lut_coord = clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)) * scale + half_texel;
-    let lut_color = textureSampleLevel(t_lut_3d, s_lut, lut_coord, 0.0).rgb;
-    return mix(color, lut_color, lut_mix);
-}
-
-// ============================================================================
-// Combined Color Grading
-// ============================================================================
-
-fn apply_color_grading(color: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
+fn apply_color_grading(color: vec3<f32>) -> vec3<f32> {
     if ((cg.flags & CG_FLAG_BYPASS) != 0u) {
         return color;
     }
     var result = color;
-
-    // Input CST: convert from source color space to linear for grading
-    if ((cg.flags & CG_FLAG_INPUT_CST) != 0u) {
-        result = to_linear(result, cg.input_cst);
-    }
-
-    // Primary correction (operates in linear)
     if ((cg.flags & CG_FLAG_PRIMARY_ENABLED) != 0u) {
         result = apply_primary_correction(
             result,
@@ -597,8 +264,6 @@ fn apply_color_grading(color: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
             cg.highlights, cg.shadows, cg.primary_mix
         );
     }
-
-    // Color wheels (operates in linear)
     if ((cg.flags & CG_FLAG_WHEELS_ENABLED) != 0u) {
         result = apply_lift_gamma_gain(
             result,
@@ -608,27 +273,6 @@ fn apply_color_grading(color: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
             cg.wheels_mix
         );
     }
-
-    // 3D LUT
-    if ((cg.flags & CG_FLAG_LUT_ENABLED) != 0u) {
-        result = apply_lut(result, cg.lut_mix);
-    }
-
-    // HSL Qualifier (secondary correction within color range)
-    if ((cg.flags & CG_FLAG_QUALIFIER_ENABLED) != 0u) {
-        result = apply_qualifier(result);
-    }
-
-    // Power Window (regional correction)
-    if ((cg.flags & CG_FLAG_WINDOW_ENABLED) != 0u) {
-        result = apply_window(result, uv);
-    }
-
-    // Output CST: convert from linear to output color space
-    if ((cg.flags & CG_FLAG_OUTPUT_CST) != 0u) {
-        result = from_linear(result, cg.output_cst);
-    }
-
     return clamp(result, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
@@ -685,7 +329,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Apply color grading
-    color = vec4<f32>(apply_color_grading(color.rgb, in.tex_coord), color.a);
+    color = vec4<f32>(apply_color_grading(color.rgb), color.a);
 
     // Apply wipe transition masking (for cross-transition wipes)
     // Wipe types: 3=WipeLeft, 4=WipeRight, 5=WipeUp, 6=WipeDown
@@ -768,37 +412,16 @@ pub fn create_bind_group_layout(device: &Device) -> BindGroupLayout {
 pub fn create_color_grading_bind_group_layout(device: &Device) -> BindGroupLayout {
     device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("color_grading_bind_group_layout"),
-        entries: &[
-            // binding 0: color grading uniforms
-            BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
+        entries: &[BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
             },
-            // binding 1: 3D LUT texture (Rgba16Float — supports linear filtering)
-            BindGroupLayoutEntry {
-                binding: 1,
-                visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Texture {
-                    sample_type: TextureSampleType::Float { filterable: true },
-                    view_dimension: TextureViewDimension::D3,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            // binding 2: LUT sampler (linear filtering for smooth interpolation)
-            BindGroupLayoutEntry {
-                binding: 2,
-                visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Sampler(SamplerBindingType::Filtering),
-                count: None,
-            },
-        ],
+            count: None,
+        }],
     })
 }
 

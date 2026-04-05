@@ -28,31 +28,6 @@ use tooscut_types::{
 #[cfg(target_arch = "wasm32")]
 use web_sys::{HtmlCanvasElement, HtmlVideoElement, ImageBitmap, OffscreenCanvas};
 
-/// Convert f32 to IEEE 754 half-precision (f16) stored as u16.
-fn f32_to_f16(value: f32) -> u16 {
-    let bits = value.to_bits();
-    let sign = (bits >> 16) & 0x8000;
-    let exponent = ((bits >> 23) & 0xFF) as i32;
-    let mantissa = bits & 0x7FFFFF;
-
-    if exponent == 0xFF {
-        // Inf/NaN
-        return (sign | 0x7C00 | if mantissa != 0 { 0x200 } else { 0 }) as u16;
-    }
-
-    let exp = exponent - 127 + 15;
-    if exp >= 31 {
-        // Overflow → Inf
-        return (sign | 0x7C00) as u16;
-    }
-    if exp <= 0 {
-        // Underflow → 0
-        return sign as u16;
-    }
-
-    (sign | ((exp as u32) << 10) | (mantissa >> 13)) as u16
-}
-
 /// A renderable item with its z-index for sorting.
 #[derive(Debug)]
 enum RenderItem<'a> {
@@ -86,11 +61,6 @@ pub struct Compositor {
     // Color grading
     color_grading_bind_group_layout: BindGroupLayout,
     default_cg_bind_group: BindGroup,
-    lut_sampler: wgpu::Sampler,
-    /// Identity 2x2x2 LUT texture (passthrough) used when no LUT is loaded.
-    default_lut_texture_view: wgpu::TextureView,
-    /// Currently loaded 3D LUT texture, keyed by lut_id.
-    active_lut: Option<(String, wgpu::TextureView)>,
     // Shape/line rendering
     shape_pipeline: RenderPipeline,
     shape_bind_group_layout: BindGroupLayout,
@@ -162,27 +132,6 @@ impl Compositor {
         self.textures
             .upload_bitmap(&self.device, &self.queue, texture_id, bitmap)
             .map_err(Into::into)
-    }
-
-    /// Upload a 3D LUT from RGBA float data.
-    ///
-    /// `data` must be a Float32Array with `size^3 * 4` elements (RGBA).
-    /// `size` is the cube dimension (e.g., 17, 33, 65).
-    #[wasm_bindgen]
-    pub fn upload_lut(
-        &mut self,
-        lut_id: &str,
-        size: u32,
-        data: &[f32],
-    ) -> std::result::Result<(), JsValue> {
-        self.upload_lut_internal(lut_id, size, data)
-            .map_err(|e| JsValue::from_str(&e.to_string()))
-    }
-
-    /// Remove the active LUT, reverting to the identity (passthrough) LUT.
-    #[wasm_bindgen]
-    pub fn remove_lut(&mut self) {
-        self.active_lut = None;
     }
 }
 
@@ -438,52 +387,12 @@ impl Compositor {
         // Media layer pipeline with color grading support
         let bind_group_layout = create_bind_group_layout(&device);
         let color_grading_bind_group_layout = create_color_grading_bind_group_layout(&device);
-        log::info!("[compositor] Creating pipeline...");
         let pipeline = create_pipeline(
             &device,
             &bind_group_layout,
             &color_grading_bind_group_layout,
             surface_format,
         )?;
-        log::info!("[compositor] Pipeline created OK");
-
-        // LUT sampler (linear filtering for smooth LUT interpolation)
-        let lut_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("lut_sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-
-        // Default identity LUT (2x2x2, each texel = its own coordinate) in f16
-        let default_lut_f32: [f32; 32] = [
-            0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0,
-            0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0,
-            0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0,
-            0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-        ];
-        let default_lut_data: Vec<u16> = default_lut_f32.iter().map(|&f| f32_to_f16(f)).collect();
-        let default_lut_texture = device.create_texture_with_data(
-            &queue,
-            &wgpu::TextureDescriptor {
-                label: Some("default_lut_3d"),
-                size: wgpu::Extent3d {
-                    width: 2,
-                    height: 2,
-                    depth_or_array_layers: 2,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D3,
-                format: wgpu::TextureFormat::Rgba16Float,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            },
-            wgpu::util::TextureDataOrder::default(),
-            cast_slice(&default_lut_data),
-        );
-        let default_lut_texture_view =
-            default_lut_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         // Create cached default color grading bind group (no-op)
         let default_cg_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -494,20 +403,10 @@ impl Compositor {
         let default_cg_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("default_cg_bind_group"),
             layout: &color_grading_bind_group_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: default_cg_buffer.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::TextureView(&default_lut_texture_view),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: BindingResource::Sampler(&lut_sampler),
-                },
-            ],
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: default_cg_buffer.as_entire_binding(),
+            }],
         });
 
         let textures = TextureManager::new(&device);
@@ -526,9 +425,6 @@ impl Compositor {
             bind_group_layout,
             color_grading_bind_group_layout,
             default_cg_bind_group,
-            lut_sampler,
-            default_lut_texture_view,
-            active_lut: None,
             shape_pipeline,
             shape_bind_group_layout,
             textures,
@@ -538,63 +434,6 @@ impl Compositor {
             readback_buffer: None,
             text_renderer: None, // Lazy initialized on first text render
         })
-    }
-
-    /// Upload a 3D LUT texture from RGBA float data.
-    fn upload_lut_internal(&mut self, lut_id: &str, size: u32, data: &[f32]) -> Result<()> {
-        let expected = (size * size * size * 4) as usize;
-        if data.len() != expected {
-            return Err(CompositorError::Serialization(format!(
-                "LUT data size mismatch: expected {} floats, got {}",
-                expected,
-                data.len()
-            )));
-        }
-
-        // Convert f32 RGBA data to f16 RGBA for GPU (Rgba16Float supports filtering)
-        let f16_data: Vec<u16> = data.iter().map(|&f| f32_to_f16(f)).collect();
-
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("lut_3d"),
-            size: wgpu::Extent3d {
-                width: size,
-                height: size,
-                depth_or_array_layers: size,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D3,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-
-        let bytes_per_row = size * 4 * 2; // width * 4 channels * 2 bytes per f16
-        self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            cast_slice(&f16_data),
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(bytes_per_row),
-                rows_per_image: Some(size),
-            },
-            wgpu::Extent3d {
-                width: size,
-                height: size,
-                depth_or_array_layers: size,
-            },
-        );
-
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        self.active_lut = Some((lut_id.to_string(), view));
-
-        log::info!("[compositor] Uploaded 3D LUT '{}' ({}x{}x{})", lut_id, size, size, size);
-        Ok(())
     }
 
     /// Ensure the text renderer is initialized.
@@ -1176,35 +1015,13 @@ impl Compositor {
                     contents: cast_slice(&[cg_uniforms]),
                     usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
                 });
-
-            // Use active LUT texture if loaded, otherwise default
-            let has_active_lut = self.active_lut.is_some();
-            let lut_view = self
-                .active_lut
-                .as_ref()
-                .map(|(_, view)| view)
-                .unwrap_or(&self.default_lut_texture_view);
-            if cg_uniforms.flags & crate::color_grading_uniforms::FLAG_LUT_ENABLED != 0 {
-                log::info!("[compositor] LUT enabled, active_lut={}, lut_mix={}", has_active_lut, cg_uniforms.lut_mix);
-            }
-
             let cg_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
                 label: Some("cg_bind_group"),
                 layout: &self.color_grading_bind_group_layout,
-                entries: &[
-                    BindGroupEntry {
-                        binding: 0,
-                        resource: cg_buffer.as_entire_binding(),
-                    },
-                    BindGroupEntry {
-                        binding: 1,
-                        resource: BindingResource::TextureView(lut_view),
-                    },
-                    BindGroupEntry {
-                        binding: 2,
-                        resource: BindingResource::Sampler(&self.lut_sampler),
-                    },
-                ],
+                entries: &[BindGroupEntry {
+                    binding: 0,
+                    resource: cg_buffer.as_entire_binding(),
+                }],
             });
             render_pass.set_bind_group(1, &cg_bind_group, &[]);
         } else {

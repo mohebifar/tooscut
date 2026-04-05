@@ -265,7 +265,6 @@ export type ColorSpace =
   | "Linear"
   | "AcesCg"
   | "LogC"
-  | "SLog2"
   | "SLog3"
   | "CLog3"
   | "VLog"
@@ -379,12 +378,6 @@ export interface PowerWindow {
   invert: boolean;
 }
 
-/** Node position in the graph editor. */
-export interface NodePosition {
-  x: number;
-  y: number;
-}
-
 /** Color grading node types. */
 export type ColorGradingNode =
   | {
@@ -393,7 +386,6 @@ export type ColorGradingNode =
       enabled: boolean;
       mix: number;
       label?: string;
-      position?: NodePosition;
       correction: PrimaryCorrection;
     }
   | {
@@ -402,7 +394,6 @@ export type ColorGradingNode =
       enabled: boolean;
       mix: number;
       label?: string;
-      position?: NodePosition;
       wheels: ColorWheels;
     }
   | {
@@ -411,7 +402,6 @@ export type ColorGradingNode =
       enabled: boolean;
       mix: number;
       label?: string;
-      position?: NodePosition;
       curves: Curves;
     }
   | {
@@ -420,7 +410,6 @@ export type ColorGradingNode =
       enabled: boolean;
       mix: number;
       label?: string;
-      position?: NodePosition;
       lut: LutReference;
     }
   | {
@@ -429,7 +418,6 @@ export type ColorGradingNode =
       enabled: boolean;
       mix: number;
       label?: string;
-      position?: NodePosition;
       qualifier: HslQualifier;
       correction: PrimaryCorrection;
     }
@@ -439,19 +427,8 @@ export type ColorGradingNode =
       enabled: boolean;
       mix: number;
       label?: string;
-      position?: NodePosition;
       window: PowerWindow;
       correction: PrimaryCorrection;
-    }
-  | {
-      type: "ColorSpaceTransform";
-      id: string;
-      enabled: boolean;
-      mix: number;
-      label?: string;
-      position?: NodePosition;
-      from_space: ColorSpace;
-      to_space: ColorSpace;
     };
 
 /** Complete color grading configuration. */
@@ -617,24 +594,6 @@ export const DEFAULT_HSL_QUALIFIER: HslQualifier = {
   hue_softness: 0.1,
   saturation_softness: 0.1,
   luminance_softness: 0.1,
-  invert: false,
-};
-
-export const DEFAULT_LUT_REFERENCE: LutReference = {
-  lut_id: "",
-  interpolation: "Tetrahedral",
-  mix: 1.0,
-};
-
-export const DEFAULT_POWER_WINDOW: PowerWindow = {
-  shape: { Circle: { radius_x: 0.25, radius_y: 0.25 } },
-  center_x: 0.5,
-  center_y: 0.5,
-  scale_x: 1,
-  scale_y: 1,
-  rotation: 0,
-  softness_inner: 0,
-  softness_outer: 0.1,
   invert: false,
 };
 

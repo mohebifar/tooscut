@@ -1,10 +1,9 @@
 import type { ColorWheels, ColorWheelValue } from "@tooscut/render-engine";
 
 import { RotateCcw } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 
 import { Button } from "../../ui/button";
-import { ResetButton } from "../../ui/reset-button";
 import { ColorWheel } from "./color-wheel";
 
 interface ColorWheelsPropertiesProps {
@@ -28,10 +27,6 @@ const DEFAULT_WHEEL: ColorWheelValue = { angle: 0, distance: 0 };
  * - Distance from center (color intensity)
  * - Luminance slider (brightness adjustment)
  */
-function isWheelDirty(wheel: ColorWheelValue, luminance: number): boolean {
-  return wheel.distance > 0.001 || Math.abs(luminance) > 0.001;
-}
-
 export function ColorWheelsProperties({ wheels, onWheelsChange }: ColorWheelsPropertiesProps) {
   // Handlers for lift wheel
   const handleLiftColorChange = useCallback(
@@ -103,41 +98,25 @@ export function ColorWheelsProperties({ wheels, onWheelsChange }: ColorWheelsPro
     onWheelsChange({ gain: DEFAULT_WHEEL, gain_luminance: 0 });
   }, [onWheelsChange]);
 
-  const liftDirty = useMemo(
-    () => isWheelDirty(wheels.lift, wheels.lift_luminance),
-    [wheels.lift, wheels.lift_luminance],
-  );
-  const gammaDirty = useMemo(
-    () => isWheelDirty(wheels.gamma, wheels.gamma_luminance),
-    [wheels.gamma, wheels.gamma_luminance],
-  );
-  const gainDirty = useMemo(
-    () => isWheelDirty(wheels.gain, wheels.gain_luminance),
-    [wheels.gain, wheels.gain_luminance],
-  );
-  const anyDirty = liftDirty || gammaDirty || gainDirty;
-
   return (
-    <div className="@container space-y-4">
+    <div className="space-y-4">
       {/* Header with reset button */}
-      <div className="flex h-6 items-center justify-between">
+      <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-muted-foreground">Color Wheels</span>
-        {anyDirty && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs"
-            onClick={handleResetAll}
-            title="Reset all wheels"
-          >
-            <RotateCcw className="mr-1 h-3 w-3" />
-            Reset All
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-xs"
+          onClick={handleResetAll}
+          title="Reset all wheels"
+        >
+          <RotateCcw className="mr-1 h-3 w-3" />
+          Reset
+        </Button>
       </div>
 
-      {/* Wheels — column below 320px, 3-col row above */}
-      <div className="flex flex-col gap-4 @xs:grid @xs:grid-cols-3 @xs:gap-6">
+      {/* Three wheels in a row */}
+      <div className="grid grid-cols-3 gap-2">
         {/* Lift (Shadows) */}
         <div className="flex flex-col items-center">
           <ColorWheel
@@ -149,15 +128,14 @@ export function ColorWheelsProperties({ wheels, onWheelsChange }: ColorWheelsPro
             onLuminanceChange={handleLiftLuminanceChange}
             size={100}
           />
-          <div className="mt-1 flex items-center gap-1">
-            {liftDirty ? (
-              <ResetButton onClick={handleResetLift} title="Reset lift" />
-            ) : (
-              <span className="block size-5 shrink-0" />
-            )}
-            <span className="text-xs text-muted-foreground">Shadows</span>
-            <span className="block size-5 shrink-0" />
-          </div>
+          <button
+            type="button"
+            onClick={handleResetLift}
+            className="mt-1 text-[10px] text-muted-foreground hover:text-foreground"
+            title="Reset lift"
+          >
+            Shadows
+          </button>
         </div>
 
         {/* Gamma (Midtones) */}
@@ -171,15 +149,14 @@ export function ColorWheelsProperties({ wheels, onWheelsChange }: ColorWheelsPro
             onLuminanceChange={handleGammaLuminanceChange}
             size={100}
           />
-          <div className="mt-1 flex items-center gap-1">
-            {gammaDirty ? (
-              <ResetButton onClick={handleResetGamma} title="Reset gamma" />
-            ) : (
-              <span className="block size-5 shrink-0" />
-            )}
-            <span className="text-xs text-muted-foreground">Midtones</span>
-            <span className="block size-5 shrink-0" />
-          </div>
+          <button
+            type="button"
+            onClick={handleResetGamma}
+            className="mt-1 text-[10px] text-muted-foreground hover:text-foreground"
+            title="Reset gamma"
+          >
+            Midtones
+          </button>
         </div>
 
         {/* Gain (Highlights) */}
@@ -193,20 +170,19 @@ export function ColorWheelsProperties({ wheels, onWheelsChange }: ColorWheelsPro
             onLuminanceChange={handleGainLuminanceChange}
             size={100}
           />
-          <div className="mt-1 flex items-center gap-1">
-            {gainDirty ? (
-              <ResetButton onClick={handleResetGain} title="Reset gain" />
-            ) : (
-              <span className="block size-5 shrink-0" />
-            )}
-            <span className="text-xs text-muted-foreground">Highlights</span>
-            <span className="block size-5 shrink-0" />
-          </div>
+          <button
+            type="button"
+            onClick={handleResetGain}
+            className="mt-1 text-[10px] text-muted-foreground hover:text-foreground"
+            title="Reset gain"
+          >
+            Highlights
+          </button>
         </div>
       </div>
 
       {/* Instructions */}
-      <p className="text-xs text-muted-foreground">
+      <p className="text-[10px] text-muted-foreground">
         Drag to adjust color. Double-click to reset. Shift+drag for saturation only.
       </p>
     </div>

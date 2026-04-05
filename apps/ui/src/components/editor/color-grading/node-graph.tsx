@@ -1,68 +1,53 @@
 /**
  * Node-based color grading graph using React Flow.
  *
- * Features:
- * - Fixed Input/Output terminal nodes (non-deletable)
- * - All grading nodes have both input and output handles
- * - User can connect/reconnect nodes by dragging edges
- * - Edge connections determine processing order
+ * Displays color grading nodes in a horizontal pipeline layout.
+ * Each node can be expanded to show parameters, enabled/disabled,
+ * or removed. Nodes can be reordered by dragging.
  */
 
 import type { ColorGradingNode as CGNode } from "@tooscut/render-engine";
-import type { Node, NodeProps, Edge, Connection, OnConnect } from "@xyflow/react";
+import type { Node, NodeProps, Edge } from "@xyflow/react";
 
 import {
   ReactFlow,
-  ReactFlowProvider,
   Background,
   BackgroundVariant,
   useNodesState,
   useEdgesState,
-  useReactFlow,
   Handle,
   Position,
-  addEdge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Eye, EyeOff, Trash2 } from "lucide-react";
-import { useCallback, useMemo, useEffect, useRef, memo } from "react";
+import { Eye, EyeOff, Trash2, GripVertical } from "lucide-react";
+import { useCallback, useMemo, useEffect, memo } from "react";
 
 import { cn } from "../../../lib/utils";
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-const NODE_WIDTH = 160;
-const NODE_GAP = 60;
-const INPUT_NODE_ID = "__input__";
-const OUTPUT_NODE_ID = "__output__";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-interface GradingNodeData extends Record<string, unknown> {
+interface NodeData extends Record<string, unknown> {
   node: CGNode;
+  index: number;
+  isFirst: boolean;
+  isLast: boolean;
   onToggleEnabled: (enabled: boolean) => void;
   onRemove: () => void;
   onSelect: () => void;
   isSelected: boolean;
 }
 
-interface TerminalNodeData extends Record<string, unknown> {
-  label: string;
-  type: "input" | "output";
-}
-
-type GradingFlowNode = Node<GradingNodeData, "colorGrading">;
-type TerminalFlowNode = Node<TerminalNodeData, "terminal">;
-type AnyFlowNode = GradingFlowNode | TerminalFlowNode;
+type ColorGradingFlowNode = Node<NodeData, string>;
 
 // ============================================================================
-// Node Preview / Theme / Label helpers
+// Node Components
 // ============================================================================
 
+/**
+ * Get a preview string for a node's current settings.
+ */
 function getNodePreview(node: CGNode): string {
   switch (node.type) {
     case "Primary": {
@@ -81,30 +66,28 @@ function getNodePreview(node: CGNode): string {
       const active = [hasLift && "L", hasGamma && "G", hasGain && "Gn"].filter(Boolean);
       return active.length > 0 ? active.join(" · ") : "Default";
     }
-    case "Curves": {
-      const cu = node.curves;
-      const isIdentity = (c: { points: { x: number; y: number }[] }) =>
-        c.points.every((p) => Math.abs(p.x - p.y) < 0.01);
-      const totalPts =
-        cu.master.points.length +
-        cu.red.points.length +
-        cu.green.points.length +
-        cu.blue.points.length;
-      const allIdentity =
-        isIdentity(cu.master) && isIdentity(cu.red) && isIdentity(cu.green) && isIdentity(cu.blue);
-      return allIdentity ? "Identity" : `${totalPts} pts`;
-    }
+    case "Curves":
+      return "RGB Curves";
     case "Lut":
       return node.lut.lut_id || "No LUT";
     case "Qualifier":
       return "HSL Key";
-    case "ColorSpaceTransform":
-      return `${node.from_space} → ${node.to_space}`;
+    case "Window": {
+      const shape = node.window.shape;
+      if ("Circle" in shape) return "Circle";
+      if ("Rectangle" in shape) return "Rectangle";
+      if ("Polygon" in shape) return "Polygon";
+      if ("Gradient" in shape) return "Gradient";
+      return "Unknown";
+    }
     default:
       return "Unknown";
   }
 }
 
+/**
+ * Get the color theme for a node type.
+ */
 function getNodeTheme(type: CGNode["type"]): { bg: string; border: string; accent: string } {
   switch (type) {
     case "Primary":
@@ -117,13 +100,16 @@ function getNodeTheme(type: CGNode["type"]): { bg: string; border: string; accen
       return { bg: "bg-green-950/50", border: "border-green-700/50", accent: "text-green-400" };
     case "Qualifier":
       return { bg: "bg-pink-950/50", border: "border-pink-700/50", accent: "text-pink-400" };
-    case "ColorSpaceTransform":
-      return { bg: "bg-sky-950/50", border: "border-sky-700/50", accent: "text-sky-400" };
+    case "Window":
+      return { bg: "bg-cyan-950/50", border: "border-cyan-700/50", accent: "text-cyan-400" };
     default:
       return { bg: "bg-neutral-900", border: "border-neutral-700", accent: "text-neutral-400" };
   }
 }
 
+/**
+ * Get the label for a node type.
+ */
 function getNodeLabel(node: CGNode): string {
   if (node.label) return node.label;
   switch (node.type) {
@@ -137,70 +123,40 @@ function getNodeLabel(node: CGNode): string {
       return "LUT";
     case "Qualifier":
       return "Qualifier";
-    case "ColorSpaceTransform":
-      return "CST";
+    case "Window":
+      return "Window";
     default:
       return "Unknown";
   }
 }
 
-// ============================================================================
-// Terminal Node Component (Input / Output)
-// ============================================================================
-
-const TerminalNodeComponent = memo(function TerminalNodeComponent({
-  data,
-}: NodeProps<TerminalFlowNode>) {
-  const isInput = data.type === "input";
-  return (
-    <>
-      {!isInput && (
-        <Handle
-          type="target"
-          position={Position.Left}
-          className="h-3! w-3! rounded-full! border-2! border-neutral-500! bg-neutral-700!"
-        />
-      )}
-      <div className="flex items-center rounded-md border-2 border-neutral-600 bg-neutral-800 px-4 py-2">
-        <span className="text-xs font-semibold tracking-wide text-neutral-300 uppercase">
-          {data.label}
-        </span>
-      </div>
-      {isInput && (
-        <Handle
-          type="source"
-          position={Position.Right}
-          className="h-3! w-3! rounded-full! border-2! border-neutral-500! bg-neutral-700!"
-        />
-      )}
-    </>
-  );
-});
-
-// ============================================================================
-// Grading Node Component
-// ============================================================================
-
+/**
+ * Base node component for all color grading node types.
+ */
 const ColorGradingNodeComponent = memo(function ColorGradingNodeComponent({
   data,
   selected,
-}: NodeProps<GradingFlowNode>) {
-  const { node, onToggleEnabled, onRemove, onSelect, isSelected } = data;
+}: NodeProps<ColorGradingFlowNode>) {
+  const { node, isFirst, isLast, onToggleEnabled, onRemove, onSelect, isSelected } = data;
   const theme = getNodeTheme(node.type);
   const preview = getNodePreview(node);
   const label = getNodeLabel(node);
 
   return (
     <>
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="h-3! w-3! rounded-full! border-2! border-neutral-600! bg-neutral-800!"
-      />
+      {/* Input handle */}
+      {!isFirst && (
+        <Handle
+          type="target"
+          position={Position.Left}
+          className="!h-3 !w-3 !rounded-full !border-2 !border-neutral-600 !bg-neutral-800"
+        />
+      )}
 
+      {/* Node content */}
       <div
         className={cn(
-          "group relative min-w-35 cursor-pointer rounded-lg border-2 transition-all",
+          "group relative min-w-[140px] cursor-pointer rounded-lg border-2 transition-all",
           theme.bg,
           theme.border,
           node.enabled ? "opacity-100" : "opacity-50",
@@ -209,6 +165,11 @@ const ColorGradingNodeComponent = memo(function ColorGradingNodeComponent({
         )}
         onClick={onSelect}
       >
+        {/* Drag handle */}
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2 opacity-0 transition-opacity group-hover:opacity-100">
+          <GripVertical className="h-4 w-4 text-neutral-500" />
+        </div>
+
         {/* Header */}
         <div className="flex items-center justify-between gap-2 border-b border-neutral-700/50 px-3 py-2">
           <span className={cn("text-xs font-semibold tracking-wide uppercase", theme.accent)}>
@@ -265,11 +226,14 @@ const ColorGradingNodeComponent = memo(function ColorGradingNodeComponent({
         )}
       </div>
 
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="h-3! w-3! rounded-full! border-2! border-neutral-600! bg-neutral-800!"
-      />
+      {/* Output handle */}
+      {!isLast && (
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="!h-3 !w-3 !rounded-full !border-2 !border-neutral-600 !bg-neutral-800"
+        />
+      )}
     </>
   );
 });
@@ -280,7 +244,6 @@ const ColorGradingNodeComponent = memo(function ColorGradingNodeComponent({
 
 const nodeTypes = {
   colorGrading: ColorGradingNodeComponent,
-  terminal: TerminalNodeComponent,
 };
 
 // ============================================================================
@@ -293,133 +256,59 @@ interface ColorGradingNodeGraphProps {
   onSelectNode: (nodeId: string | null) => void;
   onToggleNodeEnabled: (nodeId: string, enabled: boolean) => void;
   onRemoveNode: (nodeId: string) => void;
-  onReorderNodes: (nodeIds: string[]) => void;
-  onUpdateNodePosition: (nodeId: string, x: number, y: number) => void;
+  onReorderNodes: (fromIndex: number, toIndex: number) => void;
 }
 
-export function ColorGradingNodeGraph(props: ColorGradingNodeGraphProps) {
-  return (
-    <ReactFlowProvider>
-      <ColorGradingNodeGraphInner {...props} />
-    </ReactFlowProvider>
-  );
-}
+const NODE_WIDTH = 160;
+const NODE_GAP = 60;
 
-/**
- * Derive processing order from edges by walking the graph from Input → Output.
- * Returns an array of grading node IDs in the connected order.
- */
-function deriveOrderFromEdges(edges: Edge[], gradingNodeIds: Set<string>): string[] {
-  // Build adjacency: source → target
-  const adj = new Map<string, string>();
-  for (const edge of edges) {
-    adj.set(edge.source, edge.target);
-  }
-
-  // Walk from Input
-  const order: string[] = [];
-  let current = adj.get(INPUT_NODE_ID);
-  const visited = new Set<string>();
-  while (current && current !== OUTPUT_NODE_ID && !visited.has(current)) {
-    visited.add(current);
-    if (gradingNodeIds.has(current)) {
-      order.push(current);
-    }
-    current = adj.get(current);
-  }
-
-  return order;
-}
-
-function ColorGradingNodeGraphInner({
+export function ColorGradingNodeGraph({
   nodes,
   selectedNodeId,
   onSelectNode,
   onToggleNodeEnabled,
   onRemoveNode,
   onReorderNodes,
-  onUpdateNodePosition,
 }: ColorGradingNodeGraphProps) {
-  const { fitView } = useReactFlow();
-  const prevNodeCountRef = useRef(nodes.length);
-
-  // Build flow nodes: Input terminal + grading nodes + Output terminal
-  const flowNodes = useMemo((): AnyFlowNode[] => {
-    const result: AnyFlowNode[] = [];
-
-    // Input terminal
-    result.push({
-      id: INPUT_NODE_ID,
-      type: "terminal",
-      position: { x: -NODE_WIDTH - NODE_GAP, y: 10 },
-      data: { label: "Input", type: "input" },
-      draggable: false,
-      selectable: false,
-      deletable: false,
-    });
-
-    // Grading nodes
-    for (let i = 0; i < nodes.length; i++) {
-      const node = nodes[i];
-      const defaultPos = { x: i * (NODE_WIDTH + NODE_GAP), y: 0 };
-      const pos = node.position ?? defaultPos;
-      result.push({
-        id: node.id,
-        type: "colorGrading",
-        position: { x: pos.x, y: pos.y },
-        data: {
-          node,
-          onToggleEnabled: (enabled: boolean) => onToggleNodeEnabled(node.id, enabled),
-          onRemove: () => onRemoveNode(node.id),
-          onSelect: () => onSelectNode(node.id),
-          isSelected: node.id === selectedNodeId,
-        },
-        draggable: true,
-        deletable: false,
-      });
-    }
-
-    // Output terminal
-    result.push({
-      id: OUTPUT_NODE_ID,
-      type: "terminal",
-      position: { x: nodes.length * (NODE_WIDTH + NODE_GAP), y: 10 },
-      data: { label: "Output", type: "output" },
-      draggable: false,
-      selectable: false,
-      deletable: false,
-    });
-
-    return result;
+  // Convert color grading nodes to React Flow nodes
+  const flowNodes = useMemo((): ColorGradingFlowNode[] => {
+    return nodes.map((node, index) => ({
+      id: node.id,
+      type: "colorGrading",
+      position: { x: index * (NODE_WIDTH + NODE_GAP), y: 0 },
+      data: {
+        node,
+        index,
+        isFirst: index === 0,
+        isLast: index === nodes.length - 1,
+        onToggleEnabled: (enabled: boolean) => onToggleNodeEnabled(node.id, enabled),
+        onRemove: () => onRemoveNode(node.id),
+        onSelect: () => onSelectNode(node.id),
+        isSelected: node.id === selectedNodeId,
+      },
+      draggable: true,
+    }));
   }, [nodes, selectedNodeId, onToggleNodeEnabled, onRemoveNode, onSelectNode]);
 
-  // Create edges: Input → node[0] → node[1] → ... → Output
+  // Create edges connecting nodes in sequence
   const flowEdges = useMemo((): Edge[] => {
-    const chain = [INPUT_NODE_ID, ...nodes.map((n) => n.id), OUTPUT_NODE_ID];
-    return chain.slice(0, -1).map((source, i) => {
-      const target = chain[i + 1];
-      const sourceEnabled =
-        source === INPUT_NODE_ID || (nodes.find((n) => n.id === source)?.enabled ?? true);
-      const targetEnabled =
-        target === OUTPUT_NODE_ID || (nodes.find((n) => n.id === target)?.enabled ?? true);
-      return {
-        id: `edge-${source}-${target}`,
-        source,
-        target,
-        type: "smoothstep",
-        animated: sourceEnabled && targetEnabled,
-        style: {
-          stroke: sourceEnabled ? "#525252" : "#262626",
-          strokeWidth: 2,
-        },
-      };
-    });
+    return nodes.slice(0, -1).map((node, index) => ({
+      id: `edge-${node.id}-${nodes[index + 1].id}`,
+      source: node.id,
+      target: nodes[index + 1].id,
+      type: "smoothstep",
+      animated: nodes[index].enabled && nodes[index + 1].enabled,
+      style: {
+        stroke: nodes[index].enabled ? "#525252" : "#262626",
+        strokeWidth: 2,
+      },
+    }));
   }, [nodes]);
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState(flowNodes);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState(flowEdges);
 
-  // Sync React Flow state when source data changes
+  // Sync React Flow nodes when props change
   useEffect(() => {
     setRfNodes(flowNodes);
   }, [flowNodes, setRfNodes]);
@@ -428,47 +317,21 @@ function ColorGradingNodeGraphInner({
     setRfEdges(flowEdges);
   }, [flowEdges, setRfEdges]);
 
-  // Fit view when nodes are added or removed
-  useEffect(() => {
-    if (nodes.length !== prevNodeCountRef.current) {
-      prevNodeCountRef.current = nodes.length;
-      requestAnimationFrame(() => void fitView({ padding: 0.3 }));
-    }
-  }, [nodes.length, fitView]);
-
-  // Handle new connections
-  const gradingNodeIds = useMemo(() => new Set(nodes.map((n) => n.id)), [nodes]);
-
-  const onConnect: OnConnect = useCallback(
-    (connection: Connection) => {
-      // Add the new edge, removing any existing edge from the same source
-      setRfEdges((eds) => {
-        const filtered = eds.filter(
-          (e) => e.source !== connection.source && e.target !== connection.target,
-        );
-        const newEdges = addEdge(
-          { ...connection, type: "smoothstep", style: { stroke: "#525252", strokeWidth: 2 } },
-          filtered,
-        );
-        // Derive new order from the updated edges
-        const newOrder = deriveOrderFromEdges(newEdges, gradingNodeIds);
-        if (newOrder.length > 0) {
-          onReorderNodes(newOrder);
-        }
-        return newEdges;
-      });
-    },
-    [setRfEdges, gradingNodeIds, onReorderNodes],
-  );
-
-  // Persist position to store on drag end
+  // Handle node drag end for reordering
   const onNodeDragStop = useCallback(
     (_event: React.MouseEvent, node: Node) => {
-      if (node.id !== INPUT_NODE_ID && node.id !== OUTPUT_NODE_ID) {
-        onUpdateNodePosition(node.id, node.position.x, node.position.y);
+      const currentIndex = nodes.findIndex((n) => n.id === node.id);
+      if (currentIndex === -1) return;
+
+      // Calculate new index based on x position
+      const newIndex = Math.round(node.position.x / (NODE_WIDTH + NODE_GAP));
+      const clampedIndex = Math.max(0, Math.min(nodes.length - 1, newIndex));
+
+      if (clampedIndex !== currentIndex) {
+        onReorderNodes(currentIndex, clampedIndex);
       }
     },
-    [onUpdateNodePosition],
+    [nodes, onReorderNodes],
   );
 
   // Handle click on background to deselect
@@ -476,14 +339,21 @@ function ColorGradingNodeGraphInner({
     onSelectNode(null);
   }, [onSelectNode]);
 
+  if (nodes.length === 0) {
+    return (
+      <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-neutral-700 bg-neutral-900/50">
+        <p className="text-sm text-neutral-500">No nodes in pipeline</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="h-52 w-full overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900/50">
+    <div className="h-40 w-full overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900/50">
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
         onNodeDragStop={onNodeDragStop}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
@@ -491,12 +361,12 @@ function ColorGradingNodeGraphInner({
         fitViewOptions={{ padding: 0.3 }}
         minZoom={0.5}
         maxZoom={1.5}
-        panOnDrag
-        zoomOnScroll
-        zoomOnPinch
+        panOnDrag={false}
+        zoomOnScroll={false}
+        zoomOnPinch={false}
         zoomOnDoubleClick={false}
         nodesDraggable={true}
-        nodesConnectable={true}
+        nodesConnectable={false}
         elementsSelectable={false}
         proOptions={{ hideAttribution: true }}
       >
