@@ -23,7 +23,7 @@ import { parseCubeFile, type CubeLut } from "./cube-parser";
  *
  * Returns the asset ID.
  */
-async function importLutFromHandle(
+export async function importLutFromHandle(
   handle: FileSystemFileHandle,
 ): Promise<{ id: string; name: string } | null> {
   try {
@@ -70,10 +70,7 @@ async function importLutFromHandle(
  * Import a .cube LUT file via the File System Access API picker.
  * Falls back to <input type="file"> if the API is unavailable.
  */
-export async function importLutWithPicker(): Promise<{
-  id: string;
-  name: string;
-} | null> {
+export async function importLutWithPicker(): Promise<{ id: string; name: string } | null> {
   if ("showOpenFilePicker" in window) {
     try {
       const [handle] = await (window as any).showOpenFilePicker({
@@ -147,13 +144,9 @@ export async function hydrateLutAsset(asset: MediaAsset): Promise<boolean> {
 
   try {
     // Check/request permission
-    const permission = await (stored.handle as any).queryPermission({
-      mode: "read",
-    });
+    const permission = await (stored.handle as any).queryPermission({ mode: "read" });
     if (permission !== "granted") {
-      const requested = await (stored.handle as any).requestPermission({
-        mode: "read",
-      });
+      const requested = await (stored.handle as any).requestPermission({ mode: "read" });
       if (requested !== "granted") {
         console.warn(`[lut-manager] Permission denied for LUT ${asset.id}`);
         return false;
@@ -169,6 +162,18 @@ export async function hydrateLutAsset(asset: MediaAsset): Promise<boolean> {
     console.error(`[lut-manager] Failed to hydrate LUT ${asset.id}:`, err);
     return false;
   }
+}
+
+/**
+ * Remove a LUT asset — remove from store, DB, and GPU.
+ */
+export async function removeLutAsset(assetId: string): Promise<void> {
+  const compositor = getSharedCompositor();
+  if (compositor) {
+    await compositor.removeLut();
+  }
+  await db.fileHandles.delete(assetId);
+  useVideoEditorStore.getState().removeAsset(assetId);
 }
 
 /**

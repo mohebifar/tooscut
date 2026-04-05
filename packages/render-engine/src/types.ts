@@ -620,6 +620,24 @@ export const DEFAULT_HSL_QUALIFIER: HslQualifier = {
   invert: false,
 };
 
+export const DEFAULT_LUT_REFERENCE: LutReference = {
+  lut_id: "",
+  interpolation: "Tetrahedral",
+  mix: 1.0,
+};
+
+export const DEFAULT_POWER_WINDOW: PowerWindow = {
+  shape: { Circle: { radius_x: 0.25, radius_y: 0.25 } },
+  center_x: 0.5,
+  center_y: 0.5,
+  scale_x: 1,
+  scale_y: 1,
+  rotation: 0,
+  softness_inner: 0,
+  softness_outer: 0.1,
+  invert: false,
+};
+
 export const DEFAULT_COLOR_GRADING: ColorGrading = {
   input_color_space: "Srgb",
   output_color_space: "Srgb",
