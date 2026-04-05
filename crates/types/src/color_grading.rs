@@ -32,6 +32,8 @@ pub enum ColorSpace {
     AcesCg,
     /// ARRI Log C (wide dynamic range).
     LogC,
+    /// Sony S-Log2.
+    SLog2,
     /// Sony S-Log3.
     SLog3,
     /// Canon Log 3.
@@ -617,6 +619,14 @@ impl Default for PowerWindow {
 // Color Grading Nodes
 // ============================================================================
 
+/// Node position in the graph editor.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+pub struct NodePosition {
+    pub x: f32,
+    pub y: f32,
+}
+
 /// A node in the color grading pipeline.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Tsify)]
 #[tsify(into_wasm_abi, from_wasm_abi)]
@@ -634,6 +644,10 @@ pub enum ColorGradingNode {
         #[serde(skip_serializing_if = "Option::is_none")]
         #[tsify(optional)]
         label: Option<String>,
+        /// Graph editor position.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[tsify(optional)]
+        position: Option<NodePosition>,
         /// Correction parameters.
         correction: PrimaryCorrection,
     },
@@ -646,6 +660,9 @@ pub enum ColorGradingNode {
         #[serde(skip_serializing_if = "Option::is_none")]
         #[tsify(optional)]
         label: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[tsify(optional)]
+        position: Option<NodePosition>,
         wheels: ColorWheels,
     },
 
@@ -657,6 +674,9 @@ pub enum ColorGradingNode {
         #[serde(skip_serializing_if = "Option::is_none")]
         #[tsify(optional)]
         label: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[tsify(optional)]
+        position: Option<NodePosition>,
         curves: Curves,
     },
 
@@ -668,6 +688,9 @@ pub enum ColorGradingNode {
         #[serde(skip_serializing_if = "Option::is_none")]
         #[tsify(optional)]
         label: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[tsify(optional)]
+        position: Option<NodePosition>,
         lut: LutReference,
     },
 
@@ -679,6 +702,9 @@ pub enum ColorGradingNode {
         #[serde(skip_serializing_if = "Option::is_none")]
         #[tsify(optional)]
         label: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[tsify(optional)]
+        position: Option<NodePosition>,
         qualifier: HslQualifier,
         /// Correction to apply within qualified region.
         correction: PrimaryCorrection,
@@ -692,9 +718,29 @@ pub enum ColorGradingNode {
         #[serde(skip_serializing_if = "Option::is_none")]
         #[tsify(optional)]
         label: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[tsify(optional)]
+        position: Option<NodePosition>,
         window: PowerWindow,
         /// Correction to apply within window.
         correction: PrimaryCorrection,
+    },
+
+    /// Color space transform.
+    ColorSpaceTransform {
+        id: String,
+        enabled: bool,
+        mix: f32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[tsify(optional)]
+        label: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[tsify(optional)]
+        position: Option<NodePosition>,
+        /// Source color space.
+        from_space: ColorSpace,
+        /// Target color space.
+        to_space: ColorSpace,
     },
 }
 
@@ -707,7 +753,8 @@ impl ColorGradingNode {
             | Self::Curves { id, .. }
             | Self::Lut { id, .. }
             | Self::Qualifier { id, .. }
-            | Self::Window { id, .. } => id,
+            | Self::Window { id, .. }
+            | Self::ColorSpaceTransform { id, .. } => id,
         }
     }
 
@@ -719,7 +766,8 @@ impl ColorGradingNode {
             | Self::Curves { enabled, .. }
             | Self::Lut { enabled, .. }
             | Self::Qualifier { enabled, .. }
-            | Self::Window { enabled, .. } => *enabled,
+            | Self::Window { enabled, .. }
+            | Self::ColorSpaceTransform { enabled, .. } => *enabled,
         }
     }
 
@@ -731,7 +779,8 @@ impl ColorGradingNode {
             | Self::Curves { mix, .. }
             | Self::Lut { mix, .. }
             | Self::Qualifier { mix, .. }
-            | Self::Window { mix, .. } => *mix,
+            | Self::Window { mix, .. }
+            | Self::ColorSpaceTransform { mix, .. } => *mix,
         }
     }
 }

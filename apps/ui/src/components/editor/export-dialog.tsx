@@ -35,13 +35,13 @@ interface ExportDialogProps {
 
 interface QualityPreset {
   label: string;
-  value: number;
+  bitrate: number;
 }
 
 const QUALITY_PRESETS: QualityPreset[] = [
-  { label: `High (${formatBitrate(20_000_000)})`, value: 20_000_000 },
-  { label: `Medium (${formatBitrate(10_000_000)})`, value: 10_000_000 },
-  { label: `Low (${formatBitrate(5_000_000)})`, value: 5_000_000 },
+  { label: "High", bitrate: 20_000_000 },
+  { label: "Medium", bitrate: 10_000_000 },
+  { label: "Low", bitrate: 5_000_000 },
 ];
 
 // ===================== UTILITIES =====================
@@ -126,7 +126,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
       width: settings.width,
       height: settings.height,
       frameRate: settings.fps.numerator / settings.fps.denominator,
-      videoBitrate: qualityPreset?.value,
+      videoBitrate: qualityPreset?.bitrate,
       fileHandle,
     };
 
@@ -189,14 +189,14 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
               <div className="grid gap-2">
                 <label className="text-sm font-medium">Quality</label>
-                <Select value={quality} onValueChange={setQuality} items={QUALITY_PRESETS}>
+                <Select value={quality} onValueChange={setQuality}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select quality" />
                   </SelectTrigger>
                   <SelectContent>
                     {QUALITY_PRESETS.map((preset) => (
-                      <SelectItem key={preset.value} value={preset.value}>
-                        {preset.label}
+                      <SelectItem key={preset.label} value={preset.label}>
+                        {preset.label} ({formatBitrate(preset.bitrate)})
                       </SelectItem>
                     ))}
                   </SelectContent>
