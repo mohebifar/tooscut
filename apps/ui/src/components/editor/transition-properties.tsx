@@ -54,7 +54,8 @@ function TransitionSection({ label, transition, onChange }: TransitionSectionPro
   const easing = transition?.easing?.preset ?? "EaseInOut";
 
   const handleTypeChange = useCallback(
-    (newType: string) => {
+    (newType: string | null) => {
+      if (!newType) return;
       if (newType === "None") {
         onChange(null);
       } else {
@@ -73,7 +74,8 @@ function TransitionSection({ label, transition, onChange }: TransitionSectionPro
   );
 
   const handleEasingChange = useCallback(
-    (newEasing: string) => {
+    (newEasing: string | null) => {
+      if (!newEasing) return;
       if (type === "None") return;
       onChange(makeTransition(type, duration, newEasing as EasingPreset));
     },
@@ -83,7 +85,7 @@ function TransitionSection({ label, transition, onChange }: TransitionSectionPro
   return (
     <PropertySection title={label}>
       <PropertyRow label="Type">
-        <Select value={type} onValueChange={handleTypeChange}>
+        <Select value={type} onValueChange={handleTypeChange} items={TRANSITION_TYPES}>
           <SelectTrigger size="sm" className="h-7 w-28 text-xs">
             <SelectValue />
           </SelectTrigger>
@@ -115,7 +117,7 @@ function TransitionSection({ label, transition, onChange }: TransitionSectionPro
             </div>
           </PropertyRow>
           <PropertyRow label="Easing">
-            <Select value={easing} onValueChange={handleEasingChange}>
+            <Select value={easing} onValueChange={handleEasingChange} items={EASING_PRESETS}>
               <SelectTrigger size="sm" className="h-7 w-28 text-xs">
                 <SelectValue />
               </SelectTrigger>

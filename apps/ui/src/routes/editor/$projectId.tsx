@@ -2,6 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { framesToSeconds } from "@tooscut/render-engine";
 import { useEffect, useState } from "react";
 
+import { cn } from "@/lib/utils";
+
 import type { MediaAsset } from "../../state/video-editor-store";
 
 import { AssetPanel } from "../../components/editor/asset-panel";
@@ -20,6 +22,7 @@ import {
 import { Button } from "../../components/ui/button";
 import { useAudioEngine } from "../../hooks/use-audio-engine";
 import { useAutoSave } from "../../hooks/use-auto-save";
+import { hydrateLutAsset } from "../../lib/lut-manager";
 import { db } from "../../state/db";
 import { useVideoEditorStore } from "../../state/video-editor-store";
 
@@ -101,6 +104,13 @@ function EditorPage() {
           if (pendingIds.length > 0) {
             setPendingPermissionIds(pendingIds);
             setSavedAssets(project.content.assets);
+          }
+
+          // Hydrate LUT assets (parse .cube files and upload to GPU)
+          const lutAssets = project.content.assets.filter((a: MediaAsset) => a.type === "lut");
+          for (const lutAsset of lutAssets) {
+            if (cancelled) return;
+            await hydrateLutAsset(lutAsset);
           }
         }
 
@@ -197,7 +207,7 @@ function EditorPage() {
 }
 
 function SkeletonBlock({ className, style }: { className?: string; style?: React.CSSProperties }) {
-  return <div className={`animate-pulse rounded bg-muted ${className ?? ""}`} style={style} />;
+  return <div className={cn("animate-pulse rounded bg-muted", className)} style={style} />;
 }
 
 function EditorSkeleton() {

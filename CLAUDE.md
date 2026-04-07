@@ -92,6 +92,24 @@ Clips arrays are always sorted by `startTime`. This enables O(log n) binary sear
 ### Linked Clips
 Video and audio clips can be linked via `linkedClipId`. Operations on one affect both (move, split, delete, trim).
 
+### Undo History and Continuous Interactions
+The app uses zundo (temporal middleware) for undo/redo with a 100-state history. During continuous interactions (drag, slider adjustments, color wheel manipulation), **pause the undo history** before the interaction starts and **resume** when it finishes. This prevents flooding the history with intermediate states.
+
+```typescript
+useVideoEditorStore.temporal.getState().pause();
+
+// ... many rapid state updates during drag/slide ...
+useVideoEditorStore.temporal.getState().resume();
+```
+
+Existing patterns:
+- `NumericInput` pauses on drag start (after 3px threshold), resumes on mouseup
+- `use-transform-drag.ts` pauses on move/resize/rotate start, resumes on mouseup
+- `ColorWheel` pauses on pointerdown, resumes on pointerup
+- Radix `Slider` components: pause on `onPointerDown`, resume on `onValueCommit`
+
+**Every new slider, drag handle, or continuous input must follow this pattern.**
+
 ## Testing
 
 ```bash

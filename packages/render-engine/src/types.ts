@@ -257,6 +257,212 @@ export interface LineLayerData {
 }
 
 // ============================================================================
+// Color Grading
+// ============================================================================
+
+export type ColorSpace =
+  | "Srgb"
+  | "Linear"
+  | "AcesCg"
+  | "LogC"
+  | "SLog2"
+  | "SLog3"
+  | "CLog3"
+  | "VLog"
+  | "BmFilm"
+  | "RedLog3G10";
+
+export type LutInterpolation = "Trilinear" | "Tetrahedral";
+
+/** Primary correction using ASC-CDL model. */
+export interface PrimaryCorrection {
+  /** Slope (gain) per RGB channel. Default: [1, 1, 1] */
+  slope: [number, number, number];
+  /** Offset (lift) per RGB channel. Default: [0, 0, 0] */
+  offset: [number, number, number];
+  /** Power (gamma) per RGB channel. Default: [1, 1, 1] */
+  power: [number, number, number];
+  /** Global saturation (0 = grayscale, 1 = normal). */
+  saturation: number;
+  /** Exposure in EV stops (-4 to +4). */
+  exposure: number;
+  /** Temperature offset in Kelvin. */
+  temperature: number;
+  /** Tint (green-magenta). */
+  tint: number;
+  /** Highlight recovery (-1 to 1). */
+  highlights: number;
+  /** Shadow adjustment (-1 to 1). */
+  shadows: number;
+}
+
+/** Color wheel value as polar coordinates. */
+export interface ColorWheelValue {
+  /** Hue angle (0-360 degrees). */
+  angle: number;
+  /** Distance from center (0-1). */
+  distance: number;
+}
+
+/** Color wheels for lift/gamma/gain adjustment. */
+export interface ColorWheels {
+  lift: ColorWheelValue;
+  gamma: ColorWheelValue;
+  gain: ColorWheelValue;
+  lift_luminance: number;
+  gamma_luminance: number;
+  gain_luminance: number;
+}
+
+/** A point on a curve. */
+export interface CurvePoint {
+  x: number;
+  y: number;
+}
+
+/** 1D curve defined by control points. */
+export interface Curve1D {
+  points: CurvePoint[];
+}
+
+/** RGB curves plus advanced curve types. */
+export interface Curves {
+  master: Curve1D;
+  red: Curve1D;
+  green: Curve1D;
+  blue: Curve1D;
+  hue_vs_sat?: Curve1D;
+  hue_vs_hue?: Curve1D;
+  hue_vs_lum?: Curve1D;
+  lum_vs_sat?: Curve1D;
+  sat_vs_sat?: Curve1D;
+}
+
+/** Reference to a loaded 3D LUT. */
+export interface LutReference {
+  lut_id: string;
+  interpolation: LutInterpolation;
+  mix: number;
+}
+
+/** HSL qualifier for secondary color correction. */
+export interface HslQualifier {
+  hue_center: number;
+  saturation_center: number;
+  luminance_center: number;
+  hue_width: number;
+  saturation_width: number;
+  luminance_width: number;
+  hue_softness: number;
+  saturation_softness: number;
+  luminance_softness: number;
+  invert: boolean;
+}
+
+/** Power window shape types. */
+export type PowerWindowShape =
+  | { Circle: { radius_x: number; radius_y: number } }
+  | { Rectangle: { width: number; height: number; corner_radius: number } }
+  | { Gradient: { angle: number } }
+  | { Polygon: { points: [number, number][] } };
+
+/** Power window for regional corrections. */
+export interface PowerWindow {
+  shape: PowerWindowShape;
+  center_x: number;
+  center_y: number;
+  scale_x: number;
+  scale_y: number;
+  rotation: number;
+  softness_inner: number;
+  softness_outer: number;
+  invert: boolean;
+}
+
+/** Node position in the graph editor. */
+export interface NodePosition {
+  x: number;
+  y: number;
+}
+
+/** Color grading node types. */
+export type ColorGradingNode =
+  | {
+      type: "Primary";
+      id: string;
+      enabled: boolean;
+      mix: number;
+      label?: string;
+      position?: NodePosition;
+      correction: PrimaryCorrection;
+    }
+  | {
+      type: "ColorWheels";
+      id: string;
+      enabled: boolean;
+      mix: number;
+      label?: string;
+      position?: NodePosition;
+      wheels: ColorWheels;
+    }
+  | {
+      type: "Curves";
+      id: string;
+      enabled: boolean;
+      mix: number;
+      label?: string;
+      position?: NodePosition;
+      curves: Curves;
+    }
+  | {
+      type: "Lut";
+      id: string;
+      enabled: boolean;
+      mix: number;
+      label?: string;
+      position?: NodePosition;
+      lut: LutReference;
+    }
+  | {
+      type: "Qualifier";
+      id: string;
+      enabled: boolean;
+      mix: number;
+      label?: string;
+      position?: NodePosition;
+      qualifier: HslQualifier;
+      correction: PrimaryCorrection;
+    }
+  | {
+      type: "Window";
+      id: string;
+      enabled: boolean;
+      mix: number;
+      label?: string;
+      position?: NodePosition;
+      window: PowerWindow;
+      correction: PrimaryCorrection;
+    }
+  | {
+      type: "ColorSpaceTransform";
+      id: string;
+      enabled: boolean;
+      mix: number;
+      label?: string;
+      position?: NodePosition;
+      from_space: ColorSpace;
+      to_space: ColorSpace;
+    };
+
+/** Complete color grading configuration. */
+export interface ColorGrading {
+  input_color_space: ColorSpace;
+  output_color_space: ColorSpace;
+  nodes: ColorGradingNode[];
+  bypass: boolean;
+}
+
+// ============================================================================
 // Media Layer
 // ============================================================================
 
@@ -269,6 +475,7 @@ export interface MediaLayerData {
   transition_in?: ActiveTransition;
   transition_out?: ActiveTransition;
   cross_transition?: ActiveCrossTransition;
+  color_grading?: ColorGrading;
 }
 
 // ============================================================================
@@ -360,6 +567,84 @@ export const DEFAULT_LINE_ENDPOINT: LineEndpoint = {
   size: 10,
 };
 
+export const DEFAULT_PRIMARY_CORRECTION: PrimaryCorrection = {
+  slope: [1, 1, 1],
+  offset: [0, 0, 0],
+  power: [1, 1, 1],
+  saturation: 1,
+  exposure: 0,
+  temperature: 0,
+  tint: 0,
+  highlights: 0,
+  shadows: 0,
+};
+
+export const DEFAULT_COLOR_WHEEL_VALUE: ColorWheelValue = {
+  angle: 0,
+  distance: 0,
+};
+
+export const DEFAULT_COLOR_WHEELS: ColorWheels = {
+  lift: DEFAULT_COLOR_WHEEL_VALUE,
+  gamma: DEFAULT_COLOR_WHEEL_VALUE,
+  gain: DEFAULT_COLOR_WHEEL_VALUE,
+  lift_luminance: 0,
+  gamma_luminance: 0,
+  gain_luminance: 0,
+};
+
+export const DEFAULT_CURVE_1D: Curve1D = {
+  points: [
+    { x: 0, y: 0 },
+    { x: 1, y: 1 },
+  ],
+};
+
+export const DEFAULT_CURVES: Curves = {
+  master: DEFAULT_CURVE_1D,
+  red: DEFAULT_CURVE_1D,
+  green: DEFAULT_CURVE_1D,
+  blue: DEFAULT_CURVE_1D,
+};
+
+export const DEFAULT_HSL_QUALIFIER: HslQualifier = {
+  hue_center: 0,
+  saturation_center: 0.5,
+  luminance_center: 0.5,
+  hue_width: 30,
+  saturation_width: 0.5,
+  luminance_width: 0.5,
+  hue_softness: 0.1,
+  saturation_softness: 0.1,
+  luminance_softness: 0.1,
+  invert: false,
+};
+
+export const DEFAULT_LUT_REFERENCE: LutReference = {
+  lut_id: "",
+  interpolation: "Tetrahedral",
+  mix: 1.0,
+};
+
+export const DEFAULT_POWER_WINDOW: PowerWindow = {
+  shape: { Circle: { radius_x: 0.25, radius_y: 0.25 } },
+  center_x: 0.5,
+  center_y: 0.5,
+  scale_x: 1,
+  scale_y: 1,
+  rotation: 0,
+  softness_inner: 0,
+  softness_outer: 0.1,
+  invert: false,
+};
+
+export const DEFAULT_COLOR_GRADING: ColorGrading = {
+  input_color_space: "Srgb",
+  output_color_space: "Srgb",
+  nodes: [],
+  bypass: false,
+};
+
 // ============================================================================
 // Animatable Property Names
 // ============================================================================
@@ -393,7 +678,56 @@ export const ANIMATABLE_PROPERTIES = {
   reverbDryWet: "reverbDryWet",
 } as const;
 
+/** Color grading animatable properties (for keyframe animation). */
+export const COLOR_GRADING_ANIMATABLE_PROPERTIES = {
+  // CDL
+  cgSlopeR: "cgSlopeR",
+  cgSlopeG: "cgSlopeG",
+  cgSlopeB: "cgSlopeB",
+  cgOffsetR: "cgOffsetR",
+  cgOffsetG: "cgOffsetG",
+  cgOffsetB: "cgOffsetB",
+  cgPowerR: "cgPowerR",
+  cgPowerG: "cgPowerG",
+  cgPowerB: "cgPowerB",
+  cgSaturation: "cgSaturation",
+  cgExposure: "cgExposure",
+  cgTemperature: "cgTemperature",
+  cgTint: "cgTint",
+  cgHighlights: "cgHighlights",
+  cgShadows: "cgShadows",
+  // Color wheels
+  cgLiftAngle: "cgLiftAngle",
+  cgLiftDistance: "cgLiftDistance",
+  cgLiftLuminance: "cgLiftLuminance",
+  cgGammaAngle: "cgGammaAngle",
+  cgGammaDistance: "cgGammaDistance",
+  cgGammaLuminance: "cgGammaLuminance",
+  cgGainAngle: "cgGainAngle",
+  cgGainDistance: "cgGainDistance",
+  cgGainLuminance: "cgGainLuminance",
+  // HSL Qualifier
+  cgQualifierHueCenter: "cgQualifierHueCenter",
+  cgQualifierHueWidth: "cgQualifierHueWidth",
+  cgQualifierSatCenter: "cgQualifierSatCenter",
+  cgQualifierSatWidth: "cgQualifierSatWidth",
+  cgQualifierLumCenter: "cgQualifierLumCenter",
+  cgQualifierLumWidth: "cgQualifierLumWidth",
+  // Power window
+  cgWindowCenterX: "cgWindowCenterX",
+  cgWindowCenterY: "cgWindowCenterY",
+  cgWindowScaleX: "cgWindowScaleX",
+  cgWindowScaleY: "cgWindowScaleY",
+  cgWindowRotation: "cgWindowRotation",
+  cgWindowSoftness: "cgWindowSoftness",
+} as const;
+
+export type ColorGradingAnimatableProperty = keyof typeof COLOR_GRADING_ANIMATABLE_PROPERTIES;
+
 export type AnimatableProperty = keyof typeof ANIMATABLE_PROPERTIES;
+
+/** All animatable properties including color grading. */
+export type AnyAnimatableProperty = AnimatableProperty | ColorGradingAnimatableProperty;
 
 // ============================================================================
 // Frame Rate

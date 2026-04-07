@@ -84,6 +84,9 @@ interface VideoFrameSourceAdapter {
   /** Check if currently playing (preview mode only) */
   isPlaying?(): boolean;
 
+  /** Capture current frame without seeking (preview mode only, used during playback) */
+  captureCurrentFrame?(): Promise<ImageBitmap>;
+
   /** Dispose and release resources */
   dispose(): void;
 }
@@ -131,11 +134,23 @@ class HTMLVideoElementAdapter implements VideoFrameSourceAdapter {
   private seekResolve: (() => void) | null = null;
   /** Mutex to serialize getImageBitmap calls (prevents seek race conditions) */
   private frameLock: Promise<void> = Promise.resolve();
+  /**
+   * True when createImageBitmap(video) returns raw unrotated frames
+   * (dimensions don't match videoWidth/videoHeight). We fall back to
+   * drawing through a canvas which always applies the display rotation.
+   */
+  private needsRotationFix = false;
 
-  private constructor(video: HTMLVideoElement, info: VideoAssetInfo, objectUrl: string | null) {
+  private constructor(
+    video: HTMLVideoElement,
+    info: VideoAssetInfo,
+    objectUrl: string | null,
+    needsRotationFix: boolean,
+  ) {
     this.video = video;
     this._info = info;
     this.objectUrl = objectUrl;
+    this.needsRotationFix = needsRotationFix;
 
     // Listen for seeked events
     this.video.addEventListener("seeked", this.onSeeked);
@@ -148,6 +163,35 @@ class HTMLVideoElementAdapter implements VideoFrameSourceAdapter {
       this.seekPromise = null;
     }
   };
+
+  /**
+   * Detect whether createImageBitmap(video) returns raw unrotated frames.
+   * Some browsers/codecs don't apply the video rotation metadata when
+   * creating bitmaps, so the bitmap dimensions differ from videoWidth/videoHeight.
+   */
+  private static async detectRotationMismatch(video: HTMLVideoElement): Promise<boolean> {
+    try {
+      // Seek to a small offset to ensure we have frame data
+      if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        video.currentTime = 0;
+        await new Promise<void>((resolve) => {
+          const onData = () => {
+            video.removeEventListener("canplay", onData);
+            resolve();
+          };
+          video.addEventListener("canplay", onData);
+          // Timeout fallback
+          setTimeout(resolve, 3000);
+        });
+      }
+      const bitmap = await createImageBitmap(video);
+      const mismatch = bitmap.width !== video.videoWidth || bitmap.height !== video.videoHeight;
+      bitmap.close();
+      return mismatch;
+    } catch {
+      return false;
+    }
+  }
 
   static async fromBlob(blob: Blob): Promise<HTMLVideoElementAdapter> {
     const video = document.createElement("video");
@@ -171,7 +215,9 @@ class HTMLVideoElementAdapter implements VideoFrameSourceAdapter {
       hasAudio: true, // Assume true, we can't easily check
     };
 
-    return new HTMLVideoElementAdapter(video, info, objectUrl);
+    const needsRotationFix = await HTMLVideoElementAdapter.detectRotationMismatch(video);
+
+    return new HTMLVideoElementAdapter(video, info, objectUrl, needsRotationFix);
   }
 
   static async fromUrl(url: string): Promise<HTMLVideoElementAdapter> {
@@ -195,7 +241,9 @@ class HTMLVideoElementAdapter implements VideoFrameSourceAdapter {
       hasAudio: true,
     };
 
-    return new HTMLVideoElementAdapter(video, info, null);
+    const needsRotationFix = await HTMLVideoElementAdapter.detectRotationMismatch(video);
+
+    return new HTMLVideoElementAdapter(video, info, null, needsRotationFix);
   }
 
   get info(): VideoAssetInfo {
@@ -244,6 +292,17 @@ class HTMLVideoElementAdapter implements VideoFrameSourceAdapter {
         });
       }
 
+      if (this.needsRotationFix) {
+        // Draw through a canvas to apply display rotation.
+        // ctx.drawImage(video) always renders the video as displayed
+        // (with rotation metadata applied), unlike createImageBitmap
+        // which may return raw unrotated frames on some platforms.
+        const canvas = new OffscreenCanvas(this._info.width, this._info.height);
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(this.video, 0, 0, this._info.width, this._info.height);
+        return await createImageBitmap(canvas);
+      }
+
       return await createImageBitmap(this.video);
     } finally {
       resolve();
@@ -283,6 +342,16 @@ class HTMLVideoElementAdapter implements VideoFrameSourceAdapter {
 
   isPlaying(): boolean {
     return !this.video.paused;
+  }
+
+  async captureCurrentFrame(): Promise<ImageBitmap> {
+    if (this.needsRotationFix) {
+      const canvas = new OffscreenCanvas(this._info.width, this._info.height);
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(this.video, 0, 0, this._info.width, this._info.height);
+      return createImageBitmap(canvas);
+    }
+    return createImageBitmap(this.video);
   }
 
   dispose(): void {
@@ -406,13 +475,21 @@ class MediaBunnyAdapter implements VideoFrameSourceAdapter {
       throw new Error(`No frame found at timestamp ${clampedTime}`);
     }
 
-    const videoFrame = sample.toVideoFrame();
+    return this.sampleToBitmap(sample);
+  }
+
+  /**
+   * Convert a VideoSample to an ImageBitmap with correct display dimensions.
+   * Uses sample.draw() which applies rotation metadata, unlike
+   * toVideoFrame() + createImageBitmap() which may return raw unrotated frames.
+   */
+  private sampleToBitmap(sample: VideoSample): Promise<ImageBitmap> {
+    // Use sample.draw() which correctly handles rotation metadata
+    const canvas = new OffscreenCanvas(this._info.width, this._info.height);
+    const ctx = canvas.getContext("2d")!;
+    sample.draw(ctx, 0, 0, this._info.width, this._info.height);
     sample.close();
-
-    const bitmap = await createImageBitmap(videoFrame);
-    videoFrame.close();
-
-    return bitmap;
+    return createImageBitmap(canvas);
   }
 
   async getImageBitmaps(timestamps: number[]): Promise<Array<ImageBitmap | null>> {
@@ -464,13 +541,24 @@ class MediaBunnyAdapter implements VideoFrameSourceAdapter {
           request.timestamp + epsilon >= current.timestamp &&
           request.timestamp < current.timestamp + current.duration + epsilon
         ) {
-          if (!current.videoFrame) {
-            current.videoFrame = current.sample!.toVideoFrame();
-            current.sample!.close();
+          // Use sample.draw() to apply rotation metadata correctly.
+          // Cache the drawn canvas so multiple timestamps hitting the same
+          // frame don't redraw.
+          if (!current.videoFrame && current.sample) {
+            const canvas = new OffscreenCanvas(this._info.width, this._info.height);
+            const ctx = canvas.getContext("2d")!;
+            current.sample.draw(ctx, 0, 0, this._info.width, this._info.height);
+            // Create a VideoFrame from the canvas to cache the result
+            current.videoFrame = new VideoFrame(canvas, {
+              timestamp: current.timestamp * 1_000_000,
+            });
+            current.sample.close();
             current.sample = null;
           }
 
-          results[request.index] = await createImageBitmap(current.videoFrame);
+          if (current.videoFrame) {
+            results[request.index] = await createImageBitmap(current.videoFrame);
+          }
           pendingIndex++;
           continue;
         }
@@ -669,6 +757,19 @@ export class VideoFrameLoader {
    */
   isPlaying(): boolean {
     return this.adapter.isPlaying?.() ?? false;
+  }
+
+  /**
+   * Capture the current video frame without seeking (preview mode only).
+   * Used during playback to grab the naturally-advancing frame with
+   * rotation correction applied.
+   */
+  async captureCurrentFrame(): Promise<ImageBitmap> {
+    if (this.adapter.captureCurrentFrame) {
+      return this.adapter.captureCurrentFrame();
+    }
+    // Fallback: shouldn't happen for preview mode, but just in case
+    return this.adapter.getImageBitmap(0);
   }
 
   /**

@@ -2,7 +2,7 @@
  * Keyframe utility functions for UI layer keyframe checks.
  */
 
-import type { KeyframeTracks, AnimatableProperty, Keyframe } from "@tooscut/render-engine";
+import type { KeyframeTracks, AnyAnimatableProperty, Keyframe } from "@tooscut/render-engine";
 
 import { KeyframeEvaluator } from "@tooscut/render-engine";
 
@@ -19,7 +19,7 @@ const KEYFRAME_THRESHOLD = 0.05; // 50ms
  */
 export function evaluateKeyframe(
   keyframes: KeyframeTracks | undefined,
-  property: AnimatableProperty,
+  property: AnyAnimatableProperty,
   time: number,
 ): number | null {
   if (!keyframes || keyframes.tracks.length === 0) {
@@ -41,7 +41,7 @@ export function evaluateKeyframe(
  */
 export function isAtKeyframe(
   keyframes: KeyframeTracks | undefined,
-  property: AnimatableProperty,
+  property: AnyAnimatableProperty,
   time: number,
 ): boolean {
   return getKeyframeIndexAtTime(keyframes, property, time) !== -1;
@@ -55,7 +55,7 @@ export function isAtKeyframe(
  */
 export function isPropertyKeyframed(
   keyframes: KeyframeTracks | undefined,
-  property: AnimatableProperty,
+  property: AnyAnimatableProperty,
 ): boolean {
   if (!keyframes || keyframes.tracks.length === 0) {
     return false;
@@ -74,7 +74,7 @@ export function isPropertyKeyframed(
  */
 export function getKeyframeIndexAtTime(
   keyframes: KeyframeTracks | undefined,
-  property: AnimatableProperty,
+  property: AnyAnimatableProperty,
   time: number,
 ): number {
   if (!keyframes || keyframes.tracks.length === 0) {
@@ -104,7 +104,7 @@ export function getKeyframeIndexAtTime(
  */
 export function getKeyframesForProperty(
   keyframes: KeyframeTracks | undefined,
-  property: AnimatableProperty,
+  property: AnyAnimatableProperty,
 ): Keyframe[] {
   if (!keyframes || keyframes.tracks.length === 0) {
     return [];
@@ -124,7 +124,7 @@ export function getKeyframesForProperty(
  */
 export function getAdjacentKeyframeTimes(
   keyframes: KeyframeTracks | undefined,
-  property: AnimatableProperty,
+  property: AnyAnimatableProperty,
   time: number,
 ): [number | null, number | null] {
   const kfs = getKeyframesForProperty(keyframes, property);

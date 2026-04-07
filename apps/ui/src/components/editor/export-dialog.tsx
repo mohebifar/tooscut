@@ -35,13 +35,13 @@ interface ExportDialogProps {
 
 interface QualityPreset {
   label: string;
-  bitrate: number;
+  value: number;
 }
 
 const QUALITY_PRESETS: QualityPreset[] = [
-  { label: "High", bitrate: 20_000_000 },
-  { label: "Medium", bitrate: 10_000_000 },
-  { label: "Low", bitrate: 5_000_000 },
+  { label: `High (${formatBitrate(20_000_000)})`, value: 20_000_000 },
+  { label: `Medium (${formatBitrate(10_000_000)})`, value: 10_000_000 },
+  { label: `Low (${formatBitrate(5_000_000)})`, value: 5_000_000 },
 ];
 
 // ===================== UTILITIES =====================
@@ -50,6 +50,16 @@ function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
+function formatBitrate(bitrate: number): string {
+  if (bitrate >= 1_000_000) {
+    return `${(bitrate / 1_000_000).toFixed(1)} Mbps`;
+  } else if (bitrate >= 1_000) {
+    return `${(bitrate / 1_000).toFixed(1)} kbps`;
+  } else {
+    return `${bitrate} bps`;
+  }
 }
 
 function getStageLabel(stage: string): string {
@@ -77,7 +87,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   const settings = useVideoEditorStore((s) => s.settings);
 
   // Export settings — resolution and frame rate come from project settings
-  const [quality, setQuality] = useState<string>("High");
+  const [quality, setQuality] = useState<string | null>("High");
 
   // Export state
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
@@ -116,7 +126,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
       width: settings.width,
       height: settings.height,
       frameRate: settings.fps.numerator / settings.fps.denominator,
-      videoBitrate: qualityPreset?.bitrate,
+      videoBitrate: qualityPreset?.value,
       fileHandle,
     };
 
@@ -179,13 +189,13 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
               <div className="grid gap-2">
                 <label className="text-sm font-medium">Quality</label>
-                <Select value={quality} onValueChange={setQuality}>
+                <Select value={quality} onValueChange={setQuality} items={QUALITY_PRESETS}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select quality" />
                   </SelectTrigger>
                   <SelectContent>
                     {QUALITY_PRESETS.map((preset) => (
-                      <SelectItem key={preset.label} value={preset.label}>
+                      <SelectItem key={preset.value} value={preset.value}>
                         {preset.label}
                       </SelectItem>
                     ))}

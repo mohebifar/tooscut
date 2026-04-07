@@ -225,6 +225,22 @@ function clearAllTextures(): void {
 /**
  * Flush pending GPU operations.
  */
+/**
+ * Upload a 3D LUT to the compositor.
+ */
+function uploadLut(lutId: string, size: number, data: Float32Array): void {
+  if (!compositor) return;
+  compositor.uploadLut(lutId, size, data);
+}
+
+/**
+ * Remove the active LUT.
+ */
+function removeLut(): void {
+  if (!compositor) return;
+  compositor.removeLut();
+}
+
 function flush(): void {
   if (!compositor) return;
 
@@ -265,6 +281,8 @@ const workerApi = {
   captureThumbnail,
   clearTexture,
   clearAllTextures,
+  uploadLut,
+  removeLut,
   flush,
   dispose,
 };

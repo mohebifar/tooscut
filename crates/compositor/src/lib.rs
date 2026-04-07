@@ -3,6 +3,8 @@
 //! This crate provides a WebGPU-based compositor for rendering video layers,
 //! text overlays, and shapes with transforms, effects, and transitions.
 
+mod color_grading_shader;
+mod color_grading_uniforms;
 mod compositor;
 mod error;
 mod pipeline;
@@ -10,6 +12,8 @@ mod shape_pipeline;
 mod text;
 mod texture;
 mod uniforms;
+
+pub use color_grading_uniforms::ColorGradingUniforms;
 
 pub use compositor::Compositor;
 pub use error::CompositorError;

@@ -260,6 +260,7 @@ export function buildLayersForTime(input: LayerBuilderInput): LayerBuilderOutput
         transitionIn: computeTransitionIn(mc, timelineTime),
         transitionOut: computeTransitionOut(mc, timelineTime),
         crossTransition: activeCrossTransition,
+        colorGrading: mc.colorGrading,
       });
     } else if (type === "text") {
       const tc = c;

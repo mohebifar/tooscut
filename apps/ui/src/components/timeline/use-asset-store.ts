@@ -12,7 +12,7 @@ import {
 
 export interface MediaAsset {
   id: string;
-  type: "video" | "audio" | "image";
+  type: "video" | "audio" | "image" | "lut";
   name: string;
   /** Object URL for playback/preview */
   url: string;
@@ -221,15 +221,17 @@ async function generateThumbnail(file: File, type: "video" | "image"): Promise<s
             video.addEventListener("canplay", () => r(), { once: true });
           });
         }
-        // Use createImageBitmap for full-resolution capture, then resize
-        const fullBitmap = await createImageBitmap(video);
-        const scale = Math.min(thumbnailSize / fullBitmap.width, thumbnailSize / fullBitmap.height);
-        canvas.width = Math.round(fullBitmap.width * scale);
-        canvas.height = Math.round(fullBitmap.height * scale);
+        // Capture the frame respecting display rotation.
+        // drawImage(video) always applies the video's rotation metadata,
+        // unlike createImageBitmap which may return raw unrotated frames.
+        const displayW = video.videoWidth;
+        const displayH = video.videoHeight;
+        const scale = Math.min(thumbnailSize / displayW, thumbnailSize / displayH);
+        canvas.width = Math.round(displayW * scale);
+        canvas.height = Math.round(displayH * scale);
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "high";
-        ctx.drawImage(fullBitmap, 0, 0, canvas.width, canvas.height);
-        fullBitmap.close();
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         URL.revokeObjectURL(url);
         resolve(canvas.toDataURL("image/png"));
       } catch (err) {
@@ -428,6 +430,8 @@ export async function hydrateAssets(assets: StoreMediaAsset[]): Promise<{
   for (const asset of assets) {
     // Assets that already have URLs (e.g. remote) don't need file handle hydration
     if (asset.url !== "") continue;
+    // LUT assets are hydrated separately via lut-manager
+    if (asset.type === "lut") continue;
 
     try {
       const stored = await db.fileHandles.get(asset.id);

@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use tsify_next::Tsify;
 
 use crate::{
-    Crop, CrossTransition, Effects, LineLayerData, ShapeLayerData, TextLayerData, Transform,
-    Transition,
+    ColorGrading, Crop, CrossTransition, Effects, LineLayerData, ShapeLayerData, TextLayerData,
+    Transform, Transition,
 };
 
 /// Data for rendering a video/image layer.
@@ -46,6 +46,10 @@ pub struct MediaLayerData {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[tsify(optional)]
     pub cross_transition: Option<ActiveCrossTransition>,
+    /// Color grading configuration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
+    pub color_grading: Option<ColorGrading>,
 }
 
 /// Legacy type alias for MediaLayerData.
@@ -64,6 +68,7 @@ impl MediaLayerData {
             transition_in: None,
             transition_out: None,
             cross_transition: None,
+            color_grading: None,
         }
     }
 

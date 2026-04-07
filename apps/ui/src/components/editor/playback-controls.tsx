@@ -1,6 +1,8 @@
 import { type FrameRate } from "@tooscut/render-engine";
 import { Play, Pause, SkipBack, SkipForward, ChevronsLeft, ChevronsRight } from "lucide-react";
 
+import { cn } from "@/lib/utils";
+
 import { useVideoEditorStore } from "../../state/video-editor-store";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
@@ -122,11 +124,12 @@ export function PlaybackControls() {
           <Tooltip>
             <TooltipTrigger asChild>
               <div
-                className={`ml-2 rounded px-2 py-0.5 font-mono text-sm font-medium ${
+                className={cn(
+                  "ml-2 rounded px-2 py-0.5 font-mono text-sm font-medium",
                   isReverse
                     ? "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400"
-                    : "bg-primary/20 text-primary"
-                }`}
+                    : "bg-primary/20 text-primary",
+                )}
               >
                 {speedLabel}
               </div>

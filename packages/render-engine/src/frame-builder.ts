@@ -19,6 +19,7 @@ import type {
   TextLayerData,
   ShapeLayerData,
   LineLayerData,
+  ColorGrading,
 } from "./types.js";
 
 import { KeyframeEvaluator } from "./keyframe-evaluator.js";
@@ -214,6 +215,7 @@ export interface TimelineClip {
   transitionIn?: ActiveTransition;
   transitionOut?: ActiveTransition;
   crossTransition?: ActiveCrossTransition;
+  colorGrading?: ColorGrading;
 }
 
 /**
@@ -340,6 +342,7 @@ export function buildMediaLayerData(
     transition_in: clip.transitionIn,
     transition_out: clip.transitionOut,
     cross_transition: clip.crossTransition,
+    color_grading: clip.colorGrading,
   };
 }
 

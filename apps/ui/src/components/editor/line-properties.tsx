@@ -20,6 +20,20 @@ interface LinePropertiesProps {
   onUpdateEffects: (clipId: string, effects: Partial<Effects>) => void;
 }
 
+const STROKE_STYLE_OPTIONS = [
+  { value: "Solid", label: "Solid" },
+  { value: "Dashed", label: "Dashed" },
+  { value: "Dotted", label: "Dotted" },
+] as const;
+
+const LINE_HEAD_OPTIONS = [
+  { value: "None", label: "None" },
+  { value: "Arrow", label: "Arrow" },
+  { value: "Circle", label: "Circle" },
+  { value: "Square", label: "Square" },
+  { value: "Diamond", label: "Diamond" },
+] as const;
+
 export function LineProperties({
   clip,
   onUpdateStyle,
@@ -58,14 +72,17 @@ export function LineProperties({
           <Select
             value={style.stroke_style}
             onValueChange={(v) => onUpdateStyle(clip.id, { stroke_style: v as LineStrokeStyle })}
+            items={STROKE_STYLE_OPTIONS}
           >
             <SelectTrigger size="sm" className="w-28">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="Solid">Solid</SelectItem>
-              <SelectItem value="Dashed">Dashed</SelectItem>
-              <SelectItem value="Dotted">Dotted</SelectItem>
+              {STROKE_STYLE_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </PropertyRow>
@@ -80,16 +97,17 @@ export function LineProperties({
                 start_head: { ...style.start_head, type: v as LineHeadType },
               })
             }
+            items={LINE_HEAD_OPTIONS}
           >
             <SelectTrigger size="sm" className="w-28">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="None">None</SelectItem>
-              <SelectItem value="Arrow">Arrow</SelectItem>
-              <SelectItem value="Circle">Circle</SelectItem>
-              <SelectItem value="Square">Square</SelectItem>
-              <SelectItem value="Diamond">Diamond</SelectItem>
+              {LINE_HEAD_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </PropertyRow>
@@ -101,16 +119,17 @@ export function LineProperties({
                 end_head: { ...style.end_head, type: v as LineHeadType },
               })
             }
+            items={LINE_HEAD_OPTIONS}
           >
             <SelectTrigger size="sm" className="w-28">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="None">None</SelectItem>
-              <SelectItem value="Arrow">Arrow</SelectItem>
-              <SelectItem value="Circle">Circle</SelectItem>
-              <SelectItem value="Square">Square</SelectItem>
-              <SelectItem value="Diamond">Diamond</SelectItem>
+              {LINE_HEAD_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </PropertyRow>

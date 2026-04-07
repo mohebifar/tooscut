@@ -48,8 +48,15 @@ export function TextProperties({
   }, [catalog, fontFamily]);
 
   // Available weights for current font (default to [400, 700] if not in catalog)
-  const availableWeights = fontEntry?.weights ?? [400, 700];
+  const availableWeights = useMemo(() => fontEntry?.weights ?? [400, 700], [fontEntry]);
   const supportsItalic = fontEntry?.styles.includes("italic") ?? false;
+
+  const availableWeightsItems = useMemo(() => {
+    return availableWeights.map((w) => ({
+      value: String(w),
+      label: getWeightName(w),
+    }));
+  }, [availableWeights]);
 
   // Compute the variant key for loading status
   const currentWeight = fontEntry ? findNearestWeight(fontEntry.weights, fontWeight) : fontWeight;
@@ -143,14 +150,15 @@ export function TextProperties({
             <Select
               value={String(style.font_weight)}
               onValueChange={(v) => onUpdateStyle(clip.id, { font_weight: Number(v) })}
+              items={availableWeightsItems}
             >
               <SelectTrigger size="sm" className="w-28">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {availableWeights.map((w) => (
-                  <SelectItem key={w} value={String(w)}>
-                    {getWeightName(w)}
+                {availableWeightsItems.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
                   </SelectItem>
                 ))}
               </SelectContent>

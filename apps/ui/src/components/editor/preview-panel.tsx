@@ -365,8 +365,10 @@ export function PreviewPanel() {
                   videoElement.play().catch(() => {});
                 } else if (videoElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
                   // Extract frame from current position (video is playing or
-                  // play() is resolving — avoid slow seek path)
-                  const bitmap = await createImageBitmap(videoElement);
+                  // play() is resolving — avoid slow seek path).
+                  // Use captureCurrentFrame to apply rotation correction for
+                  // portrait videos whose raw frames don't match display dims.
+                  const bitmap = await loader.captureCurrentFrame();
                   void compositor.uploadBitmap(bitmap, textureId);
                 }
               }
