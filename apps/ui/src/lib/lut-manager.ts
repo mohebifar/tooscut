@@ -14,59 +14,6 @@ import { getSharedCompositor } from "../workers/compositor-api";
 import { parseCubeFile, type CubeLut } from "./cube-parser";
 
 /**
- * Import a .cube LUT file from a FileSystemFileHandle.
- *
- * - Parses the .cube file
- * - Stores the FileSystemFileHandle in IndexedDB
- * - Adds the LUT as an asset in the editor store
- * - Uploads the LUT data to the GPU compositor
- *
- * Returns the asset ID.
- */
-export async function importLutFromHandle(
-  handle: FileSystemFileHandle,
-): Promise<{ id: string; name: string } | null> {
-  try {
-    const file = await handle.getFile();
-    const text = await file.text();
-    const parsed = parseCubeFile(text);
-    const lutName = parsed.title || file.name.replace(/\.cube$/i, "");
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-
-    // Persist file handle
-    await db.fileHandles.put({
-      id,
-      handle,
-      fileName: file.name,
-      mimeType: "application/x-cube",
-      size: file.size,
-      storedAt: Date.now(),
-    });
-
-    // Add to editor store as asset
-    const store = useVideoEditorStore.getState();
-    store.addAssets([
-      {
-        id,
-        type: "lut",
-        name: lutName,
-        url: "",
-        duration: 0,
-        lutSize: parsed.size,
-      },
-    ]);
-
-    // Upload to GPU
-    await uploadLutToGpu(id, parsed);
-
-    return { id, name: lutName };
-  } catch (err) {
-    console.error("Failed to import LUT:", err);
-    return null;
-  }
-}
-
-/**
  * Import a .cube LUT file via the File System Access API picker.
  * Falls back to <input type="file"> if the API is unavailable.
  */
@@ -162,18 +109,6 @@ export async function hydrateLutAsset(asset: MediaAsset): Promise<boolean> {
     console.error(`[lut-manager] Failed to hydrate LUT ${asset.id}:`, err);
     return false;
   }
-}
-
-/**
- * Remove a LUT asset — remove from store, DB, and GPU.
- */
-export async function removeLutAsset(assetId: string): Promise<void> {
-  const compositor = getSharedCompositor();
-  if (compositor) {
-    await compositor.removeLut();
-  }
-  await db.fileHandles.delete(assetId);
-  useVideoEditorStore.getState().removeAsset(assetId);
 }
 
 /**

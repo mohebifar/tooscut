@@ -54,7 +54,8 @@ function TransitionSection({ label, transition, onChange }: TransitionSectionPro
   const easing = transition?.easing?.preset ?? "EaseInOut";
 
   const handleTypeChange = useCallback(
-    (newType: string) => {
+    (newType: string | null) => {
+      if (!newType) return;
       if (newType === "None") {
         onChange(null);
       } else {
@@ -73,7 +74,8 @@ function TransitionSection({ label, transition, onChange }: TransitionSectionPro
   );
 
   const handleEasingChange = useCallback(
-    (newEasing: string) => {
+    (newEasing: string | null) => {
+      if (!newEasing) return;
       if (type === "None") return;
       onChange(makeTransition(type, duration, newEasing as EasingPreset));
     },

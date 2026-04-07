@@ -102,7 +102,8 @@ export function ProjectSettingsDialog({
     }
   }, [open, settings, projectId]);
 
-  const handlePresetChange = useCallback((value: string) => {
+  const handlePresetChange = useCallback((value: string | null) => {
+    if (!value) return;
     setPreset(value);
     if (value === "custom") return;
     const p = RESOLUTION_PRESETS[Number(value)];
