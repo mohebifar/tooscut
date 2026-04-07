@@ -14,10 +14,66 @@ import { getSharedCompositor } from "../workers/compositor-api";
 import { parseCubeFile, type CubeLut } from "./cube-parser";
 
 /**
+ * Import a .cube LUT file from a FileSystemFileHandle.
+ *
+ * - Parses the .cube file
+ * - Stores the FileSystemFileHandle in IndexedDB
+ * - Adds the LUT as an asset in the editor store
+ * - Uploads the LUT data to the GPU compositor
+ *
+ * Returns the asset ID.
+ */
+async function importLutFromHandle(
+  handle: FileSystemFileHandle,
+): Promise<{ id: string; name: string } | null> {
+  try {
+    const file = await handle.getFile();
+    const text = await file.text();
+    const parsed = parseCubeFile(text);
+    const lutName = parsed.title || file.name.replace(/\.cube$/i, "");
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+    // Persist file handle
+    await db.fileHandles.put({
+      id,
+      handle,
+      fileName: file.name,
+      mimeType: "application/x-cube",
+      size: file.size,
+      storedAt: Date.now(),
+    });
+
+    // Add to editor store as asset
+    const store = useVideoEditorStore.getState();
+    store.addAssets([
+      {
+        id,
+        type: "lut",
+        name: lutName,
+        url: "",
+        duration: 0,
+        lutSize: parsed.size,
+      },
+    ]);
+
+    // Upload to GPU
+    await uploadLutToGpu(id, parsed);
+
+    return { id, name: lutName };
+  } catch (err) {
+    console.error("Failed to import LUT:", err);
+    return null;
+  }
+}
+
+/**
  * Import a .cube LUT file via the File System Access API picker.
  * Falls back to <input type="file"> if the API is unavailable.
  */
-export async function importLutWithPicker(): Promise<{ id: string; name: string } | null> {
+export async function importLutWithPicker(): Promise<{
+  id: string;
+  name: string;
+} | null> {
   if ("showOpenFilePicker" in window) {
     try {
       const [handle] = await (window as any).showOpenFilePicker({
@@ -91,9 +147,13 @@ export async function hydrateLutAsset(asset: MediaAsset): Promise<boolean> {
 
   try {
     // Check/request permission
-    const permission = await (stored.handle as any).queryPermission({ mode: "read" });
+    const permission = await (stored.handle as any).queryPermission({
+      mode: "read",
+    });
     if (permission !== "granted") {
-      const requested = await (stored.handle as any).requestPermission({ mode: "read" });
+      const requested = await (stored.handle as any).requestPermission({
+        mode: "read",
+      });
       if (requested !== "granted") {
         console.warn(`[lut-manager] Permission denied for LUT ${asset.id}`);
         return false;

@@ -85,7 +85,7 @@ function TransitionSection({ label, transition, onChange }: TransitionSectionPro
   return (
     <PropertySection title={label}>
       <PropertyRow label="Type">
-        <Select value={type} onValueChange={handleTypeChange}>
+        <Select value={type} onValueChange={handleTypeChange} items={TRANSITION_TYPES}>
           <SelectTrigger size="sm" className="h-7 w-28 text-xs">
             <SelectValue />
           </SelectTrigger>
@@ -117,7 +117,7 @@ function TransitionSection({ label, transition, onChange }: TransitionSectionPro
             </div>
           </PropertyRow>
           <PropertyRow label="Easing">
-            <Select value={easing} onValueChange={handleEasingChange}>
+            <Select value={easing} onValueChange={handleEasingChange} items={EASING_PRESETS}>
               <SelectTrigger size="sm" className="h-7 w-28 text-xs">
                 <SelectValue />
               </SelectTrigger>
