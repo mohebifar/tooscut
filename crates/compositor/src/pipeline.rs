@@ -60,7 +60,8 @@ struct ColorGradingUniforms {
     lut_size: f32,
     input_cst: u32,
     output_cst: u32,
-    _pad_align: vec2<f32>,
+    input_gamut: u32,
+    output_gamut: u32,
     // Qualifier correction CDL
     q_slope: vec4<f32>,
     q_offset: vec4<f32>,
@@ -75,7 +76,11 @@ struct ColorGradingUniforms {
     w_power: vec4<f32>,
     w_adjustments: vec4<f32>,
     window_mix: vec4<f32>,
-    _pad: array<vec4<f32>, 7>,
+    tone_mapping_method: u32,
+    tone_mapping_a: f32,
+    tone_mapping_b: f32,
+    _pad_tone2: f32,
+    _pad: array<vec4<f32>, 6>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: LayerUniforms;
@@ -215,57 +220,74 @@ fn linear_to_srgb(linear: vec3<f32>) -> vec3<f32> {
     return select(srgb_low, srgb_high, linear > cutoff);
 }
 
-// Sony S-Log2 <-> Linear
+// Sony S-Log2 <-> Linear (scene-referred)
+// S-Log2 is defined as 219/155 * S-Log, with legal-to-full range conversion.
+// Input: normalised code value (0.0-1.0). Output: scene-linear reflection.
+// Reference: Sony S-Log2 Technical Summary, colour-science library.
 fn slog2_to_linear(slog: vec3<f32>) -> vec3<f32> {
-    let linear_low = (slog - 0.030001222851889303) / 3.53881278538813;
-    let linear_high = pow(vec3<f32>(10.0), (slog - 0.616596 - 0.03) / 0.432699) - 0.037584;
-    return select(linear_low, linear_high, slog >= vec3<f32>(0.0929));
+    // Step 1: legal-to-full range (10-bit: (v*1023 - 64) / 876)
+    let x = (slog * 1023.0 - 64.0) / 876.0;
+    // Step 2: S-Log inverse
+    let threshold = vec3<f32>(0.088251);  // S-Log encoding of 0.0 as NCV
+    let linear_low = (x - 0.030001222851889303) / 5.0;
+    let linear_high = pow(vec3<f32>(10.0), (x - 0.616596 - 0.03) / 0.432699) - 0.037584;
+    let slog_linear = select(linear_low, linear_high, slog >= threshold);
+    // Step 3: reflection * S-Log2 scale factor (0.9 * 219/155)
+    return slog_linear * 1.2716129032;
 }
 
 fn linear_to_slog2(linear: vec3<f32>) -> vec3<f32> {
-    let cut = 0.0;
-    let slog_low = linear * 3.53881278538813 + 0.030001222851889303;
-    let slog_high = 0.432699 * log(linear + 0.037584) / log(10.0) + 0.616596 + 0.03;
-    return select(slog_low, slog_high, linear >= vec3<f32>(cut));
+    // Inverse of slog2_to_linear
+    let x = linear / 1.2716129032;  // undo S-Log2 scale
+    let slog_low = x * 5.0 + 0.030001222851889303;
+    let slog_high = 0.432699 * log(x + 0.037584) / log(10.0) + 0.616596 + 0.03;
+    let full = select(slog_low, slog_high, x >= vec3<f32>(0.0));
+    // full-to-legal range
+    return (full * 876.0 + 64.0) / 1023.0;
 }
 
-// ARRI LogC3 <-> Linear (EI 800)
+// ARRI LogC3 <-> Linear (EI 800, SUP 3.x)
+// Reference: ARRI LogC3 specification, colour-science library.
 fn logc_to_linear(logc: vec3<f32>) -> vec3<f32> {
     let a = 5.555556;
     let b = 0.052272;
-    let c = 0.247190;
+    let c = 0.24719;
     let d = 0.385537;
     let e_val = 5.367655;
-    let cut = 0.1496582;
-    let linear_low = (logc - d) / e_val;
-    let linear_high = (pow(vec3<f32>(10.0), (logc - c) / a) - b) / a;
-    return select(linear_low, linear_high, logc > vec3<f32>(cut));
+    let f = 0.092809;
+    let breakpoint = vec3<f32>(0.1496578);  // e*cut + f
+    let linear_low = (logc - f) / e_val;
+    let linear_high = (pow(vec3<f32>(10.0), (logc - d) / c) - b) / a;
+    return select(linear_low, linear_high, logc > breakpoint);
 }
 
 fn linear_to_logc(linear: vec3<f32>) -> vec3<f32> {
     let a = 5.555556;
     let b = 0.052272;
-    let c = 0.247190;
+    let c = 0.24719;
     let d = 0.385537;
     let e_val = 5.367655;
-    let cut = 0.010591;
-    let logc_low = e_val * linear + d;
-    let logc_high = a * log(a * linear + b) / log(10.0) + c;
-    return select(logc_low, logc_high, linear > vec3<f32>(cut));
+    let f = 0.092809;
+    let cut = vec3<f32>(0.010591);
+    let logc_low = e_val * linear + f;
+    let logc_high = c * log(a * linear + b) / log(10.0) + d;
+    return select(logc_low, logc_high, linear > cut);
 }
 
-// Sony S-Log3 <-> Linear
+// Sony S-Log3 <-> Linear (scene-referred)
+// Reference: Sony S-Log3 Technical Summary, colour-science library.
 fn slog3_to_linear(slog: vec3<f32>) -> vec3<f32> {
-    let linear_low = (slog - 0.030001222851889303) / 5.26;
-    let linear_high = pow(vec3<f32>(10.0), (slog - 0.410557184750733) / 0.255620723362659) * 0.19 - 0.01;
-    return select(linear_low, linear_high, slog >= vec3<f32>(0.1673609920));
+    let threshold = vec3<f32>(171.2102946929 / 1023.0);  // ~0.16736
+    let linear_low = (slog * 1023.0 - 95.0) * 0.01125000 / (171.2102946929 - 95.0);
+    let linear_high = pow(vec3<f32>(10.0), (slog * 1023.0 - 420.0) / 261.5) * 0.19 - 0.01;
+    return select(linear_low, linear_high, slog >= threshold);
 }
 
 fn linear_to_slog3(linear: vec3<f32>) -> vec3<f32> {
-    let cut = 0.01125000;
-    let slog_low = linear * 5.26 + 0.030001222851889303;
+    let cut = vec3<f32>(0.01125000);
+    let slog_low = (linear / 0.01125000 * (171.2102946929 - 95.0) + 95.0) / 1023.0;
     let slog_high = (420.0 + log((linear + 0.01) / 0.19) / log(10.0) * 261.5) / 1023.0;
-    return select(slog_low, slog_high, linear >= vec3<f32>(cut));
+    return select(slog_low, slog_high, linear >= cut);
 }
 
 // Canon CLog3 <-> Linear (simplified)
@@ -335,6 +357,204 @@ fn from_linear(color: vec3<f32>, cs: u32) -> vec3<f32> {
 }
 
 // ============================================================================
+// Gamut Conversion (Color Primaries)
+// ============================================================================
+
+// Gamut IDs (must match Rust Gamut enum)
+const GAMUT_REC709: u32 = 0u;
+const GAMUT_SGAMUT: u32 = 1u;
+const GAMUT_SGAMUT3: u32 = 2u;
+const GAMUT_SGAMUT3_CINE: u32 = 3u;
+const GAMUT_ARRI_WIDE: u32 = 4u;
+const GAMUT_ACES_AP1: u32 = 5u;
+const GAMUT_RED_WIDE: u32 = 6u;
+const GAMUT_DCI_P3: u32 = 7u;
+const GAMUT_REC2020: u32 = 8u;
+const GAMUT_VGAMUT: u32 = 9u;
+const GAMUT_BMD_WIDE: u32 = 10u;
+
+// 3x3 matrices to convert from source gamut to Rec.709 (linear space).
+// Pre-computed as: XYZ_to_Rec709 * source_RGB_to_XYZ (D65 white point, no CAT needed).
+// Matrices are in WGSL column-major order (each vec3 is a column).
+
+fn gamut_to_rec709(color: vec3<f32>, gamut: u32) -> vec3<f32> {
+    switch gamut {
+        case GAMUT_REC709: { return color; }
+        case GAMUT_SGAMUT, GAMUT_SGAMUT3: {
+            return mat3x3<f32>(
+                vec3<f32>( 1.8775895, -0.1768085, -0.0262071),
+                vec3<f32>(-0.7940379,  1.3510232, -0.1484570),
+                vec3<f32>(-0.0837210, -0.1741716,  1.1747362)
+            ) * color;
+        }
+        case GAMUT_SGAMUT3_CINE: {
+            return mat3x3<f32>(
+                vec3<f32>( 1.6266602, -0.1785165, -0.0444460),
+                vec3<f32>(-0.5400464,  1.4179576, -0.1959648),
+                vec3<f32>(-0.0867831, -0.2393980,  1.2404829)
+            ) * color;
+        }
+        case GAMUT_ARRI_WIDE: {
+            return mat3x3<f32>(
+                vec3<f32>( 1.6172660, -0.0705744, -0.0211068),
+                vec3<f32>(-0.5372011,  1.3346439, -0.2270083),
+                vec3<f32>(-0.0802240, -0.2640464,  1.2483551)
+            ) * color;
+        }
+        case GAMUT_ACES_AP1: {
+            return mat3x3<f32>(
+                vec3<f32>( 1.7309784, -0.1316220, -0.0245741),
+                vec3<f32>(-0.6039470,  1.1348678, -0.1257806),
+                vec3<f32>(-0.0800949, -0.0086797,  1.0658927)
+            ) * color;
+        }
+        case GAMUT_RED_WIDE: {
+            return mat3x3<f32>(
+                vec3<f32>( 1.9816606, -0.1781473, -0.1018204),
+                vec3<f32>(-0.9002885,  1.5005030, -0.5353919),
+                vec3<f32>(-0.0815312, -0.3223326,  1.6374523)
+            ) * color;
+        }
+        case GAMUT_DCI_P3: {
+            return mat3x3<f32>(
+                vec3<f32>( 1.2247450, -0.0420578, -0.0196423),
+                vec3<f32>(-0.2249043,  1.0420810, -0.0786549),
+                vec3<f32>( 0.0000001, -0.0000001,  1.0985372)
+            ) * color;
+        }
+        case GAMUT_REC2020: {
+            return mat3x3<f32>(
+                vec3<f32>( 1.6602266, -0.1245533, -0.0181551),
+                vec3<f32>(-0.5875477,  1.1329261, -0.1006030),
+                vec3<f32>(-0.0728382, -0.0083497,  1.1189982)
+            ) * color;
+        }
+        case GAMUT_VGAMUT: {
+            return mat3x3<f32>(
+                vec3<f32>( 1.8062884, -0.1700943, -0.0252119),
+                vec3<f32>(-0.6955865,  1.3059854, -0.1545054),
+                vec3<f32>(-0.1108609, -0.1358680,  1.1799572)
+            ) * color;
+        }
+        case GAMUT_BMD_WIDE: {
+            return mat3x3<f32>(
+                vec3<f32>( 1.5683008, -0.0863812, -0.0520228),
+                vec3<f32>(-0.5227529,  1.3449488, -0.2491763),
+                vec3<f32>(-0.0457070, -0.2585445,  1.3014390)
+            ) * color;
+        }
+        default: { return color; }
+    }
+}
+
+fn rec709_to_gamut(color: vec3<f32>, gamut: u32) -> vec3<f32> {
+    switch gamut {
+        case GAMUT_REC709: { return color; }
+        case GAMUT_SGAMUT, GAMUT_SGAMUT3: {
+            return mat3x3<f32>(
+                vec3<f32>( 0.5661472,  0.0769741,  0.0223577),
+                vec3<f32>( 0.3427600,  0.7990405,  0.1086252),
+                vec3<f32>( 0.0911672,  0.1239551,  0.8689536)
+            ) * color;
+        }
+        case GAMUT_SGAMUT3_CINE: {
+            return mat3x3<f32>(
+                vec3<f32>( 0.6457935,  0.0875449,  0.0369684),
+                vec3<f32>( 0.2591131,  0.7596906,  0.1292957),
+                vec3<f32>( 0.0951848,  0.1527355,  0.8336765)
+            ) * color;
+        }
+        case GAMUT_ARRI_WIDE: {
+            return mat3x3<f32>(
+                vec3<f32>( 0.6314215,  0.0368258,  0.0173725),
+                vec3<f32>( 0.2707945,  0.7930187,  0.1487858),
+                vec3<f32>( 0.0978548,  0.1701023,  0.8336410)
+            ) * color;
+        }
+        case GAMUT_ACES_AP1: {
+            return mat3x3<f32>(
+                vec3<f32>( 0.6032028,  0.0701291,  0.0221824),
+                vec3<f32>( 0.3263270,  0.9198951,  0.1160756),
+                vec3<f32>( 0.0479841,  0.0127606,  0.9407928)
+            ) * color;
+        }
+        case GAMUT_RED_WIDE: {
+            return mat3x3<f32>(
+                vec3<f32>( 0.5420324,  0.0770016,  0.0588817),
+                vec3<f32>( 0.3601398,  0.7679506,  0.2734883),
+                vec3<f32>( 0.0978822,  0.1550052,  0.6674728)
+            ) * color;
+        }
+        case GAMUT_DCI_P3: {
+            return mat3x3<f32>(
+                vec3<f32>( 0.8225930,  0.0331994,  0.0170854),
+                vec3<f32>( 0.1775339,  0.9667835,  0.0723957),
+                vec3<f32>( 0.0000000,  0.0000000,  0.9103014)
+            ) * color;
+        }
+        case GAMUT_REC2020: {
+            return mat3x3<f32>(
+                vec3<f32>( 0.6275038,  0.0691083,  0.0163941),
+                vec3<f32>( 0.3292755,  0.9195191,  0.0880113),
+                vec3<f32>( 0.0433026,  0.0113596,  0.8953803)
+            ) * color;
+        }
+        case GAMUT_VGAMUT: {
+            return mat3x3<f32>(
+                vec3<f32>( 0.5852893,  0.0786011,  0.0227979),
+                vec3<f32>( 0.3226342,  0.8196082,  0.1142144),
+                vec3<f32>( 0.0921401,  0.1017599,  0.8627817)
+            ) * color;
+        }
+        case GAMUT_BMD_WIDE: {
+            return mat3x3<f32>(
+                vec3<f32>( 0.6549678,  0.0488989,  0.0355435),
+                vec3<f32>( 0.2687242,  0.7919967,  0.1623791),
+                vec3<f32>( 0.0763876,  0.1590558,  0.8018868)
+            ) * color;
+        }
+        default: { return color; }
+    }
+}
+
+// ============================================================================
+// Tone Mapping
+// ============================================================================
+
+const TM_NONE: u32 = 0u;
+const TM_SIMPLE: u32 = 1u;
+
+// Per-channel hyperbolic rolloff tone mapping.
+// Matches DaVinci Resolve's "Simple" / "DaVinci" tone mapping method.
+// Formula: f(x) = a * x / (x + b)
+// where a and b are derived from input/output white points.
+// Reference: reverse-engineered by Thatcher Freeman
+// (github.com/thatcherfreeman/utility-dctls)
+//
+// For SDR output (100 nits) from camera log (~5500 nits peak):
+//   input_white = 55.0 (5500/100), output_white = 1.0
+//   adaptation = 9.0
+//   b = (Wᵢ - (adapt/100)*(Wᵢ/Wₒ)) / ((Wᵢ/Wₒ) - 1) = 0.926852
+//   a = Wₒ / (Wᵢ/(Wᵢ+b)) = 1.016852
+// Per-channel hyperbolic rolloff: f(x) = a * x / (x + b)
+// a and b are pre-computed from input/output peak luminance and passed via uniforms.
+fn apply_tone_mapping(color: vec3<f32>, method: u32) -> vec3<f32> {
+    if (method == TM_NONE) { return color; }
+
+    let a = cg.tone_mapping_a;
+    let b = cg.tone_mapping_b;
+
+    // Clamp negative values (from gamut conversion of out-of-gamut colors)
+    let c = max(color, vec3<f32>(0.0));
+
+    return vec3<f32>(
+        a * c.x / (c.x + b),
+        a * c.y / (c.y + b),
+        a * c.z / (c.z + b)
+    );
+}
+
+// ============================================================================
 // Color Grading
 // ============================================================================
 
@@ -346,6 +566,8 @@ const CG_FLAG_QUALIFIER_ENABLED: u32 = 32u;
 const CG_FLAG_WINDOW_ENABLED: u32 = 64u;
 const CG_FLAG_INPUT_CST: u32 = 128u;
 const CG_FLAG_OUTPUT_CST: u32 = 256u;
+const CG_FLAG_INPUT_GAMUT: u32 = 512u;
+const CG_FLAG_OUTPUT_GAMUT: u32 = 1024u;
 
 fn cg_luminance(rgb: vec3<f32>) -> f32 {
     return dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
@@ -587,6 +809,16 @@ fn apply_color_grading(color: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
         result = to_linear(result, cg.input_cst);
     }
 
+    // Input gamut: convert from source primaries to Rec.709
+    if ((cg.flags & CG_FLAG_INPUT_GAMUT) != 0u) {
+        result = gamut_to_rec709(result, cg.input_gamut);
+    }
+
+    // Tone mapping: compress dynamic range for display
+    if (cg.tone_mapping_method != TM_NONE) {
+        result = apply_tone_mapping(result, cg.tone_mapping_method);
+    }
+
     // Primary correction (operates in linear)
     if ((cg.flags & CG_FLAG_PRIMARY_ENABLED) != 0u) {
         result = apply_primary_correction(
@@ -622,6 +854,11 @@ fn apply_color_grading(color: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
     // Power Window (regional correction)
     if ((cg.flags & CG_FLAG_WINDOW_ENABLED) != 0u) {
         result = apply_window(result, uv);
+    }
+
+    // Output gamut: convert from Rec.709 to target primaries
+    if ((cg.flags & CG_FLAG_OUTPUT_GAMUT) != 0u) {
+        result = rec709_to_gamut(result, cg.output_gamut);
     }
 
     // Output CST: convert from linear to output color space

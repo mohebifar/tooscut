@@ -306,8 +306,10 @@ pub struct ColorGradingUniforms {
     pub input_cst: u32,
     /// Output color space transform (ColorSpace enum as u32, 0 = sRGB).
     pub output_cst: u32,
-    /// Padding to maintain vec4 alignment.
-    pub _pad_align: [f32; 2],
+    /// Input gamut (Gamut enum as u32, 0 = Rec709).
+    pub input_gamut: u32,
+    /// Output gamut (Gamut enum as u32, 0 = Rec709).
+    pub output_gamut: u32,
 
     // === Qualifier correction CDL (applied within qualified region) ===
     /// Qualifier correction slope.
@@ -337,8 +339,16 @@ pub struct ColorGradingUniforms {
     /// Window mix + pad.
     pub window_mix: [f32; 4], // 16 bytes
 
-    // Padding to 512 bytes (400 used, 112 remaining = 28 floats)
-    pub _pad: [f32; 28],
+    /// Tone mapping method (0 = none, 1 = simple).
+    pub tone_mapping_method: u32,
+    /// Tone mapping 'a' parameter (rolloff scale).
+    pub tone_mapping_a: f32,
+    /// Tone mapping 'b' parameter (rolloff offset).
+    pub tone_mapping_b: f32,
+    pub _pad_tone: f32,
+
+    // Padding to 512 bytes (416 used, 96 remaining = 24 floats)
+    pub _pad: [f32; 24],
 }
 
 impl Default for ColorGradingUniforms {
@@ -364,7 +374,8 @@ impl Default for ColorGradingUniforms {
             lut_size: 33.0,
             input_cst: 0,
             output_cst: 0,
-            _pad_align: [0.0; 2],
+            input_gamut: 0,
+            output_gamut: 0,
             // Qualifier correction
             q_slope: [1.0, 1.0, 1.0, 1.0],
             q_offset: [0.0, 0.0, 0.0, 0.0],
@@ -379,7 +390,11 @@ impl Default for ColorGradingUniforms {
             w_power: [1.0, 1.0, 1.0, 1.0],
             w_adjustments: [1.0, 0.0, 0.0, 0.0],
             window_mix: [1.0, 0.0, 0.0, 0.0],
-            _pad: [0.0; 28],
+            tone_mapping_method: 0,
+            tone_mapping_a: 1.0,
+            tone_mapping_b: 1.0,
+            _pad_tone: 0.0,
+            _pad: [0.0; 24],
         }
     }
 }
@@ -394,6 +409,59 @@ pub const FLAG_QUALIFIER_ENABLED: u32 = 1 << 5;
 pub const FLAG_WINDOW_ENABLED: u32 = 1 << 6;
 pub const FLAG_INPUT_CST: u32 = 1 << 7;
 pub const FLAG_OUTPUT_CST: u32 = 1 << 8;
+pub const FLAG_INPUT_GAMUT: u32 = 1 << 9;
+pub const FLAG_OUTPUT_GAMUT: u32 = 1 << 10;
+
+/// Get peak scene-linear luminance (in nits) for a source transfer function.
+/// Used to compute tone mapping parameters.
+fn source_peak_nits(cs: &tooscut_types::ColorSpace) -> f32 {
+    use tooscut_types::ColorSpace;
+    // Peak nits = peak_scene_linear * 100 (where 1.0 scene-linear = 100 nits SDR)
+    match cs {
+        ColorSpace::SLog2 => 1376.0,     // 13.76 scene-linear
+        ColorSpace::SLog3 => 3842.0,     // 38.42 scene-linear
+        ColorSpace::LogC => 5508.0,      // 55.08 scene-linear (EI800)
+        ColorSpace::VLog => 4609.0,      // 46.09 scene-linear
+        ColorSpace::CLog3 => 2500.0,     // ~25 scene-linear
+        ColorSpace::BmFilm => 5508.0,    // approximate as LogC
+        ColorSpace::RedLog3G10 => 3842.0, // approximate as S-Log3
+        ColorSpace::AcesCg => 6500.0,    // ACES scene-referred, ~65 peak
+        ColorSpace::Linear => 1000.0,    // arbitrary
+        ColorSpace::Srgb => 100.0,       // already display-referred
+    }
+}
+
+/// Compute tone mapping a/b parameters from input/output peak luminance.
+/// Formula: f(x) = a * x / (x + b)
+/// Derived from constraints: f(input_white) = output_white, plus adaptation.
+fn compute_tone_mapping_ab(input_nits: f32, output_nits: f32, adaptation: f32) -> (f32, f32) {
+    let iw = input_nits / output_nits;
+    let ow = 1.0;
+    if (iw - ow).abs() < 0.001 {
+        return (1.0, 1.0); // No tone mapping needed
+    }
+    let b = (iw - (adaptation / 100.0) * (iw / ow)) / ((iw / ow) - 1.0);
+    let a = ow / (iw / (iw + b));
+    (a, b)
+}
+
+/// Convert Gamut enum to u32 for shader.
+fn gamut_to_u32(g: &tooscut_types::Gamut) -> u32 {
+    use tooscut_types::Gamut;
+    match g {
+        Gamut::Rec709 => 0,
+        Gamut::SGamut => 1,
+        Gamut::SGamut3 => 2,
+        Gamut::SGamut3Cine => 3,
+        Gamut::ArriWideGamut => 4,
+        Gamut::AcesCgAp1 => 5,
+        Gamut::RedWideGamut => 6,
+        Gamut::DciP3 => 7,
+        Gamut::Rec2020 => 8,
+        Gamut::VGamut => 9,
+        Gamut::BmdWideGamut => 10,
+    }
+}
 
 /// Convert ColorSpace enum to u32 for shader.
 fn color_space_to_u32(cs: &tooscut_types::ColorSpace) -> u32 {
@@ -426,35 +494,64 @@ impl ColorGradingUniforms {
         }
 
         // Scan for CST nodes: first enabled CST → input, last enabled CST → output
-        let mut first_cst: Option<(tooscut_types::ColorSpace, tooscut_types::ColorSpace)> = None;
-        let mut last_cst: Option<(tooscut_types::ColorSpace, tooscut_types::ColorSpace)> = None;
+        let mut first_cst: Option<&ColorGradingNode> = None;
+        let mut last_cst: Option<&ColorGradingNode> = None;
         for node in &grading.nodes {
-            if let ColorGradingNode::ColorSpaceTransform {
-                enabled: true,
-                from_space,
-                to_space,
-                ..
-            } = node
-            {
+            if let ColorGradingNode::ColorSpaceTransform { enabled: true, .. } = node {
                 if first_cst.is_none() {
-                    first_cst = Some((from_space.clone(), to_space.clone()));
+                    first_cst = Some(node);
                 }
-                last_cst = Some((from_space.clone(), to_space.clone()));
+                last_cst = Some(node);
             }
         }
 
-        // First CST node: use from_space as input CST (convert from source to linear)
-        if let Some((from_space, _)) = &first_cst {
-            if *from_space != tooscut_types::ColorSpace::Srgb {
-                uniforms.flags |= FLAG_INPUT_CST;
-                uniforms.input_cst = color_space_to_u32(from_space);
+        // First CST node: use from_space/from_gamut/tone_mapping as input transforms
+        if let Some(ColorGradingNode::ColorSpaceTransform {
+            from_space,
+            from_gamut,
+            tone_mapping,
+            ..
+        }) = first_cst
+        {
+            // Tone mapping method + parameters
+            if let Some(tm) = tone_mapping {
+                uniforms.tone_mapping_method = match tm {
+                    tooscut_types::ToneMapping::None => 0,
+                    tooscut_types::ToneMapping::Simple => 1,
+                };
+                if *tm != tooscut_types::ToneMapping::None {
+                    // Compute a/b from source format's peak luminance
+                    let peak_nits = source_peak_nits(from_space);
+                    let (a, b) = compute_tone_mapping_ab(peak_nits, 100.0, 9.0);
+                    uniforms.tone_mapping_a = a;
+                    uniforms.tone_mapping_b = b;
+                }
+            }
+            // Always set input CST — even sRGB needs srgb_to_linear() when
+            // we want corrections to operate in linear space.
+            uniforms.flags |= FLAG_INPUT_CST;
+            uniforms.input_cst = color_space_to_u32(from_space);
+            if let Some(g) = from_gamut {
+                if *g != tooscut_types::Gamut::Rec709 {
+                    uniforms.flags |= FLAG_INPUT_GAMUT;
+                    uniforms.input_gamut = gamut_to_u32(g);
+                }
             }
         }
-        // Last CST node: use to_space as output CST (convert from linear to target)
-        if let Some((_, to_space)) = &last_cst {
-            if *to_space != tooscut_types::ColorSpace::Srgb {
-                uniforms.flags |= FLAG_OUTPUT_CST;
-                uniforms.output_cst = color_space_to_u32(to_space);
+        // Last CST node: use to_space/to_gamut as output transforms
+        if let Some(ColorGradingNode::ColorSpaceTransform {
+            to_space, to_gamut, ..
+        }) = last_cst
+        {
+            // Always set output CST — we must encode back from linear to
+            // the target transfer function (e.g. linear → sRGB gamma).
+            uniforms.flags |= FLAG_OUTPUT_CST;
+            uniforms.output_cst = color_space_to_u32(to_space);
+            if let Some(g) = to_gamut {
+                if *g != tooscut_types::Gamut::Rec709 {
+                    uniforms.flags |= FLAG_OUTPUT_GAMUT;
+                    uniforms.output_gamut = gamut_to_u32(g);
+                }
             }
         }
 
@@ -623,5 +720,39 @@ mod tests {
         grading.bypass = true;
         let uniforms = ColorGradingUniforms::from_color_grading(&grading);
         assert_eq!(uniforms.flags & FLAG_BYPASS, FLAG_BYPASS);
+    }
+
+    #[test]
+    fn from_color_grading_gamut() {
+        use tooscut_types::{ColorSpace, Gamut};
+        let grading = ColorGrading {
+            bypass: false,
+            input_color_space: ColorSpace::Srgb,
+            output_color_space: ColorSpace::Srgb,
+            nodes: vec![ColorGradingNode::ColorSpaceTransform {
+                id: "cst-1".into(),
+                enabled: true,
+                mix: 1.0,
+                label: None,
+                position: None,
+                from_space: ColorSpace::SLog2,
+                to_space: ColorSpace::Srgb,
+                from_gamut: Some(Gamut::SGamut),
+                to_gamut: Some(Gamut::Rec709),
+                tone_mapping: None,
+            }],
+        };
+        let uniforms = ColorGradingUniforms::from_color_grading(&grading);
+        // Input CST should be set (SLog2 != Srgb)
+        assert_ne!(uniforms.flags & FLAG_INPUT_CST, 0, "INPUT_CST flag should be set");
+        assert_eq!(uniforms.input_cst, 4); // SLog2 = 4
+        // Input gamut should be set (SGamut != Rec709)
+        assert_ne!(uniforms.flags & FLAG_INPUT_GAMUT, 0, "INPUT_GAMUT flag should be set");
+        assert_eq!(uniforms.input_gamut, 1); // SGamut = 1
+        // Output CST should be set (always encode back, even for sRGB)
+        assert_ne!(uniforms.flags & FLAG_OUTPUT_CST, 0, "OUTPUT_CST flag should be set");
+        assert_eq!(uniforms.output_cst, 0); // Srgb = 0
+        // Output gamut should NOT be set (to_gamut = Rec709 = default)
+        assert_eq!(uniforms.flags & FLAG_OUTPUT_GAMUT, 0, "OUTPUT_GAMUT flag should NOT be set for Rec709");
     }
 }
