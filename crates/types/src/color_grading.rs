@@ -47,6 +47,62 @@ pub enum ColorSpace {
 }
 
 // ============================================================================
+// Tone Mapping
+// ============================================================================
+
+/// Tone mapping method for dynamic range compression.
+///
+/// When converting from wide-DR log footage to a display-referred space,
+/// tone mapping smoothly compresses highlights to avoid hard clipping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Tsify, Default)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+pub enum ToneMapping {
+    /// No tone mapping — 1:1 linear mapping, highlights clip at 1.0.
+    #[default]
+    None,
+    /// Simple luminance-preserving highlight compression.
+    /// Smoothly rolls off values above the shoulder threshold.
+    Simple,
+}
+
+// ============================================================================
+// Color Gamuts (Primaries)
+// ============================================================================
+
+/// Color gamut (primary) for gamut mapping.
+///
+/// Separate from the transfer function (ColorSpace). When source footage
+/// uses wide-gamut primaries (e.g. S-Gamut), converting the gamut to
+/// Rec.709 is necessary in addition to the transfer function conversion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Tsify, Default)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+pub enum Gamut {
+    /// Rec.709 / sRGB primaries (default display gamut).
+    #[default]
+    Rec709,
+    /// Sony S-Gamut (used with S-Log2/S-Log3).
+    SGamut,
+    /// Sony S-Gamut3 (improved S-Gamut).
+    SGamut3,
+    /// Sony S-Gamut3.Cine (cinema-optimized, closer to DCI-P3).
+    SGamut3Cine,
+    /// ARRI Wide Gamut (ALEXA Wide Gamut 3, used with LogC).
+    ArriWideGamut,
+    /// ACES AP1 primaries (ACEScg).
+    AcesCgAp1,
+    /// RED Wide Gamut RGB.
+    RedWideGamut,
+    /// DCI-P3 (D65 white point variant).
+    DciP3,
+    /// Rec.2020 / BT.2020 (UHDTV).
+    Rec2020,
+    /// Panasonic V-Gamut.
+    VGamut,
+    /// Blackmagic Design Wide Gamut (Gen 5).
+    BmdWideGamut,
+}
+
+// ============================================================================
 // Primary Correction (CDL)
 // ============================================================================
 
@@ -737,10 +793,22 @@ pub enum ColorGradingNode {
         #[serde(skip_serializing_if = "Option::is_none")]
         #[tsify(optional)]
         position: Option<NodePosition>,
-        /// Source color space.
+        /// Source transfer function (gamma curve).
         from_space: ColorSpace,
-        /// Target color space.
+        /// Target transfer function (gamma curve).
         to_space: ColorSpace,
+        /// Source gamut (color primaries). None = Rec709.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[tsify(optional)]
+        from_gamut: Option<Gamut>,
+        /// Target gamut (color primaries). None = Rec709.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[tsify(optional)]
+        to_gamut: Option<Gamut>,
+        /// Tone mapping method. None = no tone mapping.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[tsify(optional)]
+        tone_mapping: Option<ToneMapping>,
     },
 }
 

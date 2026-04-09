@@ -11,6 +11,8 @@
 import type {
   ColorGrading,
   ColorSpace,
+  Gamut,
+  ToneMapping,
   PrimaryCorrection,
   ColorWheels,
   Curves,
@@ -145,7 +147,13 @@ export function ColorGradingPanel({
 
   // Update a CST node
   const handleUpdateCstNode = useCallback(
-    (updates: { from_space?: ColorSpace; to_space?: ColorSpace }) => {
+    (updates: {
+      from_space?: ColorSpace;
+      to_space?: ColorSpace;
+      from_gamut?: Gamut;
+      to_gamut?: Gamut;
+      tone_mapping?: ToneMapping;
+    }) => {
       if (!selectedNode || selectedNode.type !== "ColorSpaceTransform") return;
 
       const newNodes = grading.nodes.map((node) => {
@@ -227,6 +235,9 @@ export function ColorGradingPanel({
             mix: 1,
             from_space: "SLog3",
             to_space: "Srgb",
+            from_gamut: "Rec709",
+            to_gamut: "Rec709",
+            tone_mapping: "Simple",
           };
           break;
         default:
@@ -545,7 +556,13 @@ interface NodeParameterEditorProps {
   onUpdatePrimary: (key: keyof PrimaryCorrection, value: number | [number, number, number]) => void;
   onUpdateColorWheels: (updates: Partial<ColorWheels>) => void;
   onUpdateCurves: (curves: Curves) => void;
-  onUpdateCst: (updates: { from_space?: ColorSpace; to_space?: ColorSpace }) => void;
+  onUpdateCst: (updates: {
+    from_space?: ColorSpace;
+    to_space?: ColorSpace;
+    from_gamut?: Gamut;
+    to_gamut?: Gamut;
+    tone_mapping?: ToneMapping;
+  }) => void;
   onUpdateLut: (updates: Partial<LutReference>) => void;
   onUpdateQualifier: (key: keyof HslQualifier, value: number | boolean) => void;
   onUpdateQualifierCorrection: (
@@ -645,6 +662,9 @@ function NodeParameterEditor({
             <CstProperties
               fromSpace={node.from_space}
               toSpace={node.to_space}
+              fromGamut={node.from_gamut ?? "Rec709"}
+              toGamut={node.to_gamut ?? "Rec709"}
+              toneMapping={node.tone_mapping ?? "None"}
               onChange={onUpdateCst}
             />
           )}

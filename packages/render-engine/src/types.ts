@@ -272,6 +272,21 @@ export type ColorSpace =
   | "BmFilm"
   | "RedLog3G10";
 
+export type Gamut =
+  | "Rec709"
+  | "SGamut"
+  | "SGamut3"
+  | "SGamut3Cine"
+  | "ArriWideGamut"
+  | "AcesCgAp1"
+  | "RedWideGamut"
+  | "DciP3"
+  | "Rec2020"
+  | "VGamut"
+  | "BmdWideGamut";
+
+export type ToneMapping = "None" | "Simple";
+
 export type LutInterpolation = "Trilinear" | "Tetrahedral";
 
 /** Primary correction using ASC-CDL model. */
@@ -452,6 +467,9 @@ export type ColorGradingNode =
       position?: NodePosition;
       from_space: ColorSpace;
       to_space: ColorSpace;
+      from_gamut?: Gamut;
+      to_gamut?: Gamut;
+      tone_mapping?: ToneMapping;
     };
 
 /** Complete color grading configuration. */
