@@ -33,6 +33,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/
 import { ExportDialog } from "./export-dialog";
 import { openKeyboardShortcuts } from "./keyboard-shortcuts-modal";
 import { ProjectSettingsDialog } from "./project-settings-dialog";
+import { TamsSettingsDialog } from "./tams-settings-dialog";
 
 interface ToolbarProps {
   /** Open the settings dialog on mount (for new projects) */
@@ -44,6 +45,7 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
   const exportDialogOpen = useVideoEditorStore((s) => s.exportDialogOpen);
   const setExportDialogOpen = useVideoEditorStore((s) => s.setExportDialogOpen);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [tamsSettingsOpen, setTamsSettingsOpen] = useState(false);
 
   const navigate = useNavigate();
 
@@ -197,6 +199,9 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
               <MenubarSeparator />
               <MenubarItem onClick={() => setSettingsDialogOpen(true)}>
                 Project Settings
+              </MenubarItem>
+              <MenubarItem onClick={() => setTamsSettingsOpen(true)}>
+                TAMS Connection
               </MenubarItem>
             </MenubarContent>
           </MenubarMenu>
@@ -390,6 +395,7 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
           onOpenChange={handleSettingsDialogChange}
           projectId={projectId}
         />
+        <TamsSettingsDialog open={tamsSettingsOpen} onOpenChange={setTamsSettingsOpen} />
       </div>
     </TooltipProvider>
   );

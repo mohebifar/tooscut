@@ -3,6 +3,7 @@ import { useRef, useCallback, useState, type DragEvent } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { useTamsSettingsStore, type AssetSource } from "../../state/tams-settings-store";
 import { useVideoEditorStore } from "../../state/video-editor-store";
 import {
   useAssetStore,
@@ -15,9 +16,17 @@ import {
   type MediaAsset,
 } from "../timeline/use-asset-store";
 import { Button } from "../ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { ShapePanel } from "./shape-panel";
+import { TamsAssetsContent } from "./tams-assets-content";
 import { TextPanel } from "./text-panel";
 import { TransitionPanel } from "./transition-panel";
 
@@ -173,6 +182,8 @@ function ImportButton({
 function AssetsContent() {
   const assets = useAssetStore((s) => s.assets);
   const isLoading = useAssetStore((s) => s.isLoading);
+  const assetSource = useTamsSettingsStore((s) => s.assetSource);
+  const setAssetSource = useTamsSettingsStore((s) => s.setAssetSource);
 
   const handleImportedAssets = useCallback((imported: MediaAsset[]) => {
     addAssetsToStores(imported);
@@ -183,6 +194,24 @@ function AssetsContent() {
   const imageAssets = assets.filter((a) => a.type === "image");
 
   return (
+    <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Source selector */}
+      <div className="mx-2 mt-2">
+        <Select value={assetSource} onValueChange={(v) => setAssetSource(v as AssetSource)}>
+          <SelectTrigger className="w-full" size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="local">Local Files</SelectItem>
+            <SelectItem value="tams">TAMS Media Store</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Content based on source */}
+      {assetSource === "tams" ? (
+        <TamsAssetsContent />
+      ) : (
     <Tabs defaultValue="all" className="flex flex-1 flex-col overflow-hidden">
       <TabsList className="mx-2 mt-2 w-auto">
         <TabsTrigger value="all" className="text-xs">
@@ -269,6 +298,8 @@ function AssetsContent() {
         </TabsContent>
       </div>
     </Tabs>
+      )}
+    </div>
   );
 }
 
