@@ -64,6 +64,11 @@ export function PreviewPanel() {
   // When a render is skipped because one is in-flight, schedule a re-render
   // after the current one completes. This prevents lost frames during init races.
   const pendingRenderRef = useRef(false);
+  // Track whether the compositor worker has finished its last renderFrame.
+  // Prevents Comlink queue buildup on Linux where GPU turnaround is slower:
+  // fire-and-forget calls accumulate faster than the worker processes them,
+  // causing the preview to fall further and further behind the timeline.
+  const compositorBusyRef = useRef(false);
   // Track if playback engine is running
   const isPlaybackEngineRunningRef = useRef(false);
   // Playback timing
@@ -270,6 +275,16 @@ export function PreviewPanel() {
       pendingRenderRef.current = true;
       return;
     }
+
+    // During playback, skip the entire frame if the compositor worker is still
+    // processing the previous one. This prevents Comlink queue buildup where
+    // fire-and-forget renderFrame calls accumulate faster than the worker can
+    // handle them (especially on Linux where GPU turnaround is slower), causing
+    // the preview to freeze while the timeline keeps advancing.
+    if (isPlayingRef.current && compositorBusyRef.current) {
+      return;
+    }
+
     renderingRef.current = true;
 
     try {
@@ -411,9 +426,16 @@ export function PreviewPanel() {
       }
 
       if (isPlayingRef.current) {
-        // During playback: fire-and-forget for maximum throughput.
-        // The tick loop naturally supersedes stale frames.
-        void compositor.renderFrame(renderFrameData);
+        // During playback: dispatch to worker only if it finished the last frame.
+        // compositorBusyRef is cleared when the worker resolves renderFrame,
+        // providing backpressure that prevents queue buildup on slow GPU paths.
+        compositorBusyRef.current = true;
+        compositor
+          .renderFrame(renderFrameData)
+          .catch(() => {})
+          .finally(() => {
+            compositorBusyRef.current = false;
+          });
       } else {
         // During scrub/drag: await so renders don't interleave.
         // This prevents out-of-order frame display (jitter) when
