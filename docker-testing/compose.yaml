@@ -1,0 +1,97 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: tooscut
+      POSTGRES_USER: tooscut
+      POSTGRES_PASSWORD: tooscut
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tooscut -d tooscut"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://tooscut:tooscut@postgres:5432/tooscut
+      DATABASE_RO_URL: postgresql://tooscut:tooscut@postgres:5432/tooscut
+      NODE_ENV: production
+      PORT: "3000"
+      HOST: "::"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  alb-proxy:
+    image: nginx:alpine
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost/ >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  tams-mock:
+    image: stoplight/prism:5
+    command: ["mock", "/app/tams.yaml", "--host", "0.0.0.0", "--port", "4010", "--multiprocess", "false"]
+    ports:
+      - "4010:4010"
+    volumes:
+      - ./tams-mock/tams.yaml:/app/tams.yaml:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4010/service').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  tams-media:
+    image: nginx:alpine
+    ports:
+      - "4011:80"
+    volumes:
+      - ./media:/media:ro
+      - ./media/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost/ >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  pgdata:

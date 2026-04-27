@@ -1,0 +1,175 @@
+openapi: 3.1.0
+info:
+  title: Testing TAMS Mock
+  version: 8.0.0
+servers:
+  - url: http://localhost:4010
+
+paths:
+  /service:
+    get:
+      operationId: getService
+      responses:
+        '200':
+          description: Service information
+          content:
+            application/json:
+              schema:
+                type: object
+              examples:
+                default:
+                  value:
+                    name: Testing TAMS
+                    type: urn:x-tams:service:testing
+                    api_version: "8.0"
+                    min_object_timeout: "300:0"
+
+  /sources:
+    get:
+      operationId: listSources
+      responses:
+        '200':
+          description: List sources
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+              examples:
+                default:
+                  value:
+                    - id: a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
+                      format: urn:x-nmos:format:video
+                      label: Camera A
+                      tags:
+                        location: [studio-1]
+                    - id: b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e
+                      format: urn:x-nmos:format:audio
+                      label: Mic 1
+                      tags:
+                        location: [studio-1]
+
+  /sources/{sourceId}:
+    get:
+      operationId: getSource
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Source details
+          content:
+            application/json:
+              schema:
+                type: object
+              examples:
+                default:
+                  value:
+                    id: a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
+                    format: urn:x-nmos:format:video
+                    label: Camera A
+                    tags:
+                      location: [studio-1]
+
+  /flows:
+    get:
+      operationId: listFlows
+      responses:
+        '200':
+          description: List flows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+              examples:
+                default:
+                  value:
+                    - id: c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f
+                      source_id: a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
+                      format: urn:x-nmos:format:video
+                      label: Camera A - H.264 1080p
+                      codec: h264
+                      frame_width: 1920
+                      frame_height: 1080
+                    - id: d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a
+                      source_id: a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
+                      format: urn:x-nmos:format:video
+                      label: Camera A - ProRes 1080p
+                      codec: prores
+                      frame_width: 1920
+                      frame_height: 1080
+                    - id: e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b
+                      source_id: b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e
+                      format: urn:x-nmos:format:audio
+                      label: Mic 1 - PCM 48kHz
+                      codec: pcm_s16le
+                      sample_rate: 48000
+
+  /flows/{flowId}:
+    get:
+      operationId: getFlow
+      parameters:
+        - name: flowId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Flow details
+          content:
+            application/json:
+              schema:
+                type: object
+              examples:
+                default:
+                  value:
+                    id: c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f
+                    source_id: a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
+                    format: urn:x-nmos:format:video
+                    label: Camera A - H.264 1080p
+                    codec: h264
+                    frame_width: 1920
+                    frame_height: 1080
+
+  /flows/{flowId}/segments:
+    get:
+      operationId: listFlowSegments
+      parameters:
+        - name: flowId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Flow segments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+              examples:
+                default:
+                  value:
+                    - object_id: f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8a9b0c
+                      flow_id: c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f
+                      timerange:
+                        start: "0:0"
+                        end: "10:0"
+                      get_urls:
+                        - url: http://localhost:4011/sample-video.mp4
+                    - object_id: a7b8c9d0-e1f2-4a3b-4c5d-6e7f8a9b0c1d
+                      flow_id: e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b
+                      timerange:
+                        start: "0:0"
+                        end: "10:0"
+                      get_urls:
+                        - url: http://localhost:4011/sample-audio.wav
