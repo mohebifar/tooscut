@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2, Film, Music, Image, AlertCircle, Settings } from "lucide-react";
 
 import { TamsClient, TamsClientError, type TamsFlow, type TamsSource } from "../../lib/tams-client";
+import { useVideoEditorStore } from "../../state/video-editor-store";
 import { useTamsSettingsStore } from "../../state/tams-settings-store";
+import { useAssetStore } from "../timeline/use-asset-store";
 import { Button } from "../ui/button";
 import { TamsSettingsDialog } from "./tams-settings-dialog";
 
@@ -11,7 +13,13 @@ interface TamsAssetItem {
   source?: TamsSource;
 }
 
-function TamsFlowCard({ item }: { item: TamsAssetItem }) {
+function TamsFlowCard({
+  item,
+  onAdd,
+}: {
+  item: TamsAssetItem;
+  onAdd: (flow: TamsFlow) => void;
+}) {
   const { flow } = item;
 
   const formatLabel = flow.label || flow.id.slice(0, 8);
@@ -50,6 +58,12 @@ function TamsFlowCard({ item }: { item: TamsAssetItem }) {
           {item.source?.label && ` • ${item.source.label}`}
         </div>
       </div>
+
+      <div className="border-t border-border p-2">
+        <Button size="sm" className="w-full" onClick={() => onAdd(flow)}>
+          Add to timeline
+        </Button>
+      </div>
     </div>
   );
 }
@@ -64,6 +78,61 @@ export function TamsAssetsContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const handleAddFlow = useCallback(
+    async (flow: TamsFlow) => {
+      if (!tamsConfig) return;
+
+      try {
+        const client = new TamsClient(tamsConfig);
+        const segments = await client.listFlowSegments(flow.id, { limit: 1 });
+        const url = segments[0] ? client.getSegmentDownloadUrl(segments[0]) : null;
+        if (!url) return;
+
+        const type: "video" | "audio" | "image" = flow.format?.includes("video")
+          ? "video"
+          : flow.format?.includes("audio")
+            ? "audio"
+            : "image";
+
+        const editorStore = useVideoEditorStore.getState();
+        const existingEditorAsset = editorStore.assets.find((asset) => asset.id === flow.id);
+        if (existingEditorAsset) {
+          editorStore.updateAssetUrl(flow.id, url);
+        } else {
+          editorStore.addAssets([
+            {
+              id: flow.id,
+              type,
+              name: flow.label ?? flow.id,
+              url,
+              duration: 0,
+              width: flow.frame_width,
+              height: flow.frame_height,
+            },
+          ]);
+        }
+
+        useAssetStore.getState().addAssets([
+          {
+            id: flow.id,
+            type,
+            name: flow.label ?? flow.id,
+            url,
+            duration: 0,
+            size: 0,
+            file: undefined,
+            width: flow.frame_width,
+            height: flow.frame_height,
+          },
+        ]);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to add flow";
+        setError(message);
+      }
+    },
+    [tamsConfig],
+  );
 
   const fetchAssets = useCallback(async () => {
     if (!tamsConfig) return;
@@ -190,7 +259,7 @@ export function TamsAssetsContent() {
       {!isLoading && flows.length > 0 && (
         <div className="grid grid-cols-1 gap-2 @[200px]:grid-cols-2 @[400px]:grid-cols-3 @[600px]:grid-cols-4">
           {flows.map((item) => (
-            <TamsFlowCard key={item.flow.id} item={item} />
+            <TamsFlowCard key={item.flow.id} item={item} onAdd={(flow) => void handleAddFlow(flow)} />
           ))}
         </div>
       )}

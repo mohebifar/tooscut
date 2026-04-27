@@ -31,6 +31,7 @@ interface ImageEntry {
   element: HTMLImageElement;
   assetId: string;
   objectUrl: string;
+  ownsObjectUrl: boolean;
   isReady: boolean;
 }
 
@@ -207,14 +208,19 @@ export function PreviewPanel() {
     const existing = imageElementsRef.current.get(asset.id);
     if (existing) return existing;
 
+    if (!asset.url && !asset.file) {
+      return null;
+    }
+
     const img = document.createElement("img");
-    const objectUrl = URL.createObjectURL(asset.file);
+    const objectUrl = asset.file ? URL.createObjectURL(asset.file) : asset.url;
     img.src = objectUrl;
 
     const entry: ImageEntry = {
       element: img,
       assetId: asset.id,
       objectUrl,
+      ownsObjectUrl: !!asset.file,
       isReady: false,
     };
 
@@ -241,7 +247,9 @@ export function PreviewPanel() {
       const currentAssetIds = new Set(assets.map((a) => a.id));
       for (const [assetId, entry] of imageElements) {
         if (!currentAssetIds.has(assetId)) {
-          URL.revokeObjectURL(entry.objectUrl);
+          if (entry.ownsObjectUrl) {
+            URL.revokeObjectURL(entry.objectUrl);
+          }
           imageElements.delete(assetId);
           uploadedTextures.delete(assetId);
         }
@@ -792,7 +800,9 @@ export function PreviewPanel() {
     const loaderManager = loaderManagerRef.current;
     return () => {
       for (const [, entry] of imageElements) {
-        URL.revokeObjectURL(entry.objectUrl);
+        if (entry.ownsObjectUrl) {
+          URL.revokeObjectURL(entry.objectUrl);
+        }
       }
       imageElements.clear();
       loaderManager.disposeAll();

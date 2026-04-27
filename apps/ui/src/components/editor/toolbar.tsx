@@ -1,6 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
-import { useLiveQuery } from "dexie-react-hooks";
 import {
   Undo2,
   Redo2,
@@ -13,10 +12,10 @@ import {
 } from "lucide-react";
 import { useState, useCallback, useRef, useEffect } from "react";
 
+import type { ProjectRow } from "../../lib/project-api";
 import { Route } from "../../routes/editor/$projectId";
-import { db } from "../../state/db";
+import { upsertProject } from "../../lib/project-api";
 import { useVideoEditorStore, useTemporalStore } from "../../state/video-editor-store";
-import { importFilesWithPicker, addAssetsToStores } from "../timeline/use-asset-store";
 import { Button } from "../ui/button";
 import {
   Menubar,
@@ -180,18 +179,6 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
                 <MenubarShortcut>⌘S</MenubarShortcut>
               </MenubarItem>
               <MenubarItem disabled>Save As...</MenubarItem>
-              <MenubarSeparator />
-              <MenubarItem
-                onClick={() => {
-                  void (async () => {
-                    const assets = await importFilesWithPicker();
-                    if (assets.length > 0) addAssetsToStores(assets);
-                  })();
-                }}
-              >
-                Import Media
-                <MenubarShortcut>⌘I</MenubarShortcut>
-              </MenubarItem>
               <MenubarItem onClick={handleExportClick}>
                 Export
                 <MenubarShortcut>⌘E</MenubarShortcut>
@@ -402,11 +389,16 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
 }
 
 function ToolbarProjectName() {
-  const { projectId } = Route.useParams();
-  const project = useLiveQuery(() => db.projects.get(projectId), [projectId]);
+  const project = Route.useLoaderData() as ProjectRow;
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState("");
+  const [displayName, setDisplayName] = useState(project.name);
+  const [value, setValue] = useState(project.name);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setDisplayName(project.name);
+    setValue(project.name);
+  }, [project.name]);
 
   useEffect(() => {
     if (editing) {
@@ -414,12 +406,12 @@ function ToolbarProjectName() {
     }
   }, [editing]);
 
-  if (!project) return null;
-
   const commit = () => {
     const trimmed = value.trim();
-    if (trimmed && trimmed !== project.name) {
-      void db.projects.update(project.id, { name: trimmed });
+    if (trimmed && trimmed !== displayName) {
+      void upsertProject({ data: { id: project.id, name: trimmed } });
+      setDisplayName(trimmed);
+      setValue(trimmed);
     }
     setEditing(false);
   };
@@ -434,7 +426,10 @@ function ToolbarProjectName() {
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === "Enter") commit();
-          if (e.key === "Escape") setEditing(false);
+          if (e.key === "Escape") {
+            setValue(displayName);
+            setEditing(false);
+          }
         }}
       />
     );
@@ -445,11 +440,11 @@ function ToolbarProjectName() {
       type="button"
       className="max-w-48 cursor-text truncate text-xs text-muted-foreground transition-colors hover:text-foreground"
       onClick={() => {
-        setValue(project.name);
+        setValue(displayName);
         setEditing(true);
       }}
     >
-      {project.name}
+      {displayName}
     </button>
   );
 }

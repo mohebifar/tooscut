@@ -2,7 +2,7 @@ import { EvaluatorManager } from "@tooscut/render-engine";
 import { useEffect, useRef } from "react";
 
 import { buildLayersForTime } from "../lib/layer-builder";
-import { db } from "../state/db";
+import { upsertProject } from "../lib/project-api";
 import { useVideoEditorStore } from "../state/video-editor-store";
 import { getSharedCompositor } from "../workers/compositor-api";
 
@@ -10,17 +10,21 @@ function saveProject(projectId: string) {
   const { clips, tracks, crossTransitions, assets, settings } = useVideoEditorStore.getState();
   const assetsToSave = assets.map((a) => ({
     ...a,
-    url: "", // blob URLs aren't persistable; restored via file handle hydration
+    // TAMS URLs are ephemeral; store only stable asset IDs and metadata.
+    url: "",
   }));
-  return db.projects.update(projectId, {
-    content: {
-      tracks,
-      clips,
-      crossTransitions,
-      assets: assetsToSave,
+
+  return upsertProject({
+    data: {
+      id: projectId,
+      settings: settings as unknown as Record<string, {}>,
+      content: {
+        tracks,
+        clips,
+        crossTransitions,
+        assets: assetsToSave,
+      },
     },
-    settings,
-    updatedAt: Date.now(),
   });
 }
 
@@ -68,7 +72,7 @@ async function generateThumbnail(projectId: string): Promise<void> {
     const blob = new Blob([arrayBuffer], { type: "image/jpeg" });
     const dataUrl = await blobToDataUrl(blob);
 
-    await db.projects.update(projectId, { thumbnailDataUrl: dataUrl });
+    await upsertProject({ data: { id: projectId, thumbnail: dataUrl } });
   } catch (err) {
     // Thumbnail generation is best-effort — don't break auto-save
     console.warn("[useAutoSave] Thumbnail generation failed:", err);

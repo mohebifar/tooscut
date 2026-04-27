@@ -2,7 +2,7 @@ import { FRAME_RATE_PRESETS, type FrameRate } from "@tooscut/render-engine";
 import { Monitor, Smartphone, Square, RectangleHorizontal } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 
-import { db } from "../../state/db";
+import { getProject, type ProjectRow, upsertProject } from "../../lib/project-api";
 import { useVideoEditorStore } from "../../state/video-editor-store";
 import { Button } from "../ui/button";
 import {
@@ -151,9 +151,11 @@ export function ProjectSettingsDialog({
       setHeight(settings.height);
       setFps(settings.fps);
       setPreset(findPresetIndex(settings.width, settings.height));
-      // Load project name from DB
-      void db.projects.get(projectId).then((project) => {
-        if (project) setName(project.name);
+      void getProject({ data: projectId }).then((project) => {
+        const row = project as ProjectRow | null;
+        if (row) {
+          setName(row.name);
+        }
       });
     }
   }, [open, settings, projectId]);
@@ -181,9 +183,10 @@ export function ProjectSettingsDialog({
 
   const handleSave = useCallback(() => {
     setSettings({ width, height, fps });
-    // Save project name to DB
     const trimmed = name.trim() || "Untitled Project";
-    void db.projects.update(projectId, { name: trimmed });
+    void upsertProject({
+      data: { id: projectId, name: trimmed, settings: { width, height, fps } },
+    });
     onOpenChange(false);
   }, [width, height, fps, name, projectId, setSettings, onOpenChange]);
 

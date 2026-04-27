@@ -88,12 +88,24 @@ export function useAudioEngine() {
 
     for (const asset of audioAssets) {
       if (uploadedSourcesRef.current.has(asset.id)) continue;
+      if (!asset.file && !asset.url) continue;
       uploadedSourcesRef.current.add(asset.id);
 
-      engine.registerAudioSource(asset.id, asset.file).catch((err) => {
-        console.error(`[useAudioEngine] Failed to register audio for ${asset.id}:`, err);
-        uploadedSourcesRef.current.delete(asset.id);
-      });
+      const sourcePromise = asset.file
+        ? Promise.resolve(asset.file as File | Blob)
+        : fetch(asset.url).then(async (response) => {
+            if (!response.ok) {
+              throw new Error(`Failed to fetch audio source: ${response.status}`);
+            }
+            return response.blob();
+          });
+
+      sourcePromise
+        .then((source) => engine.registerAudioSource(asset.id, source))
+        .catch((err) => {
+          console.error(`[useAudioEngine] Failed to register audio for ${asset.id}:`, err);
+          uploadedSourcesRef.current.delete(asset.id);
+        });
     }
   }, [assets, isWasmReady]);
 

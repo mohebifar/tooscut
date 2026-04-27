@@ -39,10 +39,6 @@ import { TimelineStage } from "./timeline-stage";
 import { computeSplitLayout, yToSectionTrackIndex } from "./track-layout";
 import {
   useAssetStore,
-  importFiles,
-  importFilesWithPicker,
-  handleNativeFileDrop,
-  addAssetsToStores,
 } from "./use-asset-store";
 
 /**
@@ -220,16 +216,6 @@ export function CanvasTimeline() {
       if ((e.metaKey || e.ctrlKey) && e.key === "v") {
         e.preventDefault();
         pasteClipsAtPlayhead();
-        return;
-      }
-
-      // Cmd/Ctrl+I: Import media
-      if ((e.metaKey || e.ctrlKey) && e.key === "i") {
-        e.preventDefault();
-        void (async () => {
-          const imported = await importFilesWithPicker();
-          if (imported.length > 0) addAssetsToStores(imported);
-        })();
         return;
       }
 
@@ -1232,87 +1218,7 @@ export function CanvasTimeline() {
         return;
       }
 
-      // Handle file drop from OS (Finder / Explorer)
-      if (e.dataTransfer!.files.length > 0) {
-        handleNativeFileDrop(e, (files, handles) => {
-          void (async () => {
-            const imported = await importFiles(files, handles);
-
-            let asset: (typeof imported)[number] | undefined;
-            if (imported.length > 0) {
-              addAssetsToStores(imported);
-              asset = imported[0];
-            } else {
-              // File was already imported (dedup) — find existing asset by name+size
-              const file = files[0];
-              asset = useAssetStore
-                .getState()
-                .assets.find((a) => a.name === file.name && a.size === file.size);
-            }
-            if (!asset) return;
-            const rect = el.getBoundingClientRect();
-
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            const d = dropHandlerDepsRef.current;
-            const dropStartTime = d.clips.length === 0 ? 0 : d.xToFrame(x);
-            const rawIdx = d.yToTrackIndex(y);
-
-            const isAudio = asset.type === "audio";
-            const requiredTrackType = isAudio ? "audio" : "video";
-            const trackIndex = isAudio ? rawIdx : d.findNearestVideoTrack(rawIdx);
-            if (trackIndex === null) return;
-            if (trackIndex < 0 || trackIndex >= d.allTracks.length) return;
-
-            const track = d.allTracks[trackIndex];
-            if (track.type !== requiredTrackType) return;
-
-            const clipType =
-              asset.type === "audio" ? "audio" : asset.type === "image" ? "image" : "video";
-
-            let transform: { scale_x: number; scale_y: number } | undefined;
-            if ((asset.type === "video" || asset.type === "image") && asset.width && asset.height) {
-              const scaleX = d.settings.width / asset.width;
-              const scaleY = d.settings.height / asset.height;
-              const scale = Math.min(scaleX, scaleY);
-              transform = { scale_x: scale, scale_y: scale };
-            }
-
-            const fileDurationFrames = secondsToFrames(asset.duration, d.settings.fps);
-
-            const newClipId = d.addClipToTrack({
-              type: clipType,
-              trackId: track.fullId,
-              startTime: dropStartTime,
-              duration: fileDurationFrames,
-              name: asset.name,
-              assetId: asset.id,
-              speed: 1,
-              assetDuration: clipType === "image" ? undefined : fileDurationFrames,
-              transform,
-            });
-
-            if (asset.type === "video" && track.pairedTrackId) {
-              const audioTrack = d.allTracks.find((t) => t.fullId === track.pairedTrackId);
-              if (audioTrack) {
-                const audioClipId = d.addClipToTrack({
-                  type: "audio",
-                  trackId: audioTrack.fullId,
-                  startTime: dropStartTime,
-                  duration: fileDurationFrames,
-                  name: `${asset.name} (Audio)`,
-                  assetId: asset.id,
-                  speed: 1,
-                  assetDuration: fileDurationFrames,
-                });
-                d.linkClipPair(newClipId, audioClipId);
-              }
-            }
-
-            d.setSelectedClipIds([newClipId]);
-          })();
-        });
-      }
+      // Native file drops are not supported in EKS-backed mode.
     };
 
     el.addEventListener("drop", handleDrop);

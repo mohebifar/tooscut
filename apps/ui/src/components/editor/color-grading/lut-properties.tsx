@@ -7,10 +7,9 @@
 
 import type { LutReference, LutInterpolation } from "@tooscut/render-engine";
 
-import { Upload, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
-import { importLutWithPicker } from "../../../lib/lut-manager";
 import { useVideoEditorStore } from "../../../state/video-editor-store";
 import { Button } from "../../ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../ui/select";
@@ -34,17 +33,6 @@ export function LutProperties({ lut, onChange }: LutPropertiesProps) {
     () => lutAssets.find((a) => a.id === lut.lut_id),
     [lutAssets, lut.lut_id],
   );
-
-  const handleLoadFile = useCallback(() => {
-    async function loadLut() {
-      const result = await importLutWithPicker();
-      if (result) {
-        onChange({ lut_id: result.id });
-      }
-    }
-
-    void loadLut();
-  }, [onChange]);
 
   const handleSelectExisting = useCallback(
     (value: string | null) => {
@@ -95,10 +83,6 @@ export function LutProperties({ lut, onChange }: LutPropertiesProps) {
           </div>
         ) : (
           <div className="space-y-2">
-            <Button variant="outline" size="sm" className="w-full" onClick={handleLoadFile}>
-              <Upload className="mr-1.5 h-3.5 w-3.5" />
-              Load .cube File
-            </Button>
             {lutAssets.length > 0 && (
               <Select
                 value={lut.lut_id || undefined}
@@ -116,6 +100,9 @@ export function LutProperties({ lut, onChange }: LutPropertiesProps) {
                   ))}
                 </SelectContent>
               </Select>
+            )}
+            {lutAssets.length === 0 && (
+              <p className="text-xs text-muted-foreground">No LUT assets available from media store.</p>
             )}
           </div>
         )}

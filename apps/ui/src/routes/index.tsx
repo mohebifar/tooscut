@@ -1,4 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
+import { getRequest } from "@tanstack/react-start/server";
 
 import { FaqsSection } from "../components/faqs-section";
 import { FeatureSection } from "../components/feature-section";
@@ -6,7 +8,20 @@ import { Footer } from "../components/footer";
 import { Header } from "../components/header";
 import { HeroSection } from "../components/hero";
 
-export const Route = createFileRoute("/")({ component: LandingPage });
+const checkAuth = createServerFn({ method: "GET" }).handler(async () => {
+  const request = getRequest();
+  return !!request.headers.get("x-amzn-oidc-identity");
+});
+
+export const Route = createFileRoute("/")({
+  component: LandingPage,
+  loader: async () => {
+    const isAuthenticated = await checkAuth();
+    if (isAuthenticated) {
+      throw redirect({ to: "/projects" });
+    }
+  },
+});
 
 function LandingPage() {
   return (
