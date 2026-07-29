@@ -1,7 +1,7 @@
 "use client";
 
 import Konva from "konva";
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Layer, Line, Rect, Stage, Text } from "react-konva";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 
@@ -35,7 +35,11 @@ import {
   TransitionResizeState,
   TrimState,
 } from "./types";
-import { getThumbnailsForClip, useClipThumbnails } from "./use-clip-thumbnails";
+import {
+  getThumbnailsForClip,
+  indexThumbnailsByClip,
+  useClipThumbnails,
+} from "./use-clip-thumbnails";
 import { useClipWaveforms } from "./use-clip-waveform";
 
 interface TimelineStageProps {
@@ -731,6 +735,9 @@ export function TimelineStage({
     trackHeaderWidth: TRACK_HEADER_WIDTH,
     viewportWidth: width,
   });
+  // Indexed once per thumbnailData change so per-clip prop building doesn't
+  // do an O(n) array scan per clip (O(n^2) across all visible clips).
+  const thumbnailDataByClip = useMemo(() => indexThumbnailsByClip(thumbnailData), [thumbnailData]);
 
   // Audio clip waveforms
   const waveformMap = useClipWaveforms(thumbnailClips);
@@ -2100,8 +2107,53 @@ export function TimelineStage({
     ],
   );
 
+  // Raw mousemove can fire far more often than the display refresh rate
+  // (especially on high-poll-rate mice), and each call rebuilds clip props
+  // for the whole timeline. Coalesce to at most one handleStageMouseMove
+  // call per animation frame.
+  const pendingMouseMoveEventRef = useRef<Konva.KonvaEventObject<MouseEvent> | null>(null);
+  const mouseMoveRafRef = useRef<number | null>(null);
+
+  const flushPendingMouseMove = useCallback(() => {
+    if (mouseMoveRafRef.current !== null) {
+      cancelAnimationFrame(mouseMoveRafRef.current);
+      mouseMoveRafRef.current = null;
+    }
+    const pending = pendingMouseMoveEventRef.current;
+    if (pending) {
+      pendingMouseMoveEventRef.current = null;
+      handleStageMouseMove(pending);
+    }
+  }, [handleStageMouseMove]);
+
+  const handleStageMouseMoveThrottled = useCallback(
+    (e: Konva.KonvaEventObject<MouseEvent>) => {
+      pendingMouseMoveEventRef.current = e;
+      if (mouseMoveRafRef.current !== null) return;
+      mouseMoveRafRef.current = requestAnimationFrame(() => {
+        mouseMoveRafRef.current = null;
+        const pending = pendingMouseMoveEventRef.current;
+        pendingMouseMoveEventRef.current = null;
+        if (pending) handleStageMouseMove(pending);
+      });
+    },
+    [handleStageMouseMove],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (mouseMoveRafRef.current !== null) {
+        cancelAnimationFrame(mouseMoveRafRef.current);
+      }
+    };
+  }, []);
+
   // Handle mouse up
   const handleStageMouseUp = useCallback(() => {
+    // Apply the latest coalesced mousemove before committing, so the drag
+    // doesn't end one frame behind the actual pointer position.
+    flushPendingMouseMove();
+
     // End track height resize
     if (trackResizeRef.current) {
       trackResizeRef.current = null;
@@ -2228,6 +2280,7 @@ export function TimelineStage({
       setSnapLines([]);
     }
   }, [
+    flushPendingMouseMove,
     trimPreview,
     dragPreview,
     transitionResizePreview,
@@ -2311,8 +2364,8 @@ export function TimelineStage({
         clips.some((c) => c.linkedClipId === clip.id) || clip.linkedClipId !== undefined;
 
       const thumbnails =
-        (clip.type === "video" || clip.type === "image") && thumbnailData
-          ? getThumbnailsForClip(thumbnailData, clip.id)
+        clip.type === "video" || clip.type === "image"
+          ? getThumbnailsForClip(thumbnailDataByClip, clip.id)
           : [];
 
       const clipAssetId = "assetId" in clip ? clip.assetId : undefined;
@@ -2393,7 +2446,7 @@ export function TimelineStage({
       transitionResizePreview,
       transitionHover,
       selectedTransition,
-      thumbnailData,
+      thumbnailDataByClip,
       waveformMap,
       zoom,
       width,
@@ -2493,7 +2546,7 @@ export function TimelineStage({
       style={{ cursor }}
       onWheel={handleWheel}
       onMouseDown={handleStageMouseDown}
-      onMouseMove={handleStageMouseMove}
+      onMouseMove={handleStageMouseMoveThrottled}
       onMouseUp={handleStageMouseUp}
       onMouseLeave={handleStageMouseUp}
     >

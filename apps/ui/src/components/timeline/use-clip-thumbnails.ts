@@ -450,12 +450,26 @@ export function useClipThumbnails({
 }
 
 /**
+ * Index thumbnail data by clip ID for O(1) lookups. Callers doing this per
+ * clip per render (e.g. building props for every visible clip) should build
+ * this once per thumbnailData change instead of scanning the array per clip.
+ */
+export function indexThumbnailsByClip(
+  thumbnailData: ClipThumbnailData[],
+): Map<string, ClipThumbnailData> {
+  const map = new Map<string, ClipThumbnailData>();
+  for (const data of thumbnailData) {
+    map.set(data.clipId, data);
+  }
+  return map;
+}
+
+/**
  * Get thumbnail data for a specific clip.
  */
 export function getThumbnailsForClip(
-  thumbnailData: ClipThumbnailData[],
+  thumbnailDataByClip: Map<string, ClipThumbnailData>,
   clipId: string,
 ): ThumbnailSlot[] {
-  const data = thumbnailData.find((d) => d.clipId === clipId);
-  return data?.slots ?? [];
+  return thumbnailDataByClip.get(clipId)?.slots ?? [];
 }
