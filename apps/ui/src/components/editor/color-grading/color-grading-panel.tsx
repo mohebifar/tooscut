@@ -17,6 +17,7 @@ import type {
   ColorWheels,
   Curves,
   HslQualifier,
+  PowerWindow,
   LutReference,
   ColorGradingNode as CGNode,
 } from "@tooscut/render-engine";
@@ -28,6 +29,7 @@ import {
   DEFAULT_HSL_QUALIFIER,
   DEFAULT_CURVES,
   DEFAULT_LUT_REFERENCE,
+  DEFAULT_POWER_WINDOW,
 } from "@tooscut/render-engine";
 import {
   Eye,
@@ -40,6 +42,7 @@ import {
   Spline,
   Grid3X3,
   Crosshair,
+  Square,
 } from "lucide-react";
 import { useState, useCallback, useMemo } from "react";
 
@@ -54,6 +57,7 @@ import { LutProperties } from "./lut-properties";
 import { ColorGradingNodeGraph } from "./node-graph";
 import { PrimaryCorrectionProperties } from "./primary-correction";
 import { QualifierProperties } from "./qualifier-properties";
+import { WindowProperties } from "./window-properties";
 
 // ============================================================================
 // Types
@@ -112,6 +116,13 @@ const NODE_TYPE_CONFIGS: NodeTypeConfig[] = [
     label: "HSL Qualifier",
     icon: Crosshair,
     description: "Secondary color keying",
+    available: true,
+  },
+  {
+    type: "Window",
+    label: "Power Window",
+    icon: Square,
+    description: "Shape mask for regional correction",
     available: true,
   },
   {
@@ -224,6 +235,16 @@ export function ColorGradingPanel({
             enabled: true,
             mix: 1,
             qualifier: { ...DEFAULT_HSL_QUALIFIER },
+            correction: { ...DEFAULT_PRIMARY_CORRECTION },
+          };
+          break;
+        case "Window":
+          newNode = {
+            type: "Window",
+            id: `window-${Date.now()}`,
+            enabled: true,
+            mix: 1,
+            window: { ...DEFAULT_POWER_WINDOW },
             correction: { ...DEFAULT_PRIMARY_CORRECTION },
           };
           break;
@@ -438,6 +459,50 @@ export function ColorGradingPanel({
     [grading, onColorGradingChange, selectedNode],
   );
 
+  // Update a window node's window params
+  const handleUpdateWindowNode = useCallback(
+    (updates: Partial<PowerWindow>) => {
+      if (!selectedNode || selectedNode.type !== "Window") return;
+
+      const newNodes = grading.nodes.map((node) => {
+        if (node.id === selectedNode.id && node.type === "Window") {
+          return {
+            ...node,
+            window: {
+              ...node.window,
+              ...updates,
+            },
+          };
+        }
+        return node;
+      });
+      onColorGradingChange({ ...grading, nodes: newNodes });
+    },
+    [grading, onColorGradingChange, selectedNode],
+  );
+
+  // Update a window node's correction params
+  const handleUpdateWindowCorrection = useCallback(
+    (key: keyof PrimaryCorrection, value: number | [number, number, number]) => {
+      if (!selectedNode || selectedNode.type !== "Window") return;
+
+      const newNodes = grading.nodes.map((node) => {
+        if (node.id === selectedNode.id && node.type === "Window") {
+          return {
+            ...node,
+            correction: {
+              ...node.correction,
+              [key]: value,
+            },
+          };
+        }
+        return node;
+      });
+      onColorGradingChange({ ...grading, nodes: newNodes });
+    },
+    [grading, onColorGradingChange, selectedNode],
+  );
+
   // Check if we have any active corrections
   const hasActiveCorrections = useMemo(() => grading.nodes.some((n) => n.enabled), [grading.nodes]);
 
@@ -496,6 +561,8 @@ export function ColorGradingPanel({
             onUpdateLut={handleUpdateLutNode}
             onUpdateQualifier={handleUpdateQualifierNode}
             onUpdateQualifierCorrection={handleUpdateQualifierCorrection}
+            onUpdateWindow={handleUpdateWindowNode}
+            onUpdateWindowCorrection={handleUpdateWindowCorrection}
           />
         </>
       )}
@@ -569,6 +636,11 @@ interface NodeParameterEditorProps {
     key: keyof PrimaryCorrection,
     value: number | [number, number, number],
   ) => void;
+  onUpdateWindow: (updates: Partial<PowerWindow>) => void;
+  onUpdateWindowCorrection: (
+    key: keyof PrimaryCorrection,
+    value: number | [number, number, number],
+  ) => void;
 }
 
 // ============================================================================
@@ -586,6 +658,8 @@ function NodeParameterEditor({
   onUpdateLut,
   onUpdateQualifier,
   onUpdateQualifierCorrection,
+  onUpdateWindow,
+  onUpdateWindowCorrection,
 }: NodeParameterEditorProps) {
   const [expanded, setExpanded] = useState(true);
 
@@ -601,6 +675,8 @@ function NodeParameterEditor({
         return "LUT";
       case "Qualifier":
         return "HSL Qualifier";
+      case "Window":
+        return "Power Window";
       case "ColorSpaceTransform":
         return "Color Space Transform";
       default:
@@ -656,6 +732,16 @@ function NodeParameterEditor({
               correction={node.correction}
               onQualifierChange={onUpdateQualifier}
               onCorrectionChange={onUpdateQualifierCorrection}
+            />
+          )}
+          {node.type === "Window" && (
+            <WindowProperties
+              clipId={clipId}
+              clipStartTime={clipStartTime}
+              window={node.window}
+              correction={node.correction}
+              onWindowChange={onUpdateWindow}
+              onCorrectionChange={onUpdateWindowCorrection}
             />
           )}
           {node.type === "ColorSpaceTransform" && (
