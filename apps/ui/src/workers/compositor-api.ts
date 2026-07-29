@@ -43,6 +43,12 @@ export interface CompositorApi {
     thumbWidth: number,
     thumbHeight: number,
   ): Promise<ArrayBuffer>;
+  /**
+   * Snapshot whatever is currently displayed on the preview canvas as RGBA
+   * pixels — does not re-render, so it works for any frame already on
+   * screen (e.g. after scrubbing) without needing fresh texture uploads.
+   */
+  captureCurrentFramePixels(): Promise<{ data: ArrayBuffer; width: number; height: number }>;
   /** Clear a specific texture */
   clearTexture(textureId: string): Promise<void>;
   /** Upload a 3D LUT */
@@ -191,6 +197,11 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
     ): Promise<ArrayBuffer> {
       if (!api || !isReady) throw new Error("Compositor not ready");
       return api.captureThumbnail(frame, thumbWidth, thumbHeight);
+    },
+
+    async captureCurrentFramePixels() {
+      if (!api || !isReady) throw new Error("Compositor not ready");
+      return api.captureCurrentFramePixels();
     },
 
     async uploadLut(lutId: string, size: number, data: Float32Array) {

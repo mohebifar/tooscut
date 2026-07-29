@@ -30,6 +30,8 @@ import {
   DEFAULT_CURVES,
   DEFAULT_LUT_REFERENCE,
   DEFAULT_POWER_WINDOW,
+  computeChannelStats,
+  matchColorCorrection,
 } from "@tooscut/render-engine";
 import {
   Eye,
@@ -43,9 +45,14 @@ import {
   Grid3X3,
   Crosshair,
   Square,
+  Pipette,
+  Wand2,
 } from "lucide-react";
 import { useState, useCallback, useMemo } from "react";
 
+import { useColorMatchStore } from "../../../state/color-match-store";
+import { useVideoEditorStore } from "../../../state/video-editor-store";
+import { getSharedCompositor } from "../../../workers/compositor-api";
 import { Button } from "../../ui/button";
 import { SearchableDropdown, type SearchableDropdownItem } from "../../ui/searchable-dropdown";
 import { Separator } from "../../ui/separator";
@@ -177,6 +184,85 @@ export function ColorGradingPanel({
     },
     [grading, onColorGradingChange, selectedNode],
   );
+
+  // === Color matching ===
+  // Snapshots whatever's currently displayed in the preview (wherever the
+  // user has scrubbed to) rather than re-rendering an arbitrary clip, so it
+  // works without needing to upload textures for content that isn't already
+  // on screen. See captureCurrentFramePixels() in compositor.worker.ts.
+  const referenceStats = useColorMatchStore((s) => s.referenceStats);
+  const referenceLabel = useColorMatchStore((s) => s.referenceLabel);
+  const setReference = useColorMatchStore((s) => s.setReference);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [matchError, setMatchError] = useState<string | null>(null);
+
+  const handleCaptureReference = useCallback(async () => {
+    setMatchError(null);
+    const compositor = getSharedCompositor();
+    if (!compositor?.isReady) {
+      setMatchError("Preview isn't ready yet");
+      return;
+    }
+    setIsCapturing(true);
+    try {
+      const { data } = await compositor.captureCurrentFramePixels();
+      const stats = computeChannelStats(new Uint8ClampedArray(data));
+      const frame = useVideoEditorStore.getState().currentFrame;
+      setReference(stats, `frame ${Math.round(frame)}`);
+    } catch (err) {
+      console.error("[ColorGradingPanel] Failed to capture reference frame:", err);
+      setMatchError("Failed to capture reference frame");
+    } finally {
+      setIsCapturing(false);
+    }
+  }, [setReference]);
+
+  const handleMatchToReference = useCallback(async () => {
+    if (!referenceStats) return;
+    setMatchError(null);
+    const compositor = getSharedCompositor();
+    if (!compositor?.isReady) {
+      setMatchError("Preview isn't ready yet");
+      return;
+    }
+    setIsCapturing(true);
+    try {
+      const { data } = await compositor.captureCurrentFramePixels();
+      const targetStats = computeChannelStats(new Uint8ClampedArray(data));
+      const matched = matchColorCorrection(referenceStats, targetStats);
+
+      // Merge into the first existing Primary node (preserving its power/
+      // saturation/exposure/etc.), or add a new one if there isn't one yet.
+      const existingPrimary = grading.nodes.find(
+        (n): n is Extract<CGNode, { type: "Primary" }> => n.type === "Primary",
+      );
+      const newNodes = existingPrimary
+        ? grading.nodes.map((node) =>
+            node.id === existingPrimary.id && node.type === "Primary"
+              ? {
+                  ...node,
+                  correction: { ...node.correction, slope: matched.slope, offset: matched.offset },
+                }
+              : node,
+          )
+        : [
+            ...grading.nodes,
+            {
+              type: "Primary" as const,
+              id: `primary-match-${Date.now()}`,
+              enabled: true,
+              mix: 1,
+              correction: matched,
+            },
+          ];
+      onColorGradingChange({ ...grading, nodes: newNodes });
+    } catch (err) {
+      console.error("[ColorGradingPanel] Failed to match color:", err);
+      setMatchError("Failed to match color");
+    } finally {
+      setIsCapturing(false);
+    }
+  }, [referenceStats, grading, onColorGradingChange]);
 
   // Toggle bypass
   const handleBypassToggle = useCallback(
@@ -526,6 +612,42 @@ export function ColorGradingPanel({
           {grading.bypass ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
           {grading.bypass ? "Bypassed" : "Bypass"}
         </Toggle>
+      </div>
+
+      {/* Color matching — scrub to a reference frame, capture it, scrub to
+          this clip's frame, then match. Reference persists across clip
+          selection so you can capture on one clip and apply on another. */}
+      <div className="space-y-1.5 rounded-md border border-border p-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-muted-foreground">Color Match</span>
+          {referenceLabel && (
+            <span className="text-[11px] text-muted-foreground">Reference: {referenceLabel}</span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 flex-1 gap-1.5 text-xs"
+            disabled={isCapturing}
+            onClick={() => void handleCaptureReference()}
+          >
+            <Pipette className="h-3.5 w-3.5" />
+            Capture Reference
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 flex-1 gap-1.5 text-xs"
+            disabled={isCapturing || !referenceStats}
+            onClick={() => void handleMatchToReference()}
+            title={referenceStats ? undefined : "Capture a reference frame first"}
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+            Match to Reference
+          </Button>
+        </div>
+        {matchError && <p className="text-[11px] text-destructive">{matchError}</p>}
       </div>
 
       <div className="relative">

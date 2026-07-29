@@ -228,6 +228,41 @@ async function captureThumbnail(
 }
 
 /**
+ * Snapshot whatever is currently drawn on the canvas as RGBA pixels.
+ *
+ * Unlike renderToPixels/captureThumbnail, this does NOT re-render through
+ * the WASM compositor — it reads back the canvas's existing bitmap output
+ * via createImageBitmap, so it works regardless of what's on screen (any
+ * already-uploaded/rendered content) without needing a RenderFrame with
+ * correctly-referenced texture IDs. Used for color matching, where the
+ * two frames being compared may be arbitrary points in the timeline the
+ * user scrubbed to, not necessarily ones with fresh texture uploads.
+ */
+async function captureCurrentFramePixels(): Promise<{
+  data: ArrayBuffer;
+  width: number;
+  height: number;
+}> {
+  if (!canvas) {
+    throw new Error("Canvas not initialized");
+  }
+
+  const bitmap = await createImageBitmap(canvas);
+  try {
+    const scratch = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const ctx = scratch.getContext("2d");
+    if (!ctx) {
+      throw new Error("Failed to get 2D context for pixel capture");
+    }
+    ctx.drawImage(bitmap, 0, 0);
+    const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+    return { data: imageData.data.buffer, width: bitmap.width, height: bitmap.height };
+  } finally {
+    bitmap.close();
+  }
+}
+
+/**
  * Clear a specific texture from GPU memory.
  */
 function clearTexture(textureId: string): void {
@@ -312,6 +347,7 @@ const workerApi = {
   renderFrame,
   renderToPixels,
   captureThumbnail,
+  captureCurrentFramePixels,
   clearTexture,
   clearAllTextures,
   uploadLut,
