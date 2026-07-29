@@ -947,6 +947,7 @@ mod tests {
             enabled: true,
             mix: 0.8,
             label: Some("My Grade".into()),
+            position: None,
             correction: PrimaryCorrection::default(),
         };
 

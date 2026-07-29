@@ -80,7 +80,11 @@ struct ColorGradingUniforms {
     tone_mapping_a: f32,
     tone_mapping_b: f32,
     _pad_tone2: f32,
-    _pad: array<vec4<f32>, 6>,
+    // Master curve control points, packed 2-per-vec4 as (x,y,x,y): up to 6 points.
+    curve_master: array<vec4<f32>, 3>,
+    curve_master_count: f32,
+    _pad_curve: vec3<f32>,
+    _pad: array<vec4<f32>, 2>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: LayerUniforms;
@@ -561,6 +565,7 @@ fn apply_tone_mapping(color: vec3<f32>, method: u32) -> vec3<f32> {
 const CG_FLAG_BYPASS: u32 = 1u;
 const CG_FLAG_PRIMARY_ENABLED: u32 = 2u;
 const CG_FLAG_WHEELS_ENABLED: u32 = 4u;
+const CG_FLAG_CURVES_ENABLED: u32 = 8u;
 const CG_FLAG_LUT_ENABLED: u32 = 16u;
 const CG_FLAG_QUALIFIER_ENABLED: u32 = 32u;
 const CG_FLAG_WINDOW_ENABLED: u32 = 64u;
@@ -644,6 +649,54 @@ fn apply_lift_gamma_gain(
     let gain_factor = 1.0 + gain_rgb + gain_lum;
     result = result * gain_factor;
     return mix(color, result, mix_amount);
+}
+
+// ============================================================================
+// Curves (master curve only — see ColorGradingUniforms.curve_master)
+// ============================================================================
+
+fn get_master_curve_point(i: u32) -> vec2<f32> {
+    let vec_idx = i / 2u;
+    let v = cg.curve_master[vec_idx];
+    if (i % 2u == 0u) {
+        return v.xy;
+    }
+    return v.zw;
+}
+
+// Piecewise-linear interpolation through the curve's control points,
+// matching Curve1D::evaluate() on the CPU side exactly.
+fn evaluate_master_curve(x_in: f32) -> f32 {
+    let count = u32(cg.curve_master_count);
+    if (count < 2u) {
+        return x_in;
+    }
+    let x = clamp(x_in, 0.0, 1.0);
+    var lower = get_master_curve_point(0u);
+    var upper = get_master_curve_point(count - 1u);
+    for (var i: u32 = 0u; i < count - 1u; i = i + 1u) {
+        let p0 = get_master_curve_point(i);
+        let p1 = get_master_curve_point(i + 1u);
+        if (x >= p0.x && x <= p1.x) {
+            lower = p0;
+            upper = p1;
+            break;
+        }
+    }
+    let denom = upper.x - lower.x;
+    if (abs(denom) < 1e-6) {
+        return lower.y;
+    }
+    let t = (x - lower.x) / denom;
+    return lower.y + t * (upper.y - lower.y);
+}
+
+fn apply_curves(color: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(
+        evaluate_master_curve(color.r),
+        evaluate_master_curve(color.g),
+        evaluate_master_curve(color.b)
+    );
 }
 
 // ============================================================================
@@ -839,6 +892,11 @@ fn apply_color_grading(color: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
             cg.gain.rgb, cg.gain.w,
             cg.wheels_mix
         );
+    }
+
+    // Curves (master curve, applied identically to R/G/B)
+    if ((cg.flags & CG_FLAG_CURVES_ENABLED) != 0u) {
+        result = apply_curves(result);
     }
 
     // 3D LUT
