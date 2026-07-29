@@ -2435,6 +2435,8 @@ export function TimelineStage({
 
       const clipAssetId = "assetId" in clip ? clip.assetId : undefined;
       const wf = clip.type === "audio" && clipAssetId ? waveformMap.get(clipAssetId) : undefined;
+      const fadeIn = clip.type === "audio" ? (clip.fadeIn ?? 0) : 0;
+      const fadeOut = clip.type === "audio" ? (clip.fadeOut ?? 0) : 0;
 
       // transitionIn/transitionOut only exist on VisualClipBase descendants (not AudioClip)
       const clipTransitionIn = "transitionIn" in clip ? clip.transitionIn : undefined;
@@ -2498,6 +2500,8 @@ export function TimelineStage({
         thumbnails,
         waveformData: wf?.data,
         waveformDuration: wf?.duration,
+        fadeIn,
+        fadeOut,
         isZooming,
         zoom,
         fps,

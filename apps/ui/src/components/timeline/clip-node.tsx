@@ -8,7 +8,7 @@
 
 import { framesToSeconds } from "@tooscut/render-engine";
 import React from "react";
-import { Group, Label, Rect, Shape, Tag, Text } from "react-konva";
+import { Group, Label, Line, Rect, Shape, Tag, Text } from "react-konva";
 
 import type { ThumbnailSlot } from "./use-clip-thumbnails";
 
@@ -66,6 +66,9 @@ export interface ClipNodeProps {
   thumbnails: ThumbnailSlot[];
   waveformData?: number[];
   waveformDuration?: number;
+  /** Fade-in/out duration in frames (audio clips only). */
+  fadeIn?: number;
+  fadeOut?: number;
 
   /** When true, skip expensive drawing (thumbnails/waveforms) for responsive zoom */
   isZooming: boolean;
@@ -108,6 +111,8 @@ function ClipNodeInner({
   thumbnails,
   waveformData,
   waveformDuration,
+  fadeIn,
+  fadeOut,
   isZooming,
   zoom,
   fps,
@@ -246,6 +251,40 @@ function ClipNodeInner({
             />
           </Group>
         )}
+
+      {/* Fade in/out overlay — shades the region a linear fade attenuates,
+          matching the audio engine's actual (linear) fade curve. */}
+      {clipType === "audio" && !isGhost && (
+        <>
+          {!!fadeIn && fadeIn > 0 && (
+            <Line
+              points={[x, y, x + Math.min(fadeIn * zoom, clipWidth), y, x, y + clipHeight]}
+              closed
+              fill="rgba(0,0,0,0.35)"
+              stroke="rgba(255,255,255,0.6)"
+              strokeWidth={1}
+              listening={false}
+            />
+          )}
+          {!!fadeOut && fadeOut > 0 && (
+            <Line
+              points={[
+                x + clipWidth,
+                y,
+                x + clipWidth - Math.min(fadeOut * zoom, clipWidth),
+                y,
+                x + clipWidth,
+                y + clipHeight,
+              ]}
+              closed
+              fill="rgba(0,0,0,0.35)"
+              stroke="rgba(255,255,255,0.6)"
+              strokeWidth={1}
+              listening={false}
+            />
+          )}
+        </>
+      )}
 
       {/* Lock indicator */}
       {isLocked && !isGhost && (
@@ -435,6 +474,8 @@ function arePropsEqual(prev: ClipNodeProps, next: ClipNodeProps): boolean {
     prev.thumbnails === next.thumbnails &&
     prev.waveformData === next.waveformData &&
     prev.waveformDuration === next.waveformDuration &&
+    prev.fadeIn === next.fadeIn &&
+    prev.fadeOut === next.fadeOut &&
     prev.zoom === next.zoom &&
     prev.startTime === next.startTime &&
     prev.duration === next.duration &&

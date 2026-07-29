@@ -113,8 +113,8 @@ export function useAudioEngine() {
         inPoint: framesToSeconds(clip.inPoint, fps),
         speed: clip.speed,
         gain: clip.volume ?? 1.0,
-        fadeIn: 0,
-        fadeOut: 0,
+        fadeIn: framesToSeconds(clip.fadeIn ?? 0, fps),
+        fadeOut: framesToSeconds(clip.fadeOut ?? 0, fps),
         keyframes: clip.keyframes,
         effects: clip.audioEffects,
       }));

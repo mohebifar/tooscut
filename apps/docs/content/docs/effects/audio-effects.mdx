@@ -56,6 +56,19 @@ Simulates room reflections.
 
 Subtle ambience: dry/wet below 0.2. Dramatic: push higher.
 
+## Fade In / Fade Out
+
+Ramp a clip's volume in from silence or out to silence at its edges — separate from the EQ/compressor/gate/reverb chain above and not affected by it.
+
+Select an audio clip and open the **Audio** tab in the properties panel, under **Fade**:
+
+| Parameter    | Range                         | Description                                  |
+| ------------ | ----------------------------- | -------------------------------------------- |
+| **Fade In**  | 0 s to half the clip duration | Linear ramp from silence up to full volume   |
+| **Fade Out** | 0 s to half the clip duration | Linear ramp from full volume down to silence |
+
+Fades are stored as durations relative to the clip's edges (not as keyframes), so they survive trimming. If the clip has volume keyframes, keyframe automation takes precedence over the fade.
+
 ## Combining effects
 
 Multiple effects on one clip process in series: EQ -> compressor -> noise gate -> reverb. Typical voice chain: EQ for tone, compressor for dynamics, gate for silence cleanup.

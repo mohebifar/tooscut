@@ -91,6 +91,10 @@ export interface AudioClip extends EditableClip {
   keyframes?: KeyframeTracks;
   /** Per-clip audio effects (EQ, compressor, noise gate, reverb) */
   audioEffects?: AudioEffectsParams;
+  /** Fade-in duration in frames, relative to the clip's start edge. */
+  fadeIn?: number;
+  /** Fade-out duration in frames, relative to the clip's end edge. */
+  fadeOut?: number;
 }
 
 export interface ImageClip extends VisualClipBase {
@@ -332,6 +336,8 @@ interface VideoEditorState {
   updateClipEffects: (clipId: string, effects: Partial<Effects>) => void;
   updateClipVolume: (clipId: string, volume: number) => void;
   updateClipSpeed: (clipId: string, speed: number) => void;
+  setClipFadeIn: (clipId: string, frames: number) => void;
+  setClipFadeOut: (clipId: string, frames: number) => void;
   updateClipAudioEffects: (
     clipId: string,
     effectType: keyof AudioEffectsParams,
@@ -1737,6 +1743,24 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             clips: state.clips.map((clip) =>
               clip.id === clipId ? { ...clip, volume: Math.max(0, Math.min(2, volume)) } : clip,
             ),
+          })),
+
+        setClipFadeIn: (clipId, frames) =>
+          set((state) => ({
+            clips: state.clips.map((clip) => {
+              if (clip.id !== clipId || clip.type !== "audio") return clip;
+              const clamped = Math.max(0, Math.min(clip.duration / 2, frames));
+              return { ...clip, fadeIn: clamped };
+            }),
+          })),
+
+        setClipFadeOut: (clipId, frames) =>
+          set((state) => ({
+            clips: state.clips.map((clip) => {
+              if (clip.id !== clipId || clip.type !== "audio") return clip;
+              const clamped = Math.max(0, Math.min(clip.duration / 2, frames));
+              return { ...clip, fadeOut: clamped };
+            }),
           })),
 
         updateClipSpeed: (clipId, speed) =>

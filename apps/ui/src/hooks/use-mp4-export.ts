@@ -127,6 +127,8 @@ function buildAudioTimelineState(
     inPoint: number;
     speed?: number;
     volume?: number;
+    fadeIn?: number;
+    fadeOut?: number;
     audioEffects?: import("@tooscut/render-engine").AudioEffectsParams;
   }>,
   tracks: Array<{ id: string; type: string; volume: number; muted: boolean }>,
@@ -162,8 +164,8 @@ function buildAudioTimelineState(
       inPoint: framesToSeconds(clip.inPoint, fps),
       speed: clip.speed ?? 1,
       gain: clip.volume ?? 1,
-      fadeIn: 0,
-      fadeOut: 0,
+      fadeIn: framesToSeconds(clip.fadeIn ?? 0, fps),
+      fadeOut: framesToSeconds(clip.fadeOut ?? 0, fps),
       effects: clip.audioEffects,
     }));
 
@@ -199,6 +201,8 @@ async function renderAudioToSource(
     inPoint: number;
     speed?: number;
     volume?: number;
+    fadeIn?: number;
+    fadeOut?: number;
     audioEffects?: import("@tooscut/render-engine").AudioEffectsParams;
   }>,
   tracks: Array<{ id: string; type: string; volume: number; muted: boolean }>,
