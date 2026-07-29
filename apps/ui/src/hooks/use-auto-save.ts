@@ -89,8 +89,30 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 export function useAutoSave(projectId: string) {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thumbTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Guards against overlapping db.projects.update() calls: if the debounce
+  // fires again while a save is still in flight (slow IndexedDB, big
+  // project), queue one follow-up save instead of racing a second write.
+  const savingRef = useRef(false);
+  const saveAgainRef = useRef(false);
 
   useEffect(() => {
+    const runSave = (id: string) => {
+      if (savingRef.current) {
+        saveAgainRef.current = true;
+        return;
+      }
+      savingRef.current = true;
+      void saveProject(id)
+        .catch((err) => console.error("[useAutoSave] Save failed:", err))
+        .finally(() => {
+          savingRef.current = false;
+          if (saveAgainRef.current) {
+            saveAgainRef.current = false;
+            runSave(id);
+          }
+        });
+    };
+
     const unsubscribe = useVideoEditorStore.subscribe(
       (state) => ({
         clips: state.clips,
@@ -107,7 +129,7 @@ export function useAutoSave(projectId: string) {
         }
         timeoutRef.current = setTimeout(() => {
           timeoutRef.current = null;
-          void saveProject(projectId);
+          runSave(projectId);
         }, 1000);
 
         // Debounced thumbnail generation (5s)
@@ -136,7 +158,7 @@ export function useAutoSave(projectId: string) {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
-        void saveProject(projectId);
+        runSave(projectId);
       }
       if (thumbTimeoutRef.current) {
         clearTimeout(thumbTimeoutRef.current);
