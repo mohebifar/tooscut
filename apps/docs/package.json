@@ -20,7 +20,7 @@
     "fumadocs-mdx": "^12.0.0",
     "fumadocs-ui": "^15.0.0",
     "lucide-react": "^0.561.0",
-    "nitro": "npm:nitro-nightly@latest",
+    "nitro": "npm:nitro-nightly@3.0.1-20260410-164248-8ab58a4b",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "tailwindcss": "^4.0.6",
