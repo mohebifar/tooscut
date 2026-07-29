@@ -384,8 +384,12 @@ export function useMp4Export(): Mp4ExportHandle {
     const resolvedBitrate = videoBitrate ?? QUALITY_HIGH;
 
     let pool: FrameRendererPool | null = null;
-    let fileWritable: FileSystemWritableFileStream | WritableStream<StreamTargetChunk> | null =
-      null;
+    // Only the FSA writable we open ourselves needs closing on the error path.
+    // A caller-provided WritableStream (the in-memory fallback sink) is not
+    // ours to close — and can't be: mediabunny's StreamTarget holds a writer
+    // lock on it, so getWriter() would throw. It also holds no OS handle, so
+    // there's nothing to release; the buffer is just garbage collected.
+    let ownedFileWritable: FileSystemWritableFileStream | null = null;
 
     try {
       const exportStartTime = Date.now();
@@ -567,9 +571,15 @@ export function useMp4Export(): Mp4ExportHandle {
 
       // Open file for streaming writes — either the real FSA writable, or the
       // caller-provided fallback WritableStream (e.g. an in-memory sink).
-      fileWritable = "createWritable" in target ? await target.createWritable() : target;
+      let streamTargetWritable: WritableStream<StreamTargetChunk>;
+      if ("createWritable" in target) {
+        ownedFileWritable = await target.createWritable();
+        streamTargetWritable = ownedFileWritable;
+      } else {
+        streamTargetWritable = target;
+      }
 
-      const streamTarget = new StreamTarget(fileWritable);
+      const streamTarget = new StreamTarget(streamTargetWritable);
 
       const output = new Output({
         format: new Mp4OutputFormat({
@@ -953,7 +963,7 @@ export function useMp4Export(): Mp4ExportHandle {
       // mediabunny writes directly to the FileSystemWritableFileStream
       // and closes it internally during finalize.
       await output.finalize();
-      fileWritable = null;
+      ownedFileWritable = null;
 
       const renderTime = (Date.now() - exportStartTime) / 1000;
 
@@ -1001,13 +1011,9 @@ export function useMp4Export(): Mp4ExportHandle {
       if (pool) {
         pool.dispose();
       }
-      if (fileWritable) {
+      if (ownedFileWritable) {
         try {
-          if ("close" in fileWritable) {
-            await fileWritable.close();
-          } else {
-            await fileWritable.getWriter().close();
-          }
+          await ownedFileWritable.close();
         } catch {
           // Ignore close errors during cleanup
         }
