@@ -2885,8 +2885,12 @@ export function TimelineStage({
           fill="#444444"
           listening={false}
         />
+      </Layer>
 
-        {/* Playhead */}
+      {/* Playhead redraws every animation frame during playback — kept on
+          its own layer so that doesn't force a redraw of the ruler, track
+          headers, and other static content above. */}
+      <Layer perfectDrawEnabled={false} listening={false}>
         <Playhead width={width} height={height} />
       </Layer>
     </Stage>
