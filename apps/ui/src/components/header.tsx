@@ -52,13 +52,14 @@ export function Header() {
           </Button>
           <Button variant="outline" asChild>
             <a href="https://discord.gg/sph88Avz" target="_blank" rel="noopener" title="Discord">
-              <DiscordIcon className="h-4 w-4" /> Discord
+              <DiscordIcon className="h-4 w-4" />{" "}
+              <span className="sr-only lg:not-sr-only">Discord</span>
             </a>
           </Button>
           <Button variant="outline" asChild>
             <a href="https://github.com/mohebifar/tooscut" target="_blank" rel="noopener">
-              <GithubIcon className="h-4 w-4" />
-              GitHub
+              <GithubIcon className="h-4 w-4" />{" "}
+              <span className="sr-only lg:not-sr-only">GitHub</span>
             </a>
           </Button>
           <Button asChild>
