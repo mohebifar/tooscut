@@ -35,6 +35,21 @@ let isInitialized = false;
 // Track which textures are currently uploaded to avoid re-uploading
 const uploadedTextures = new Set<string>();
 
+// Once a render call throws (e.g. a WASM panic trapped the instance), the
+// linear memory may be left in an inconsistent state. Further calls into the
+// same instance are unsafe, so we stop calling into it and fail fast instead
+// — the main thread is responsible for tearing down and recreating the
+// worker/compositor from a fresh canvas.
+let crashed = false;
+
+class CompositorCrashedError extends Error {
+  constructor(cause?: unknown) {
+    super("Compositor crashed and cannot continue rendering");
+    this.name = "CompositorCrashedError";
+    this.cause = cause;
+  }
+}
+
 // ===================== WORKER API =====================
 
 /**
@@ -141,8 +156,17 @@ function renderFrame(frame: RenderFrame): void {
   if (!compositor || !canvas) {
     return;
   }
+  if (crashed) {
+    throw new CompositorCrashedError();
+  }
 
-  compositor.renderFrame(frame);
+  try {
+    compositor.renderFrame(frame);
+  } catch (error) {
+    crashed = true;
+    console.error("[CompositorWorker] renderFrame panicked, compositor is now unusable:", error);
+    throw new CompositorCrashedError(error);
+  }
 }
 
 /**
@@ -153,8 +177,17 @@ async function renderToPixels(frame: RenderFrame): Promise<Uint8Array> {
   if (!compositor) {
     throw new Error("Compositor not initialized");
   }
+  if (crashed) {
+    throw new CompositorCrashedError();
+  }
 
-  return compositor.renderToPixels(frame);
+  try {
+    return await compositor.renderToPixels(frame);
+  } catch (error) {
+    crashed = true;
+    console.error("[CompositorWorker] renderToPixels panicked, compositor is now unusable:", error);
+    throw new CompositorCrashedError(error);
+  }
 }
 
 /**

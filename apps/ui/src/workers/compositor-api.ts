@@ -57,6 +57,15 @@ export interface CompositorApi {
   dispose(): Promise<void>;
   /** Whether the compositor is ready */
   isReady: boolean;
+  /** Whether the compositor worker has crashed and can no longer render */
+  crashed: boolean;
+  /**
+   * Register a callback invoked once when the worker crashes (a render call
+   * threw, or the worker itself errored/terminated unexpectedly). The
+   * compositor cannot recover in place — callers must dispose() this
+   * instance and create a new one against a fresh canvas.
+   */
+  onCrash(callback: (error: unknown) => void): () => void;
 }
 
 /**
@@ -70,10 +79,29 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
   let api: Comlink.Remote<CompositorWorkerApi> | null = null;
   let offscreenCanvas: OffscreenCanvas | null = null;
   let isReady = false;
+  let crashed = false;
+  const crashCallbacks = new Set<(error: unknown) => void>();
+
+  const reportCrash = (error: unknown) => {
+    if (crashed) return;
+    crashed = true;
+    for (const callback of crashCallbacks) {
+      callback(error);
+    }
+  };
 
   const compositorApi: CompositorApi = {
     get isReady() {
       return isReady;
+    },
+
+    get crashed() {
+      return crashed;
+    },
+
+    onCrash(callback) {
+      crashCallbacks.add(callback);
+      return () => crashCallbacks.delete(callback);
     },
 
     async initialize() {
@@ -84,9 +112,10 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
         type: "module",
       });
 
-      // Listen for worker errors
+      // Listen for worker errors (uncaught exceptions, e.g. the worker itself crashing)
       worker.onerror = (e) => {
         console.error("[CompositorApi] Worker error:", e);
+        reportCrash(e);
       };
 
       api = Comlink.wrap<CompositorWorkerApi>(worker);
@@ -135,13 +164,24 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
     },
 
     async renderFrame(frame: RenderFrame) {
-      if (!api || !isReady) return;
-      await api.renderFrame(frame);
+      if (!api || !isReady || crashed) return;
+      try {
+        await api.renderFrame(frame);
+      } catch (error) {
+        reportCrash(error);
+        throw error;
+      }
     },
 
     async renderToPixels(frame: RenderFrame): Promise<Uint8Array> {
       if (!api || !isReady) throw new Error("Compositor not ready");
-      return api.renderToPixels(frame);
+      if (crashed) throw new Error("Compositor crashed");
+      try {
+        return await api.renderToPixels(frame);
+      } catch (error) {
+        reportCrash(error);
+        throw error;
+      }
     },
 
     async captureThumbnail(

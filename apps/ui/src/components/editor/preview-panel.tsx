@@ -24,6 +24,7 @@ import {
   type CompositorApi,
 } from "../../workers/compositor-api";
 import { useAssetStore, type MediaAsset } from "../timeline/use-asset-store";
+import { Button } from "../ui/button";
 import { TransformOverlay } from "./transform/transform-overlay";
 
 // Image element entry for the pool
@@ -41,6 +42,10 @@ export function PreviewPanel() {
   const evaluatorManagerRef = useRef(new EvaluatorManager());
   const [isInitialized, setIsInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set when the compositor worker crashes (e.g. a WASM panic) rather than
+  // failing to initialize — the worker can't recover in place, so the only
+  // safe path forward is a full reload (the project is autosaved).
+  const [crashed, setCrashed] = useState(false);
 
   // Video frame loader manager - uses HTMLVideoElement in preview mode
   const loaderManagerRef = useRef(new VideoFrameLoaderManager({ mode: "preview" }));
@@ -146,6 +151,14 @@ export function PreviewPanel() {
 
         compositorRef.current = compositor;
         setSharedCompositor(compositor);
+
+        compositor.onCrash((crashError) => {
+          console.error("[PreviewPanel] Compositor crashed:", crashError);
+          setCrashed(true);
+          setError(
+            "The GPU preview crashed and can't recover automatically. Your project is autosaved — reload to continue editing.",
+          );
+        });
 
         // If project settings were loaded while the compositor was initializing,
         // the resize effect would have been skipped (isReady was false). Catch up now.
@@ -1044,11 +1057,19 @@ export function PreviewPanel() {
               {error && (
                 <div className="absolute inset-0 flex items-center justify-center bg-background/80">
                   <div className="text-center text-foreground">
-                    <div className="text-lg font-medium text-destructive">GPU Error</div>
-                    <div className="mt-2 text-sm text-muted-foreground">{error}</div>
-                    <div className="mt-4 text-xs text-muted-foreground">
-                      WebGPU may not be supported in your browser
+                    <div className="text-lg font-medium text-destructive">
+                      {crashed ? "Preview Crashed" : "GPU Error"}
                     </div>
+                    <div className="mt-2 max-w-sm text-sm text-muted-foreground">{error}</div>
+                    {crashed ? (
+                      <Button className="mt-4" onClick={() => window.location.reload()}>
+                        Reload
+                      </Button>
+                    ) : (
+                      <div className="mt-4 text-xs text-muted-foreground">
+                        WebGPU may not be supported in your browser
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
