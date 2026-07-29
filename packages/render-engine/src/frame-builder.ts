@@ -221,8 +221,9 @@ export interface TimelineClip {
 /**
  * Manager for keyframe evaluators.
  *
- * Maintains one evaluator per clip for efficient cached evaluation.
- * Call clearAllCaches() after seeking.
+ * Maintains one evaluator per clip for efficient cached evaluation. Each
+ * evaluator's cache self-heals on seeks (see KeyframeEvaluator), so no
+ * manual cache invalidation is needed here either.
  */
 export class EvaluatorManager {
   private evaluators = new Map<string, KeyframeEvaluator>();
@@ -260,15 +261,6 @@ export class EvaluatorManager {
   removeEvaluator(clipId: string): void {
     this.evaluators.delete(clipId);
     this.keyframesRefs.delete(clipId);
-  }
-
-  /**
-   * Clear all caches (call after seeking).
-   */
-  clearAllCaches(): void {
-    for (const evaluator of this.evaluators.values()) {
-      evaluator.clearCache();
-    }
   }
 
   /**

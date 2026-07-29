@@ -169,7 +169,8 @@ export function evaluateTrack(track: KeyframeTrack, time: number): number {
  * Evaluator for keyframe animations with temporal caching.
  *
  * During sequential playback, lookups are O(1) due to index caching.
- * After seeking, call clearCache() for optimal performance.
+ * Seeks self-heal: a stale cached index first tries a bounded forward scan,
+ * then falls back to binary search — no manual cache invalidation needed.
  */
 export class KeyframeEvaluator {
   private tracks: KeyframeTracks;
