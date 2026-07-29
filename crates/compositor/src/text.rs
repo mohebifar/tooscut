@@ -36,11 +36,23 @@ pub struct TextRenderer {
     viewport: Viewport,
     atlas: TextAtlas,
     renderer: GlyphonTextRenderer,
-    buffers: Vec<Buffer>,
+    /// Shaped buffers keyed by layer id, persisted across frames. Reshaping
+    /// (set_text/set_rich_text + shape_until_scroll) is one of the more
+    /// expensive parts of text rendering, so a layer whose TextLayerData is
+    /// unchanged from the previous frame reuses its buffer instead of
+    /// reshaping identically every frame it's on screen.
+    buffer_cache: HashMap<String, CachedTextBuffer>,
     width: u32,
     height: u32,
     loaded_fonts: HashSet<String>,
     font_info: HashMap<String, LoadedFontInfo>,
+}
+
+/// A shaped text buffer plus the layer data it was shaped from, so a later
+/// frame can detect whether the layer changed and needs reshaping.
+struct CachedTextBuffer {
+    layer: TextLayerData,
+    buffer: Buffer,
 }
 
 /// Stored info about a loaded font variant.
@@ -102,7 +114,7 @@ impl TextRenderer {
             viewport,
             atlas,
             renderer,
-            buffers: Vec::new(),
+            buffer_cache: HashMap::new(),
             width,
             height,
             loaded_fonts: HashSet::new(),
@@ -331,13 +343,23 @@ impl TextRenderer {
             return Ok(());
         }
 
-        // Clear previous buffers
-        self.buffers.clear();
+        // First pass: create/update text buffers. Layers whose TextLayerData
+        // is byte-for-byte identical to what's cached skip reshaping entirely.
+        let mut seen_ids: HashSet<String> = HashSet::new();
 
-        // First pass: create text buffers
         for layer_ref in layers {
             let layer = layer_ref.as_ref();
             if layer.text.is_empty() || layer.opacity <= 0.0 {
+                continue;
+            }
+
+            seen_ids.insert(layer.id.clone());
+
+            let up_to_date = self
+                .buffer_cache
+                .get(&layer.id)
+                .is_some_and(|cached| &cached.layer == layer);
+            if up_to_date {
                 continue;
             }
 
@@ -464,16 +486,25 @@ impl TextRenderer {
             // Shape the text
             buffer.shape_until_scroll(&mut self.font_system, false);
 
-            self.buffers.push(buffer);
+            self.buffer_cache.insert(
+                layer.id.clone(),
+                CachedTextBuffer {
+                    layer: layer.clone(),
+                    buffer,
+                },
+            );
         }
 
-        if self.buffers.is_empty() {
+        // Drop buffers for layers no longer present/visible this frame so the
+        // cache doesn't grow unbounded as clips are deleted or trimmed off-screen.
+        self.buffer_cache.retain(|id, _| seen_ids.contains(id));
+
+        if self.buffer_cache.is_empty() {
             return Ok(());
         }
 
         // Second pass: create text areas with positioning
         let mut text_areas: Vec<TextArea> = Vec::new();
-        let mut buffer_idx = 0;
 
         for layer_ref in layers {
             let layer = layer_ref.as_ref();
@@ -481,8 +512,13 @@ impl TextRenderer {
                 continue;
             }
 
-            let buffer = &self.buffers[buffer_idx];
-            buffer_idx += 1;
+            let Some(buffer) = self
+                .buffer_cache
+                .get(&layer.id)
+                .map(|cached| &cached.buffer)
+            else {
+                continue;
+            };
 
             // Calculate box position and size in pixels
             let box_x = (layer.text_box.x / 100.0) * self.width as f32;
