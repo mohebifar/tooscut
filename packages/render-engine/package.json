@@ -45,7 +45,7 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
-    "mediabunny": "^1.31.0"
+    "mediabunny": "^1.51.0"
   },
   "devDependencies": {
     "@types/audioworklet": "^0.0.94",
