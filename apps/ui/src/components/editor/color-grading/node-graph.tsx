@@ -472,7 +472,9 @@ function ColorGradingNodeGraphInner({
 
   // Persist position to store on drag end
   const onNodeDragStop = useCallback(
-    (_event: React.MouseEvent, node: Node) => {
+    // @xyflow/react >= 12.11 types this as the native MouseEvent | TouchEvent,
+    // not React's synthetic MouseEvent.
+    (_event: MouseEvent | TouchEvent, node: Node) => {
       if (node.id !== INPUT_NODE_ID && node.id !== OUTPUT_NODE_ID) {
         onUpdateNodePosition(node.id, node.position.x, node.position.y);
       }

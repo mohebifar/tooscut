@@ -518,7 +518,8 @@ function shiftDownstreamClips(
   shifts: Array<{ trackId: string; fromTime: number; delta: number }>,
   exclude: ReadonlySet<string>,
 ): EditorClip[] {
-  if (shifts.length === 0 || shifts.every((s) => s.delta === 0)) return clips;
+  // every() is already true for an empty array, so no separate length check.
+  if (shifts.every((s) => s.delta === 0)) return clips;
   const lockedTrackIds = new Set(tracks.filter((t) => t.locked).map((t) => t.id));
   const byTrack = new Map<string, Array<{ fromTime: number; delta: number }>>();
   for (const s of shifts) {

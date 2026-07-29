@@ -8,11 +8,11 @@ describe("downloadBlob", () => {
   });
 
   it("creates an object URL, clicks a download anchor, and revokes the URL", () => {
-    const createObjectURL = vi.fn(() => "blob:mock-url");
-    const revokeObjectURL = vi.fn();
+    const createObjectURL = vi.fn<() => string>(() => "blob:mock-url");
+    const revokeObjectURL = vi.fn<(url: string) => void>();
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
 
-    const clickSpy = vi.fn();
+    const clickSpy = vi.fn<() => void>();
     const originalCreateElement = document.createElement.bind(document);
     vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
       const el = originalCreateElement(tag);
