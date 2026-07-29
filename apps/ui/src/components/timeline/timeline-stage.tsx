@@ -855,75 +855,129 @@ export function TimelineStage({
     return lines;
   }, [scrollX, zoom, width, duration, fpsFloat, frameToX]);
 
+  // Wheel deltas are accumulated across events and flushed at most once per
+  // animation frame — trackpads especially can fire many wheel events per
+  // frame, and each state commit forces a full clip re-map (see
+  // handleStageMouseMoveThrottled above for the same pattern).
+  interface WheelAccum {
+    mode: "zoom" | "shift-scroll" | "scroll";
+    zoomFactor: number;
+    deltaX: number;
+    deltaY: number;
+    mouseX: number;
+    pointerY: number;
+  }
+  const wheelAccumRef = useRef<WheelAccum | null>(null);
+  const wheelRafRef = useRef<number | null>(null);
+
+  const flushWheel = useCallback(() => {
+    if (wheelRafRef.current !== null) {
+      cancelAnimationFrame(wheelRafRef.current);
+      wheelRafRef.current = null;
+    }
+    const accum = wheelAccumRef.current;
+    wheelAccumRef.current = null;
+    if (!accum) return;
+
+    if (accum.mode === "zoom") {
+      const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * accum.zoomFactor));
+      // Keep the time under the mouse at the same screen position
+      const timeAtMouse = (accum.mouseX - TRACK_HEADER_WIDTH + scrollX) / zoom;
+      const newScrollX = Math.max(0, timeAtMouse * newZoom - (accum.mouseX - TRACK_HEADER_WIDTH));
+      setZoom(newZoom);
+      setScrollX(newScrollX);
+    } else if (accum.mode === "shift-scroll") {
+      if (Math.abs(accum.deltaY) > 0) {
+        const newScrollX = Math.max(0, Math.min(contentWidth - width, scrollX + accum.deltaY));
+        setScrollX(newScrollX);
+      }
+    } else {
+      if (Math.abs(accum.deltaY) > 0) {
+        // Video section is bottom-aligned, so scrolling is inverted:
+        // scroll down (deltaY > 0) in video section should decrease scrollY
+        // to reveal higher-numbered tracks from the top.
+        // Audio section scrolls normally.
+        const maxScrollY = Math.max(0, sectionContentHeight - sectionHeight);
+        const inVideoSection =
+          accum.pointerY >= videoSectionTop && accum.pointerY < audioSectionTop;
+        const effectiveDelta = inVideoSection ? -accum.deltaY : accum.deltaY;
+        const newScrollY = Math.max(0, Math.min(maxScrollY, scrollY + effectiveDelta));
+        setScrollY(newScrollY);
+      }
+      if (Math.abs(accum.deltaX) > 0) {
+        const newScrollX = Math.max(0, Math.min(contentWidth - width, scrollX + accum.deltaX));
+        setScrollX(newScrollX);
+      }
+    }
+  }, [
+    zoom,
+    scrollX,
+    scrollY,
+    contentWidth,
+    sectionContentHeight,
+    sectionHeight,
+    width,
+    setZoom,
+    setScrollX,
+    setScrollY,
+    videoSectionTop,
+    audioSectionTop,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (wheelRafRef.current !== null) {
+        cancelAnimationFrame(wheelRafRef.current);
+      }
+    };
+  }, []);
+
   // Handle wheel for zoom/scroll
   const handleWheel = useCallback(
     (e: Konva.KonvaEventObject<WheelEvent>) => {
       const evt = e.evt;
+      // Must call preventDefault synchronously within the native event to
+      // stop page scroll — the actual state update is deferred/coalesced.
       evt.preventDefault();
 
-      if (evt.metaKey || evt.ctrlKey) {
-        // Zoom centered around mouse pointer
-        const stage = e.target.getStage();
-        const pointerPos = stage?.getPointerPosition();
-        const mouseX = pointerPos?.x ?? width / 2;
+      const stage = e.target.getStage();
+      const pointerPos = stage?.getPointerPosition();
+      const mode: WheelAccum["mode"] =
+        evt.metaKey || evt.ctrlKey ? "zoom" : evt.shiftKey ? "shift-scroll" : "scroll";
 
-        const zoomDelta = evt.deltaY > 0 ? 0.9 : 1.1;
-        const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * zoomDelta));
+      const prev = wheelAccumRef.current;
+      if (!prev || prev.mode !== mode) {
+        // Mode changed mid-gesture (rare) — flush what's pending first so
+        // deltas from different modes never get mixed together.
+        flushWheel();
+        wheelAccumRef.current = {
+          mode,
+          zoomFactor: 1,
+          deltaX: 0,
+          deltaY: 0,
+          mouseX: pointerPos?.x ?? width / 2,
+          pointerY: pointerPos?.y ?? 0,
+        };
+      }
 
-        // Keep the time under the mouse at the same screen position
-        const timeAtMouse = (mouseX - TRACK_HEADER_WIDTH + scrollX) / zoom;
-        const newScrollX = Math.max(0, timeAtMouse * newZoom - (mouseX - TRACK_HEADER_WIDTH));
-
-        setZoom(newZoom);
-        setScrollX(newScrollX);
+      const accum = wheelAccumRef.current!;
+      if (mode === "zoom") {
+        accum.zoomFactor *= evt.deltaY > 0 ? 0.9 : 1.1;
+        accum.mouseX = pointerPos?.x ?? accum.mouseX;
       } else {
-        // Scroll: deltaY scrolls tracks vertically, deltaX scrolls time horizontally.
-        // Shift+wheel swaps: deltaY scrolls horizontally.
-        if (evt.shiftKey) {
-          const horizontalDelta = evt.deltaY;
-          if (Math.abs(horizontalDelta) > 0) {
-            const newScrollX = Math.max(
-              0,
-              Math.min(contentWidth - width, scrollX + horizontalDelta),
-            );
-            setScrollX(newScrollX);
-          }
-        } else {
-          if (Math.abs(evt.deltaY) > 0) {
-            // Video section is bottom-aligned, so scrolling is inverted:
-            // scroll down (deltaY > 0) in video section should decrease scrollY
-            // to reveal higher-numbered tracks from the top.
-            // Audio section scrolls normally.
-            const maxScrollY = Math.max(0, sectionContentHeight - sectionHeight);
-            const stage = e.target.getStage();
-            const pointerPos = stage?.getPointerPosition();
-            const pointerY = pointerPos?.y ?? 0;
-            const inVideoSection = pointerY >= videoSectionTop && pointerY < audioSectionTop;
-            const effectiveDelta = inVideoSection ? -evt.deltaY : evt.deltaY;
-            const newScrollY = Math.max(0, Math.min(maxScrollY, scrollY + effectiveDelta));
-            setScrollY(newScrollY);
-          }
-          if (Math.abs(evt.deltaX) > 0) {
-            const newScrollX = Math.max(0, Math.min(contentWidth - width, scrollX + evt.deltaX));
-            setScrollX(newScrollX);
-          }
-        }
+        accum.deltaX += evt.deltaX;
+        accum.deltaY += evt.deltaY;
+        accum.pointerY = pointerPos?.y ?? accum.pointerY;
+      }
+
+      if (wheelRafRef.current === null) {
+        wheelRafRef.current = requestAnimationFrame(() => {
+          wheelRafRef.current = null;
+          flushWheel();
+        });
       }
     },
-    [
-      zoom,
-      scrollX,
-      scrollY,
-      contentWidth,
-      sectionContentHeight,
-      sectionHeight,
-      width,
-      setZoom,
-      setScrollX,
-      setScrollY,
-      videoSectionTop,
-      audioSectionTop,
-    ],
+    [width, flushWheel],
   );
 
   // Get clip at position
