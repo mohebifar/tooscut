@@ -269,8 +269,16 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
 
     async dispose() {
       if (api) {
-        await api.dispose();
+        const remote = api;
         api = null;
+        try {
+          // Wait for anything already queued (e.g. a renderFrame from the
+          // last animation frame before unmount) to finish before disposing
+          // — otherwise worker.terminate() below can interrupt it mid-flight.
+          await enqueue(() => remote.dispose());
+        } catch {
+          // Already crashed, or the worker is gone — proceed with cleanup regardless.
+        }
       }
       if (worker) {
         worker.terminate();

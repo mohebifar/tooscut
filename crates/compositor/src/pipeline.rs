@@ -83,7 +83,18 @@ struct ColorGradingUniforms {
     // Master curve control points, packed 2-per-vec4 as (x,y,x,y): up to 6 points.
     curve_master: array<vec4<f32>, 3>,
     curve_master_count: f32,
-    _pad_curve: vec3<f32>,
+    // 12 bytes of padding as three scalar f32 fields — NOT vec3<f32> (16-byte
+    // alignment in the uniform address space, unlike Rust's #[repr(C)]
+    // [f32; 3], which has none) and NOT array<f32, 3> either (naga rejects
+    // arrays in the uniform address space whose element stride isn't a
+    // multiple of 16, i.e. no raw scalar arrays here at all). Either would
+    // silently grow this struct's total size beyond the 512 bytes the Rust
+    // side allocates/asserts, breaking the buffer binding for every field,
+    // not just curves. Verified against naga (the wgpu project's own WGSL
+    // validator) after getting this wrong twice.
+    _pad_curve_0: f32,
+    _pad_curve_1: f32,
+    _pad_curve_2: f32,
     _pad: array<vec4<f32>, 2>,
 };
 
