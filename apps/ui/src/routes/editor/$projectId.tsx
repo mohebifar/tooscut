@@ -42,6 +42,10 @@ function EditorPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingPermissionIds, setPendingPermissionIds] = useState<string[]>([]);
+  // Explicitly denied assets are recoverable (the handle is still there) but
+  // distinct from "prompt" — surfaced with different copy so the user
+  // understands they said no rather than the file being missing.
+  const [deniedPermissionIds, setDeniedPermissionIds] = useState<string[]>([]);
   const [savedAssets, setSavedAssets] = useState<MediaAsset[]>([]);
 
   // Initialize audio engine for playback
@@ -80,7 +84,7 @@ function EditorPage() {
 
         // Hydrate file handles: restore blob URLs from stored FileSystemFileHandles
         if (project.content.assets.length > 0) {
-          const { hydrated, pendingIds } = await hydrateAssets(project.content.assets);
+          const { hydrated, pendingIds, deniedIds } = await hydrateAssets(project.content.assets);
           if (cancelled) return;
 
           // Update the main editor store with restored blob URLs
@@ -101,9 +105,11 @@ function EditorPage() {
             );
           }
 
-          // If some assets need user permission, show prompt
-          if (pendingIds.length > 0) {
+          // If some assets need user permission (prompt) or were previously
+          // denied, show the appropriate prompt
+          if (pendingIds.length > 0 || deniedIds.length > 0) {
             setPendingPermissionIds(pendingIds);
+            setDeniedPermissionIds(deniedIds);
             setSavedAssets(project.content.assets);
           }
 
@@ -137,7 +143,8 @@ function EditorPage() {
   }, [projectId]);
 
   const handleGrantPermission = async () => {
-    const hydrated = await requestPermissionAndHydrate(pendingPermissionIds, savedAssets);
+    const allIds = [...pendingPermissionIds, ...deniedPermissionIds];
+    const { hydrated, deniedIds } = await requestPermissionAndHydrate(allIds, savedAssets);
 
     // Update both stores with the newly-granted assets
     const store = useVideoEditorStore.getState();
@@ -155,7 +162,12 @@ function EditorPage() {
     }
 
     setPendingPermissionIds([]);
-    setSavedAssets([]);
+    // Assets still denied after the retry stay in the "denied" bucket so the
+    // prompt reappears with the same messaging rather than silently vanishing.
+    setDeniedPermissionIds(deniedIds);
+    if (deniedIds.length === 0) {
+      setSavedAssets([]);
+    }
   };
 
   return (
@@ -173,15 +185,21 @@ function EditorPage() {
       <KeyboardShortcutsModal />
 
       {/* Permission prompt — must be triggered by user gesture */}
-      {pendingPermissionIds.length > 0 && (
+      {(pendingPermissionIds.length > 0 || deniedPermissionIds.length > 0) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="max-w-md rounded-lg border border-border bg-card p-6 text-center shadow-lg">
-            <p className="mb-2 font-medium text-foreground">
-              {pendingPermissionIds.length} file{pendingPermissionIds.length > 1 ? "s" : ""} need
-              access permission
-            </p>
+            {(() => {
+              const total = pendingPermissionIds.length + deniedPermissionIds.length;
+              return (
+                <p className="mb-2 font-medium text-foreground">
+                  {total} file{total > 1 ? "s" : ""} need access permission
+                </p>
+              );
+            })()}
             <p className="mb-4 text-sm text-muted-foreground">
-              Your browser requires you to re-grant access to local files after a reload.
+              {deniedPermissionIds.length > 0
+                ? "Access was previously denied for some files. Grant access again to restore them, or they'll stay unavailable in this project."
+                : "Your browser requires you to re-grant access to local files after a reload."}
             </p>
             <Button onClick={() => void handleGrantPermission()}>Grant Access</Button>
           </div>
