@@ -10,6 +10,7 @@ import { DownloadIcon, XIcon } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 
 import { useMp4Export, type ExportOptions, type ExportResult } from "../../hooks/use-mp4-export";
+import { createBufferedExportSink, downloadBlob } from "../../lib/buffered-export-sink";
 import { useVideoEditorStore } from "../../state/video-editor-store";
 import { Button } from "../ui/button";
 import {
@@ -107,21 +108,31 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   }, [open, cancelExport]);
 
   const handleExport = useCallback(async () => {
-    // Prompt user to pick save location first
-    let fileHandle: FileSystemFileHandle;
-    try {
-      fileHandle = await window.showSaveFilePicker({
-        suggestedName: `export-${Date.now()}.mp4`,
-        types: [
-          {
-            description: "MP4 Video",
-            accept: { "video/mp4": [".mp4"] },
-          },
-        ],
-      });
-    } catch {
-      // User cancelled the file picker
-      return;
+    const suggestedName = `export-${Date.now()}.mp4`;
+    const supportsFsa = typeof window.showSaveFilePicker === "function";
+
+    // Prompt user to pick save location first (Chromium). Elsewhere, fall
+    // back to buffering the output in memory and triggering a blob download.
+    let fileHandle: FileSystemFileHandle | null = null;
+    let bufferedSink: ReturnType<typeof createBufferedExportSink> | null = null;
+
+    if (supportsFsa) {
+      try {
+        fileHandle = await window.showSaveFilePicker({
+          suggestedName,
+          types: [
+            {
+              description: "MP4 Video",
+              accept: { "video/mp4": [".mp4"] },
+            },
+          ],
+        });
+      } catch {
+        // User cancelled the file picker
+        return;
+      }
+    } else {
+      bufferedSink = createBufferedExportSink();
     }
 
     const qualityPreset = QUALITY_PRESETS.find((q) => q.label === quality);
@@ -131,17 +142,21 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
       height: settings.height,
       frameRate: settings.fps.numerator / settings.fps.denominator,
       videoBitrate: qualityPreset?.value,
-      fileHandle,
+      target: fileHandle ?? bufferedSink!.writable,
       ...(hasInOutRange && exportRangeOnly
         ? { range: { startFrame: inPoint, endFrame: outPoint } }
         : {}),
     };
 
-    setExportFileName(fileHandle.name);
+    setExportFileName(fileHandle?.name ?? suggestedName);
 
     try {
       const result = await startExport(options);
       setExportResult(result);
+
+      if (bufferedSink) {
+        downloadBlob(bufferedSink.getBlob("video/mp4"), suggestedName);
+      }
     } catch (error) {
       if (error instanceof Error && error.message === "Export cancelled") {
         // User cancelled, do nothing

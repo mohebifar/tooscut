@@ -17,6 +17,7 @@ import {
   Output,
   QUALITY_HIGH,
   StreamTarget,
+  type StreamTargetChunk,
 } from "mediabunny";
 import { useCallback, useRef, useState, type RefObject } from "react";
 
@@ -48,8 +49,12 @@ export interface ExportOptions {
   videoBitrate?: number;
   /** Audio bitrate in bits per second (default: 128000) */
   audioBitrate?: number;
-  /** File handle from showSaveFilePicker for streaming to disk */
-  fileHandle: FileSystemFileHandle;
+  /**
+   * Where to stream the encoded output. Either a file handle from
+   * showSaveFilePicker (Chromium) or a raw WritableStream target (fallback
+   * for browsers without the File System Access API, e.g. an in-memory sink).
+   */
+  target: FileSystemFileHandle | WritableStream<StreamTargetChunk>;
   /** Restrict export to a frame range (e.g. in/out points). Defaults to the full content. */
   range?: { startFrame: number; endFrame: number };
 }
@@ -338,7 +343,7 @@ export function useMp4Export(): Mp4ExportHandle {
   }, []);
 
   const startExport = useCallback(async (options: ExportOptions): Promise<ExportResult> => {
-    const { width, height, frameRate, videoBitrate, audioBitrate = 128000, fileHandle } = options;
+    const { width, height, frameRate, videoBitrate, audioBitrate = 128000, target } = options;
 
     cancelledRef.current = false;
     setIsExporting(true);
@@ -375,7 +380,8 @@ export function useMp4Export(): Mp4ExportHandle {
     const resolvedBitrate = videoBitrate ?? QUALITY_HIGH;
 
     let pool: FrameRendererPool | null = null;
-    let fileWritable: FileSystemWritableFileStream | null = null;
+    let fileWritable: FileSystemWritableFileStream | WritableStream<StreamTargetChunk> | null =
+      null;
 
     try {
       const exportStartTime = Date.now();
@@ -555,8 +561,9 @@ export function useMp4Export(): Mp4ExportHandle {
         throw new Error("Export cancelled");
       }
 
-      // Open file for streaming writes
-      fileWritable = await fileHandle.createWritable();
+      // Open file for streaming writes — either the real FSA writable, or the
+      // caller-provided fallback WritableStream (e.g. an in-memory sink).
+      fileWritable = "createWritable" in target ? await target.createWritable() : target;
 
       const streamTarget = new StreamTarget(fileWritable);
 
@@ -992,7 +999,11 @@ export function useMp4Export(): Mp4ExportHandle {
       }
       if (fileWritable) {
         try {
-          await fileWritable.close();
+          if ("close" in fileWritable) {
+            await fileWritable.close();
+          } else {
+            await fileWritable.getWriter().close();
+          }
         } catch {
           // Ignore close errors during cleanup
         }
