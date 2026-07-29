@@ -96,6 +96,25 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
     }
   };
 
+  // The underlying WASM Compositor is not reentrant — a second call into it
+  // while a prior one is still in flight (e.g. a fire-and-forget uploadBitmap
+  // racing a renderFrame from the next animation frame) trips wasm-bindgen's
+  // borrow guard ("recursive use of an object detected..."), which is a hard
+  // panic (panic = "abort") that permanently wedges the instance. Serialize
+  // every call that touches the compositor through this queue so callers can
+  // keep firing-and-forgetting without needing to coordinate with each other.
+  let callQueue: Promise<unknown> = Promise.resolve();
+  function enqueue<T>(run: () => Promise<T>): Promise<T> {
+    const result = callQueue.then(run, run);
+    // Keep the chain alive even if this call rejects — don't let one
+    // failure stall every call queued after it.
+    callQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
   const compositorApi: CompositorApi = {
     get isReady() {
       return isReady;
@@ -146,18 +165,22 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
 
     resize(newWidth: number, newHeight: number) {
       if (!api || !isReady) return;
-      void api.resize(newWidth, newHeight);
+      const remote = api;
+      void enqueue(() => remote.resize(newWidth, newHeight));
     },
 
     async loadFont(fontId: string, fontData: Uint8Array): Promise<boolean> {
       if (!api || !isReady) return false;
+      const remote = api;
       // Transfer the font data to avoid copying
-      return api.loadFont(fontId, Comlink.transfer(fontData, [fontData.buffer]));
+      const transferred = Comlink.transfer(fontData, [fontData.buffer]);
+      return enqueue(() => remote.loadFont(fontId, transferred));
     },
 
     async isFontLoaded(fontId: string): Promise<boolean> {
       if (!api || !isReady) return false;
-      return api.isFontLoaded(fontId);
+      const remote = api;
+      return enqueue(() => remote.isFontLoaded(fontId));
     },
 
     async uploadBitmap(bitmap: ImageBitmap, textureId: string) {
@@ -165,14 +188,17 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
         bitmap.close();
         return;
       }
+      const remote = api;
       // Transfer bitmap to worker (zero-copy)
-      await api.uploadBitmap(Comlink.transfer(bitmap, [bitmap]), textureId);
+      const transferred = Comlink.transfer(bitmap, [bitmap]);
+      await enqueue(() => remote.uploadBitmap(transferred, textureId));
     },
 
     async renderFrame(frame: RenderFrame) {
       if (!api || !isReady || crashed) return;
+      const remote = api;
       try {
-        await api.renderFrame(frame);
+        await enqueue(() => remote.renderFrame(frame));
       } catch (error) {
         reportCrash(error);
         throw error;
@@ -182,8 +208,9 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
     async renderToPixels(frame: RenderFrame): Promise<Uint8Array> {
       if (!api || !isReady) throw new Error("Compositor not ready");
       if (crashed) throw new Error("Compositor crashed");
+      const remote = api;
       try {
-        return await api.renderToPixels(frame);
+        return await enqueue(() => remote.renderToPixels(frame));
       } catch (error) {
         reportCrash(error);
         throw error;
@@ -196,38 +223,48 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
       thumbHeight: number,
     ): Promise<ArrayBuffer> {
       if (!api || !isReady) throw new Error("Compositor not ready");
-      return api.captureThumbnail(frame, thumbWidth, thumbHeight);
+      const remote = api;
+      return enqueue(() => remote.captureThumbnail(frame, thumbWidth, thumbHeight));
     },
 
     async captureCurrentFramePixels() {
       if (!api || !isReady) throw new Error("Compositor not ready");
-      return api.captureCurrentFramePixels();
+      const remote = api;
+      // Doesn't touch the WASM compositor, but shares the same queue so it
+      // can't snapshot a canvas that's mid-draw from a concurrent renderFrame.
+      return enqueue(() => remote.captureCurrentFramePixels());
     },
 
     async uploadLut(lutId: string, size: number, data: Float32Array) {
       if (!api || !isReady) return;
+      const remote = api;
       // Transfer the float data to avoid copying
-      await api.uploadLut(lutId, size, Comlink.transfer(data, [data.buffer]));
+      const transferred = Comlink.transfer(data, [data.buffer]);
+      await enqueue(() => remote.uploadLut(lutId, size, transferred));
     },
 
     async removeLut() {
       if (!api || !isReady) return;
-      await api.removeLut();
+      const remote = api;
+      await enqueue(() => remote.removeLut());
     },
 
     async clearTexture(textureId: string) {
       if (!api || !isReady) return;
-      await api.clearTexture(textureId);
+      const remote = api;
+      await enqueue(() => remote.clearTexture(textureId));
     },
 
     async clearAllTextures() {
       if (!api || !isReady) return;
-      await api.clearAllTextures();
+      const remote = api;
+      await enqueue(() => remote.clearAllTextures());
     },
 
     async flush() {
       if (!api || !isReady) return;
-      await api.flush();
+      const remote = api;
+      await enqueue(() => remote.flush());
     },
 
     async dispose() {
