@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 
 import { useVideoEditorStore } from "../../state/video-editor-store";
 import { ClipNode, type ClipNodeProps } from "./clip-node";
@@ -55,6 +55,12 @@ export interface ClipRendererProps {
       overrideTrackIndex?: number;
     },
   ) => ClipNodeProps | null;
+  /**
+   * Cheap pre-filter applied before the (more expensive) track lookup and
+   * prop building. Clips currently involved in a drag/trim preview are
+   * exempt so an actively-manipulated clip never disappears mid-gesture.
+   */
+  visibleTimeRange?: { start: number; end: number };
 }
 
 export const ClipRenderer = React.memo(function ClipRenderer({
@@ -64,10 +70,44 @@ export const ClipRenderer = React.memo(function ClipRenderer({
   dragPreview,
   trimPreview,
   buildClipNodeProps,
+  visibleTimeRange,
 }: ClipRendererProps) {
+  // Clips involved in the active drag/trim preview must never be culled by
+  // their base startTime/duration — the preview can move them anywhere.
+  const activeClipIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (dragPreview) {
+      ids.add(dragPreview.clipId);
+      if (dragPreview.linkedClipId) ids.add(dragPreview.linkedClipId);
+      if (dragPreview.multiClips) {
+        for (const mc of dragPreview.multiClips) ids.add(mc.clipId);
+      }
+    }
+    if (trimPreview) {
+      ids.add(trimPreview.clipId);
+      if (trimPreview.linkedClipId) ids.add(trimPreview.linkedClipId);
+      if (trimPreview.multiClips) {
+        for (const mc of trimPreview.multiClips) {
+          ids.add(mc.clipId);
+          if (mc.linkedClipId) ids.add(mc.linkedClipId);
+        }
+      }
+    }
+    return ids;
+  }, [dragPreview, trimPreview]);
+
   return (
     <>
       {clips.map((clip) => {
+        if (
+          visibleTimeRange &&
+          !activeClipIds.has(clip.id) &&
+          (clip.startTime + clip.duration < visibleTimeRange.start ||
+            clip.startTime > visibleTimeRange.end)
+        ) {
+          return null;
+        }
+
         const trackIndex = allTracks.findIndex((t) => t.fullId === clip.trackId);
         if (trackIndex === -1) return null;
 

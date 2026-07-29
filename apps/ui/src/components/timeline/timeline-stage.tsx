@@ -754,6 +754,17 @@ export function TimelineStage({
     [zoom, scrollX],
   );
 
+  // Cheap time-range pre-filter so off-screen clips skip track lookup and
+  // prop building entirely, instead of only being culled after that work is
+  // already done. A small buffer avoids pop-in right at the viewport edge.
+  const visibleTimeRange = useMemo(() => {
+    const buffer = (width / zoom) * 0.25;
+    return {
+      start: xToFrame(TRACK_HEADER_WIDTH) - buffer,
+      end: xToFrame(width) + buffer,
+    };
+  }, [xToFrame, width, zoom]);
+
   // Compute split layout (video section + audio section with mirrored heights)
   const splitLayout = useMemo(
     () => computeSplitLayout(videoTracks, audioTracks, trackHeightsMap),
@@ -2637,6 +2648,7 @@ export function TimelineStage({
               dragPreview={dragPreview}
               trimPreview={trimPreview}
               buildClipNodeProps={buildClipNodeProps}
+              visibleTimeRange={visibleTimeRange}
             />
           </Group>
           <CrossTransitionOverlays
@@ -2684,6 +2696,7 @@ export function TimelineStage({
               dragPreview={dragPreview}
               trimPreview={trimPreview}
               buildClipNodeProps={buildClipNodeProps}
+              visibleTimeRange={visibleTimeRange}
             />
           </Group>
           <Group x={TRACK_HEADER_WIDTH - scrollX} y={audioBaseY} listening={false}>
