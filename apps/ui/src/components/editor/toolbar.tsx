@@ -80,6 +80,8 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
   const setSelectedClipIds = useVideoEditorStore((s) => s.setSelectedClipIds);
   const clearSelection = useVideoEditorStore((s) => s.clearSelection);
   const removeClip = useVideoEditorStore((s) => s.removeClip);
+  const rippleMode = useVideoEditorStore((s) => s.rippleMode);
+  const rippleDeleteClip = useVideoEditorStore((s) => s.rippleDeleteClip);
   const removeCrossTransitionById = useVideoEditorStore((s) => s.removeCrossTransitionById);
   const setClipTransitionIn = useVideoEditorStore((s) => s.setClipTransitionIn);
   const setClipTransitionOut = useVideoEditorStore((s) => s.setClipTransitionOut);
@@ -117,6 +119,19 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
       return;
     }
 
+    if (rippleMode) {
+      const processed = new Set<string>();
+      for (const clipId of selectedClipIds) {
+        if (processed.has(clipId)) continue;
+        const clip = clips.find((c) => c.id === clipId);
+        if (!clip) continue;
+        rippleDeleteClip(clipId);
+        processed.add(clipId);
+        if (clip.linkedClipId) processed.add(clip.linkedClipId);
+      }
+      return;
+    }
+
     const clipsToDelete = new Set<string>();
     for (const clipId of selectedClipIds) {
       clipsToDelete.add(clipId);
@@ -138,6 +153,8 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
     setClipTransitionIn,
     setClipTransitionOut,
     removeClip,
+    rippleMode,
+    rippleDeleteClip,
   ]);
   return (
     <TooltipProvider delayDuration={300}>

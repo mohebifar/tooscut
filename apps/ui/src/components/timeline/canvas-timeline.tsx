@@ -12,7 +12,16 @@ import {
   type LineStyle,
   type LineBox,
 } from "@tooscut/render-engine";
-import { EyeIcon, EyeOffIcon, LockIcon, LockOpenIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import {
+  EyeIcon,
+  EyeOffIcon,
+  LockIcon,
+  LockOpenIcon,
+  PaletteIcon,
+  PencilIcon,
+  PlusIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 
@@ -23,6 +32,9 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "../ui/context-menu";
 import {
@@ -74,6 +86,16 @@ export interface CrossTransitionDropPreview {
   height: number;
 }
 
+/** Preset colors offered in the marker context menu */
+const MARKER_COLORS: Array<{ label: string; value: string }> = [
+  { label: "Cyan", value: "#22d3ee" },
+  { label: "Red", value: "#f87171" },
+  { label: "Amber", value: "#fbbf24" },
+  { label: "Green", value: "#4ade80" },
+  { label: "Purple", value: "#a78bfa" },
+  { label: "Pink", value: "#f472b6" },
+];
+
 export function CanvasTimeline() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 300 });
@@ -86,6 +108,8 @@ export function CanvasTimeline() {
   const [deleteTrackId, setDeleteTrackId] = useState<string | null>(null);
   const contextTrackIdRef = useRef<string | null>(null);
   const [contextTrackId, setContextTrackId] = useState<string | null>(null);
+  const [contextMarkerId, setContextMarkerId] = useState<string | null>(null);
+  const [markerRename, setMarkerRename] = useState<{ id: string; x: number } | null>(null);
 
   // Store state for keyboard shortcuts
   const currentTime = useVideoEditorStore((s) => s.currentFrame);
@@ -129,6 +153,15 @@ export function CanvasTimeline() {
   const toggleTrackMuted = useVideoEditorStore((s) => s.toggleTrackMuted);
   const toggleTrackLocked = useVideoEditorStore((s) => s.toggleTrackLocked);
   const setActiveTool = useVideoEditorStore((s) => s.setActiveTool);
+  const rippleMode = useVideoEditorStore((s) => s.rippleMode);
+  const toggleRippleMode = useVideoEditorStore((s) => s.toggleRippleMode);
+  const rippleDeleteClip = useVideoEditorStore((s) => s.rippleDeleteClip);
+  const markers = useVideoEditorStore((s) => s.markers);
+  const addMarker = useVideoEditorStore((s) => s.addMarker);
+  const updateMarker = useVideoEditorStore((s) => s.updateMarker);
+  const removeMarker = useVideoEditorStore((s) => s.removeMarker);
+  const setInPoint = useVideoEditorStore((s) => s.setInPoint);
+  const setOutPoint = useVideoEditorStore((s) => s.setOutPoint);
   const setClipTransitionIn = useVideoEditorStore((s) => s.setClipTransitionIn);
   const setClipTransitionOut = useVideoEditorStore((s) => s.setClipTransitionOut);
   const addCrossTransitionBetween = useVideoEditorStore((s) => s.addCrossTransitionBetween);
@@ -317,17 +350,30 @@ export function CanvasTimeline() {
         }
 
         // Otherwise delete selected clips (and their linked clips)
-        const clipsToDelete = new Set<string>();
-        for (const clipId of selectedClipIds) {
-          clipsToDelete.add(clipId);
-          const clip = clips.find((c) => c.id === clipId);
-          if (clip?.linkedClipId) {
-            clipsToDelete.add(clip.linkedClipId);
+        if (rippleMode) {
+          // rippleDeleteClip handles the linked pair internally — iterate selected ids
+          // and skip any whose linked pair has already been deleted.
+          const processed = new Set<string>();
+          for (const clipId of selectedClipIds) {
+            if (processed.has(clipId)) continue;
+            const clip = clips.find((c) => c.id === clipId);
+            if (!clip) continue;
+            rippleDeleteClip(clipId);
+            processed.add(clipId);
+            if (clip.linkedClipId) processed.add(clip.linkedClipId);
           }
-        }
-        // Remove all clips
-        for (const clipId of clipsToDelete) {
-          removeClip(clipId);
+        } else {
+          const clipsToDelete = new Set<string>();
+          for (const clipId of selectedClipIds) {
+            clipsToDelete.add(clipId);
+            const clip = clips.find((c) => c.id === clipId);
+            if (clip?.linkedClipId) {
+              clipsToDelete.add(clip.linkedClipId);
+            }
+          }
+          for (const clipId of clipsToDelete) {
+            removeClip(clipId);
+          }
         }
       }
 
@@ -477,6 +523,41 @@ export function CanvasTimeline() {
         return;
       }
 
+      // R: Toggle ripple edit mode (only without modifiers)
+      if ((e.key === "r" || e.key === "R") && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        toggleRippleMode();
+        return;
+      }
+
+      // M: Drop a marker at the playhead. Shift+M / Alt+M: next / previous marker.
+      // Matched on e.code because Option+letter composes special characters on macOS.
+      if (e.code === "KeyM" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          const next = markers.find((m) => m.time > currentTime);
+          if (next) seekTo(next.time);
+        } else if (e.altKey) {
+          const prev = [...markers].reverse().find((m) => m.time < currentTime);
+          if (prev) seekTo(prev.time);
+        } else {
+          addMarker();
+        }
+        return;
+      }
+
+      // I / O: Set in/out point at playhead. Alt+I / Alt+O: clear.
+      if (e.code === "KeyI" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setInPoint(e.altKey ? null : currentTime);
+        return;
+      }
+      if (e.code === "KeyO" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setOutPoint(e.altKey ? null : currentTime);
+        return;
+      }
+
       // S: Split selected clips at playhead
       if ((e.key === "s" || e.key === "S") && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
@@ -538,6 +619,13 @@ export function CanvasTimeline() {
     removeCrossTransitionById,
     splitClipAtTime,
     setExportDialogOpen,
+    rippleMode,
+    rippleDeleteClip,
+    toggleRippleMode,
+    markers,
+    addMarker,
+    setInPoint,
+    setOutPoint,
   ]);
 
   // Combine tracks with full IDs for drop target calculation (ascending by index)
@@ -1320,6 +1408,23 @@ export function CanvasTimeline() {
   }, []);
 
   const contextTrack = contextTrackId ? tracks.find((t) => t.id === contextTrackId) : null;
+  const contextMarker = contextMarkerId ? markers.find((m) => m.id === contextMarkerId) : null;
+  const renamingMarker = markerRename ? markers.find((m) => m.id === markerRename.id) : null;
+
+  const openMarkerRename = useCallback(
+    (markerId: string, screenX: number) => setMarkerRename({ id: markerId, x: screenX }),
+    [],
+  );
+
+  const commitMarkerRename = useCallback(
+    (name: string) => {
+      if (markerRename && name.trim()) {
+        updateMarker(markerRename.id, { name: name.trim() });
+      }
+      setMarkerRename(null);
+    },
+    [markerRename, updateMarker],
+  );
 
   return (
     <>
@@ -1338,6 +1443,36 @@ export function CanvasTimeline() {
               onTrackContextMenu={(trackId) => {
                 contextTrackIdRef.current = trackId;
                 setContextTrackId(trackId);
+                setContextMarkerId(null);
+              }}
+              onMarkerContextMenu={(markerId) => {
+                setContextMarkerId(markerId);
+                setContextTrackId(null);
+                contextTrackIdRef.current = null;
+              }}
+              onMarkerRename={openMarkerRename}
+            />
+          )}
+
+          {/* Inline marker rename input (over the ruler) */}
+          {renamingMarker && markerRename && (
+            <input
+              autoFocus
+              defaultValue={renamingMarker.name}
+              onFocus={(e) => e.target.select()}
+              onBlur={(e) => commitMarkerRename(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") commitMarkerRename(e.currentTarget.value);
+                if (e.key === "Escape") setMarkerRename(null);
+              }}
+              className="absolute z-20 h-5 w-28 rounded-sm border border-cyan-400 bg-background px-1 text-xs outline-none"
+              style={{
+                left: Math.min(
+                  Math.max(markerRename.x - 4, TRACK_HEADER_WIDTH),
+                  dimensions.width - 120,
+                ),
+                top: RULER_HEIGHT - 26,
               }}
             />
           )}
@@ -1353,7 +1488,52 @@ export function CanvasTimeline() {
           </Button>
         </ContextMenuTrigger>
 
-        {contextTrack && (
+        {contextMarker && (
+          <ContextMenuContent>
+            <ContextMenuItem
+              onClick={() => {
+                const x = TRACK_HEADER_WIDTH + contextMarker.time * zoom - scrollX;
+                openMarkerRename(contextMarker.id, x);
+              }}
+            >
+              <PencilIcon />
+              Rename
+            </ContextMenuItem>
+            <ContextMenuSub>
+              <ContextMenuSubTrigger>
+                <PaletteIcon />
+                Change Color
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent>
+                {MARKER_COLORS.map((color) => (
+                  <ContextMenuItem
+                    key={color.value}
+                    onClick={() => updateMarker(contextMarker.id, { color: color.value })}
+                  >
+                    <span
+                      className="size-3 rounded-full"
+                      style={{ backgroundColor: color.value }}
+                    />
+                    {color.label}
+                  </ContextMenuItem>
+                ))}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              variant="destructive"
+              onClick={() => {
+                removeMarker(contextMarker.id);
+                setContextMarkerId(null);
+              }}
+            >
+              <Trash2Icon />
+              Delete Marker
+            </ContextMenuItem>
+          </ContextMenuContent>
+        )}
+
+        {!contextMarker && contextTrack && (
           <ContextMenuContent>
             <ContextMenuItem
               onClick={() => {

@@ -85,9 +85,13 @@ function getStageLabel(stage: string): string {
 
 export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   const settings = useVideoEditorStore((s) => s.settings);
+  const inPoint = useVideoEditorStore((s) => s.inPoint);
+  const outPoint = useVideoEditorStore((s) => s.outPoint);
+  const hasInOutRange = inPoint !== null && outPoint !== null && outPoint > inPoint;
 
   // Export settings — resolution and frame rate come from project settings
   const [quality, setQuality] = useState<string | null>("High");
+  const [exportRangeOnly, setExportRangeOnly] = useState(false);
 
   // Export state
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
@@ -128,6 +132,9 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
       frameRate: settings.fps.numerator / settings.fps.denominator,
       videoBitrate: qualityPreset?.value,
       fileHandle,
+      ...(hasInOutRange && exportRangeOnly
+        ? { range: { startFrame: inPoint, endFrame: outPoint } }
+        : {}),
     };
 
     setExportFileName(fileHandle.name);
@@ -142,7 +149,17 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
       }
       console.error("[ExportDialog] Export failed:", error);
     }
-  }, [settings.width, settings.height, settings.fps, quality, startExport]);
+  }, [
+    settings.width,
+    settings.height,
+    settings.fps,
+    quality,
+    startExport,
+    hasInOutRange,
+    exportRangeOnly,
+    inPoint,
+    outPoint,
+  ]);
 
   const handleCancel = useCallback(() => {
     cancelExport();
@@ -202,6 +219,18 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
                   </SelectContent>
                 </Select>
               </div>
+
+              {hasInOutRange && (
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={exportRangeOnly}
+                    onChange={(e) => setExportRangeOnly(e.target.checked)}
+                    className="size-4 accent-primary"
+                  />
+                  Export in/out range only
+                </label>
+              )}
             </div>
           ) : (
             // Progress display

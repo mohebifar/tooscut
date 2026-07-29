@@ -45,6 +45,9 @@ interface TimelineStageProps {
   transitionDropPreview?: TransitionDropPreview | null;
   crossTransitionDropPreview?: CrossTransitionDropPreview | null;
   onTrackContextMenu?: (trackId: string) => void;
+  onMarkerContextMenu?: (markerId: string) => void;
+  /** Double-click on a marker triangle — opens the inline rename input at screenX */
+  onMarkerRename?: (markerId: string, screenX: number) => void;
 }
 
 /** Width in pixels of the transition resize hit zone */
@@ -187,6 +190,42 @@ const DragPreviewClips = React.memo(function DragPreviewClips({
   );
 });
 
+interface RippleGhostClipsProps {
+  clips: ReturnType<typeof useVideoEditorStore.getState>["clips"];
+  allTracks: TimelineTrack[];
+  section: "video" | "audio";
+  ghosts: Array<{ clipId: string; trackIndex: number; newStartTime: number }> | null;
+  buildClipNodeProps: ClipRendererProps["buildClipNodeProps"];
+}
+
+/** Ghost outlines showing where downstream clips will land after a ripple trim commits. */
+const RippleGhostClips = React.memo(function RippleGhostClips({
+  clips,
+  allTracks,
+  section,
+  ghosts,
+  buildClipNodeProps,
+}: RippleGhostClipsProps) {
+  if (!ghosts || ghosts.length === 0) return null;
+
+  return (
+    <>
+      {ghosts.map((ghost) => {
+        const clip = clips.find((c) => c.id === ghost.clipId);
+        if (!clip) return null;
+        const track = allTracks[ghost.trackIndex];
+        if (!track || track.type !== section) return null;
+        const props = buildClipNodeProps(clip, ghost.trackIndex, {
+          isGhost: true,
+          overrideStartTime: ghost.newStartTime,
+        });
+        if (!props) return null;
+        return <ClipNode key={props.clipId + "-ripple-ghost"} {...props} />;
+      })}
+    </>
+  );
+});
+
 const SnapLines = React.memo(function SnapLines({
   snapLines,
   frameToX,
@@ -265,6 +304,124 @@ const Playhead = React.memo(function Playhead({
   );
 });
 
+/**
+ * In/out point region drawn on the ruler: a semi-transparent overlay between
+ * the two points, with bracket indicators at each set point.
+ */
+const InOutRulerOverlay = React.memo(function InOutRulerOverlay({ width }: { width: number }) {
+  const inPoint = useVideoEditorStore((s) => s.inPoint);
+  const outPoint = useVideoEditorStore((s) => s.outPoint);
+  const zoom = useVideoEditorStore((s) => s.zoom);
+  const scrollX = useVideoEditorStore((s) => s.scrollX);
+
+  if (inPoint === null && outPoint === null) return null;
+
+  const toX = (frame: number) => TRACK_HEADER_WIDTH + frame * zoom - scrollX;
+  const inX = inPoint !== null ? toX(inPoint) : null;
+  const outX = outPoint !== null ? toX(outPoint) : null;
+  const regionLeft = inX !== null && outX !== null ? Math.max(inX, TRACK_HEADER_WIDTH) : null;
+  const regionRight = inX !== null && outX !== null ? Math.min(outX, width) : null;
+
+  return (
+    <Group listening={false}>
+      {regionLeft !== null && regionRight !== null && regionRight > regionLeft && (
+        <Rect
+          x={regionLeft}
+          y={0}
+          width={regionRight - regionLeft}
+          height={RULER_HEIGHT - 1}
+          fill="rgba(34, 211, 238, 0.12)"
+        />
+      )}
+      {inX !== null && inX >= TRACK_HEADER_WIDTH && inX <= width && (
+        <>
+          <Line points={[inX, 20, inX, RULER_HEIGHT - 1]} stroke="#22d3ee" strokeWidth={2} />
+          <Text x={inX + 3} y={22} text="[" fontSize={11} fontStyle="bold" fill="#22d3ee" />
+        </>
+      )}
+      {outX !== null && outX >= TRACK_HEADER_WIDTH && outX <= width && (
+        <>
+          <Line points={[outX, 20, outX, RULER_HEIGHT - 1]} stroke="#22d3ee" strokeWidth={2} />
+          <Text x={outX - 8} y={22} text="]" fontSize={11} fontStyle="bold" fill="#22d3ee" />
+        </>
+      )}
+    </Group>
+  );
+});
+
+/**
+ * Timeline marker triangles on the ruler. Click seeks to the marker,
+ * double-click opens rename, right-click opens the marker context menu.
+ */
+const RulerTimelineMarkers = React.memo(function RulerTimelineMarkers({
+  width,
+  onMarkerContextMenu,
+  onMarkerRename,
+}: {
+  width: number;
+  onMarkerContextMenu?: (markerId: string) => void;
+  onMarkerRename?: (markerId: string, screenX: number) => void;
+}) {
+  const markers = useVideoEditorStore((s) => s.markers);
+  const zoom = useVideoEditorStore((s) => s.zoom);
+  const scrollX = useVideoEditorStore((s) => s.scrollX);
+  const seekTo = useVideoEditorStore((s) => s.seekTo);
+
+  return (
+    <>
+      {markers.map((marker, i) => {
+        const x = TRACK_HEADER_WIDTH + marker.time * zoom - scrollX;
+        if (x < TRACK_HEADER_WIDTH || x > width) return null;
+
+        // Show the label only when there's room before the next marker
+        const next = markers[i + 1];
+        const nextX = next ? TRACK_HEADER_WIDTH + next.time * zoom - scrollX : Infinity;
+        const showLabel = nextX - x > 40;
+
+        return (
+          <Group key={marker.id}>
+            {showLabel && marker.name && (
+              <Text
+                x={x + 6}
+                y={RULER_HEIGHT - 18}
+                text={marker.name}
+                fontSize={9}
+                fill={COLORS.rulerText}
+                listening={false}
+              />
+            )}
+            <Line
+              points={[x - 5, RULER_HEIGHT - 10, x + 5, RULER_HEIGHT - 10, x, RULER_HEIGHT - 2]}
+              closed
+              fill={marker.color}
+              listening={false}
+            />
+            {/* Invisible hit area for marker interactions */}
+            <Rect
+              x={x - 6}
+              y={RULER_HEIGHT - 14}
+              width={12}
+              height={14}
+              onMouseDown={(e) => {
+                // Left click seeks to the exact marker frame; don't start a playhead drag
+                if (e.evt.button === 0) {
+                  e.cancelBubble = true;
+                  seekTo(marker.time);
+                }
+              }}
+              onDblClick={(e) => {
+                e.cancelBubble = true;
+                onMarkerRename?.(marker.id, x);
+              }}
+              onContextMenu={() => onMarkerContextMenu?.(marker.id)}
+            />
+          </Group>
+        );
+      })}
+    </>
+  );
+});
+
 const RulerMarkers = React.memo(function RulerMarkers({
   gridLines,
   fpsFloat,
@@ -312,6 +469,8 @@ export function TimelineStage({
   transitionDropPreview,
   crossTransitionDropPreview,
   onTrackContextMenu,
+  onMarkerContextMenu,
+  onMarkerRename,
 }: TimelineStageProps) {
   const stageRef = useRef<Konva.Stage>(null);
 
@@ -511,6 +670,10 @@ export function TimelineStage({
   const trimLeft = useVideoEditorStore((s) => s.trimLeft);
   const trimRight = useVideoEditorStore((s) => s.trimRight);
   const batchTrimClips = useVideoEditorStore((s) => s.batchTrimClips);
+  const rippleMode = useVideoEditorStore((s) => s.rippleMode);
+  const rippleTrimLeft = useVideoEditorStore((s) => s.rippleTrimLeft);
+  const rippleTrimRight = useVideoEditorStore((s) => s.rippleTrimRight);
+  const rippleBatchTrimClips = useVideoEditorStore((s) => s.rippleBatchTrimClips);
   const activeTool = useVideoEditorStore((s) => s.activeTool);
   const splitClipAtTime = useVideoEditorStore((s) => s.splitClipAtTime);
   const setClipTransitionIn = useVideoEditorStore((s) => s.setClipTransitionIn);
@@ -1974,14 +2137,20 @@ export function TimelineStage({
             newStartTime: mc.startTime,
             newDuration: mc.duration,
           }));
-          batchTrimClips(trimState.edge, trims);
+          if (rippleMode) {
+            rippleBatchTrimClips(trimState.edge, trims);
+          } else {
+            batchTrimClips(trimState.edge, trims);
+          }
         } else {
           // Single-clip trim
           const { clipId, edge } = trimState;
           if (edge === "left") {
-            trimLeft(clipId, trimPreview.startTime);
+            if (rippleMode) rippleTrimLeft(clipId, trimPreview.startTime);
+            else trimLeft(clipId, trimPreview.startTime);
           } else {
-            trimRight(clipId, trimPreview.duration);
+            if (rippleMode) rippleTrimRight(clipId, trimPreview.duration);
+            else trimRight(clipId, trimPreview.duration);
           }
         }
         setTrimPreview(null);
@@ -2070,6 +2239,10 @@ export function TimelineStage({
     trimLeft,
     trimRight,
     batchTrimClips,
+    rippleMode,
+    rippleTrimLeft,
+    rippleTrimRight,
+    rippleBatchTrimClips,
     setClipTransitionIn,
     setClipTransitionOut,
     updateCrossTransitionDuration,
@@ -2239,6 +2412,79 @@ export function TimelineStage({
     ],
   );
 
+  // Ghost landing positions of downstream clips during a ripple trim drag.
+  // Mirrors the shift logic in the store's rippleTrimLeft/rippleTrimRight:
+  // left-trim shifts downstream by -(newStartTime - startTime), right-trim by
+  // (newDuration - duration), starting from the trimmed clip's old right edge.
+  const rippleGhosts = useMemo(() => {
+    if (!rippleMode || !trimPreview) return null;
+    const edge = trimStateRef.current?.edge;
+    if (!edge) return null;
+
+    const lockedTrackIds = new Set(allTracks.filter((t) => t.locked).map((t) => t.fullId));
+    const shifts: Array<{ trackId: string; fromTime: number; delta: number }> = [];
+    const exclude = new Set<string>();
+
+    const addShiftsForClip = (
+      clipId: string,
+      previewStartTime: number,
+      previewDuration: number,
+    ) => {
+      const clip = clips.find((c) => c.id === clipId);
+      if (!clip || lockedTrackIds.has(clip.trackId)) return;
+      const delta =
+        edge === "left" ? -(previewStartTime - clip.startTime) : previewDuration - clip.duration;
+      exclude.add(clip.id);
+      if (delta !== 0) {
+        shifts.push({
+          trackId: clip.trackId,
+          fromTime: clip.startTime + clip.duration,
+          delta,
+        });
+      }
+      if (clip.linkedClipId) {
+        const linked = clips.find((c) => c.id === clip.linkedClipId);
+        if (linked && !lockedTrackIds.has(linked.trackId)) {
+          exclude.add(linked.id);
+          if (delta !== 0) {
+            shifts.push({
+              trackId: linked.trackId,
+              fromTime: linked.startTime + linked.duration,
+              delta,
+            });
+          }
+        }
+      }
+    };
+
+    if (trimPreview.isMulti && trimPreview.multiClips) {
+      for (const mc of trimPreview.multiClips) {
+        addShiftsForClip(mc.clipId, mc.startTime, mc.duration);
+      }
+    } else {
+      addShiftsForClip(trimPreview.clipId, trimPreview.startTime, trimPreview.duration);
+    }
+    if (shifts.length === 0) return null;
+
+    const ghosts: Array<{ clipId: string; trackIndex: number; newStartTime: number }> = [];
+    for (const clip of clips) {
+      if (exclude.has(clip.id)) continue;
+      let delta = 0;
+      for (const s of shifts) {
+        if (clip.trackId === s.trackId && clip.startTime >= s.fromTime) delta += s.delta;
+      }
+      if (delta === 0) continue;
+      const trackIndex = allTracks.findIndex((t) => t.fullId === clip.trackId);
+      if (trackIndex === -1) continue;
+      ghosts.push({
+        clipId: clip.id,
+        trackIndex,
+        newStartTime: Math.max(0, clip.startTime + delta),
+      });
+    }
+    return ghosts.length > 0 ? ghosts : null;
+  }, [rippleMode, trimPreview, clips, allTracks]);
+
   return (
     <Stage
       ref={stageRef}
@@ -2306,6 +2552,13 @@ export function TimelineStage({
               buildClipNodeProps={buildClipNodeProps}
               xToFrame={xToFrame}
             />
+            <RippleGhostClips
+              clips={clips}
+              allTracks={allTracks}
+              section="video"
+              ghosts={rippleGhosts}
+              buildClipNodeProps={buildClipNodeProps}
+            />
           </Group>
         </Group>
 
@@ -2334,6 +2587,13 @@ export function TimelineStage({
               dragPreview={dragPreview}
               buildClipNodeProps={buildClipNodeProps}
               xToFrame={xToFrame}
+            />
+            <RippleGhostClips
+              clips={clips}
+              allTracks={allTracks}
+              section="audio"
+              ghosts={rippleGhosts}
+              buildClipNodeProps={buildClipNodeProps}
             />
           </Group>
         </Group>
@@ -2423,6 +2683,16 @@ export function TimelineStage({
 
         {/* Ruler time markers */}
         <RulerMarkers gridLines={gridLines} fpsFloat={fpsFloat} />
+
+        {/* In/out point region on the ruler */}
+        <InOutRulerOverlay width={width} />
+
+        {/* Timeline markers on the ruler */}
+        <RulerTimelineMarkers
+          width={width}
+          onMarkerContextMenu={onMarkerContextMenu}
+          onMarkerRename={onMarkerRename}
+        />
 
         {/* Track headers background */}
         <Rect

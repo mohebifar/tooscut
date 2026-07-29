@@ -7,7 +7,8 @@ import { useVideoEditorStore } from "../state/video-editor-store";
 import { getSharedCompositor } from "../workers/compositor-api";
 
 function saveProject(projectId: string) {
-  const { clips, tracks, crossTransitions, assets, settings } = useVideoEditorStore.getState();
+  const { clips, tracks, crossTransitions, markers, assets, settings } =
+    useVideoEditorStore.getState();
   const assetsToSave = assets.map((a) => ({
     ...a,
     url: "", // blob URLs aren't persistable; restored via file handle hydration
@@ -17,6 +18,7 @@ function saveProject(projectId: string) {
       tracks,
       clips,
       crossTransitions,
+      markers,
       assets: assetsToSave,
     },
     settings,
@@ -94,6 +96,7 @@ export function useAutoSave(projectId: string) {
         clips: state.clips,
         tracks: state.tracks,
         crossTransitions: state.crossTransitions,
+        markers: state.markers,
         assets: state.assets,
         settings: state.settings,
       }),
@@ -121,6 +124,7 @@ export function useAutoSave(projectId: string) {
           a.clips === b.clips &&
           a.tracks === b.tracks &&
           a.crossTransitions === b.crossTransitions &&
+          a.markers === b.markers &&
           a.assets === b.assets &&
           a.settings === b.settings,
       },

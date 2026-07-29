@@ -167,6 +167,20 @@ export interface MediaAsset {
 }
 
 /**
+ * Named timeline marker shown on the ruler.
+ * Time is in frames (project frame rate).
+ */
+export interface TimelineMarker {
+  id: string;
+  time: number;
+  name: string;
+  color: string;
+}
+
+/** Default marker color (cyan) */
+const DEFAULT_MARKER_COLOR = "#22d3ee";
+
+/**
  * Project settings.
  */
 export interface ProjectSettings {
@@ -187,6 +201,12 @@ interface VideoEditorState {
   tracks: EditableTrack[];
   clips: EditorClip[];
   crossTransitions: CrossTransitionRef[];
+  /** Named timeline markers (persisted with the project, undoable) */
+  markers: TimelineMarker[];
+  /** In-point frame for the marked region, or null when unset. Session-only. */
+  inPoint: number | null;
+  /** Out-point frame for the marked region, or null when unset. Session-only. */
+  outPoint: number | null;
   /** Current playhead position in frames (project frame rate) */
   currentFrame: number;
   /** Total project duration in frames (project frame rate) */
@@ -211,6 +231,8 @@ interface VideoEditorState {
   scrollY: number;
   trackHeights: Record<string, number>;
   activeTool: "select" | "razor";
+  /** When true, delete/trim operations shift downstream clips on the same track. */
+  rippleMode: boolean;
   previewMode: "view" | "transform";
   /** Preview canvas zoom: "fit" auto-fills container, or a percentage (e.g. 50, 100) */
   previewZoom: "fit" | number;
@@ -224,6 +246,7 @@ interface VideoEditorState {
     tracks: EditableTrack[];
     clips: EditorClip[];
     crossTransitions?: CrossTransitionRef[];
+    markers?: TimelineMarker[];
     assets: MediaAsset[];
     settings: ProjectSettings;
   }) => void;
@@ -246,9 +269,22 @@ interface VideoEditorState {
   setScrollY: (scrollY: number) => void;
   setTrackHeight: (trackId: string, height: number) => void;
   setActiveTool: (tool: "select" | "razor") => void;
+  setRippleMode: (on: boolean) => void;
+  toggleRippleMode: () => void;
   setPreviewMode: (mode: "view" | "transform") => void;
   setPreviewZoom: (zoom: "fit" | number) => void;
   setExportDialogOpen: (open: boolean) => void;
+
+  // Actions - Markers
+  /** Add a marker at the given frame (defaults to the playhead). Returns the marker id. */
+  addMarker: (time?: number) => string;
+  removeMarker: (markerId: string) => void;
+  updateMarker: (markerId: string, updates: Partial<Omit<TimelineMarker, "id">>) => void;
+
+  // Actions - In/Out points
+  setInPoint: (frame: number | null) => void;
+  setOutPoint: (frame: number | null) => void;
+  clearInOutPoints: () => void;
 
   // Actions - Selection
   setSelectedClipIds: (ids: string[]) => void;
@@ -278,6 +314,14 @@ interface VideoEditorState {
   trimLeft: (clipId: string, newStartTime: number) => void;
   trimRight: (clipId: string, newDuration: number) => void;
   batchTrimClips: (
+    edge: "left" | "right",
+    trims: Array<{ clipId: string; newStartTime: number; newDuration: number }>,
+  ) => void;
+  /** Delete a clip (and its linked pair) and shift downstream clips on the affected tracks left. */
+  rippleDeleteClip: (clipId: string) => void;
+  rippleTrimLeft: (clipId: string, newStartTime: number) => void;
+  rippleTrimRight: (clipId: string, newDuration: number) => void;
+  rippleBatchTrimClips: (
     edge: "left" | "right",
     trims: Array<{ clipId: string; newStartTime: number; newDuration: number }>,
   ) => void;
@@ -455,6 +499,41 @@ function isClipCompatibleWithTrack(
 function isClipOnLockedTrack(clip: EditorClip, tracks: EditableTrack[]): boolean {
   const track = tracks.find((t) => t.id === clip.trackId);
   return track?.locked ?? false;
+}
+
+/**
+ * Shift clips on the given tracks whose startTime is >= fromTime by delta (can be negative).
+ * Excludes clips whose ids are in the exclude set (e.g., the clip being trimmed/deleted).
+ * Clamps startTime to >= 0.
+ */
+function shiftDownstreamClips(
+  clips: EditorClip[],
+  tracks: EditableTrack[],
+  shifts: Array<{ trackId: string; fromTime: number; delta: number }>,
+  exclude: ReadonlySet<string>,
+): EditorClip[] {
+  if (shifts.length === 0 || shifts.every((s) => s.delta === 0)) return clips;
+  const lockedTrackIds = new Set(tracks.filter((t) => t.locked).map((t) => t.id));
+  const byTrack = new Map<string, Array<{ fromTime: number; delta: number }>>();
+  for (const s of shifts) {
+    if (lockedTrackIds.has(s.trackId)) continue;
+    const list = byTrack.get(s.trackId) ?? [];
+    list.push({ fromTime: s.fromTime, delta: s.delta });
+    byTrack.set(s.trackId, list);
+  }
+  return clips.map((clip) => {
+    if (exclude.has(clip.id)) return clip;
+    const trackShifts = byTrack.get(clip.trackId);
+    if (!trackShifts) return clip;
+    let delta = 0;
+    for (const s of trackShifts) {
+      if (clip.startTime >= s.fromTime) delta += s.delta;
+    }
+    if (delta === 0) return clip;
+    const newStartTime = Math.max(0, clip.startTime + delta);
+    if (newStartTime === clip.startTime) return clip;
+    return { ...clip, startTime: newStartTime };
+  });
 }
 
 /**
@@ -655,7 +734,7 @@ function resolveOverlaps(
 /** State fields tracked by undo/redo history */
 type TrackedState = Pick<
   VideoEditorState,
-  "tracks" | "clips" | "crossTransitions" | "assets" | "settings"
+  "tracks" | "clips" | "crossTransitions" | "markers" | "assets" | "settings"
 >;
 
 export const useVideoEditorStore = create<VideoEditorState>()(
@@ -672,6 +751,9 @@ export const useVideoEditorStore = create<VideoEditorState>()(
         tracks: [],
         clips: [],
         crossTransitions: [],
+        markers: [],
+        inPoint: null,
+        outPoint: null,
         currentFrame: 0,
         durationFrames: 900, // 30s at 30fps
         isPlaying: false,
@@ -688,6 +770,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
         scrollY: 0,
         trackHeights: {},
         activeTool: "select" as const,
+        rippleMode: false,
         previewMode: "transform" as const,
         previewZoom: "fit",
         exportDialogOpen: false,
@@ -700,6 +783,9 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             tracks: data.tracks,
             clips: data.clips,
             crossTransitions: data.crossTransitions ?? [],
+            markers: data.markers ?? [],
+            inPoint: null,
+            outPoint: null,
             assets: data.assets,
             settings: data.settings,
             currentFrame: 0,
@@ -716,6 +802,9 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             tracks: [],
             clips: [],
             crossTransitions: [],
+            markers: [],
+            inPoint: null,
+            outPoint: null,
             assets: [],
             settings: { width: 1920, height: 1080, fps: { numerator: 30, denominator: 1 } },
             currentFrame: 0,
@@ -729,6 +818,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             scrollY: 0,
             trackHeights: {},
             activeTool: "select" as const,
+            rippleMode: false,
             exportDialogOpen: false,
             durationFrames: 900, // 30s at 30fps
           }),
@@ -767,9 +857,72 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             return { trackHeights: { ...state.trackHeights, ...updates } };
           }),
         setActiveTool: (activeTool) => set({ activeTool }),
+        setRippleMode: (rippleMode) => set({ rippleMode }),
+        toggleRippleMode: () => set((state) => ({ rippleMode: !state.rippleMode })),
         setPreviewMode: (previewMode) => set({ previewMode }),
         setPreviewZoom: (previewZoom) => set({ previewZoom }),
         setExportDialogOpen: (exportDialogOpen) => set({ exportDialogOpen }),
+
+        // Marker actions
+        addMarker: (time) => {
+          const id = generateId();
+          set((state) => {
+            const frame = Math.max(0, Math.round(time ?? state.currentFrame));
+            // Don't stack markers on the exact same frame
+            if (state.markers.some((m) => m.time === frame)) return state;
+            const markers = [
+              ...state.markers,
+              {
+                id,
+                time: frame,
+                name: `Marker ${state.markers.length + 1}`,
+                color: DEFAULT_MARKER_COLOR,
+              },
+            ].sort((a, b) => a.time - b.time);
+            return { markers };
+          });
+          return id;
+        },
+        removeMarker: (markerId) =>
+          set((state) => ({ markers: state.markers.filter((m) => m.id !== markerId) })),
+        updateMarker: (markerId, updates) =>
+          set((state) => ({
+            markers: state.markers
+              .map((m) =>
+                m.id === markerId
+                  ? {
+                      ...m,
+                      ...updates,
+                      ...(updates.time !== undefined
+                        ? { time: Math.max(0, Math.round(updates.time)) }
+                        : {}),
+                    }
+                  : m,
+              )
+              .sort((a, b) => a.time - b.time),
+          })),
+
+        // In/Out point actions
+        setInPoint: (frame) =>
+          set((state) => {
+            if (frame === null) return { inPoint: null };
+            const f = Math.max(0, Math.round(frame));
+            // Keep in <= out: setting an in-point past the out-point drops the out-point
+            return {
+              inPoint: f,
+              outPoint: state.outPoint !== null && state.outPoint <= f ? null : state.outPoint,
+            };
+          }),
+        setOutPoint: (frame) =>
+          set((state) => {
+            if (frame === null) return { outPoint: null };
+            const f = Math.max(0, Math.round(frame));
+            return {
+              outPoint: f,
+              inPoint: state.inPoint !== null && state.inPoint >= f ? null : state.inPoint,
+            };
+          }),
+        clearInOutPoints: () => set({ inPoint: null, outPoint: null }),
 
         // Selection actions
         setSelectedClipIds: (ids) =>
@@ -1368,6 +1521,170 @@ export const useVideoEditorStore = create<VideoEditorState>()(
               durationFrames: calculateDurationFrames(clips, get().settings.fps),
             };
           }),
+
+        rippleDeleteClip: (clipId) =>
+          set((state) => {
+            const [, clip] = findClipById(state.clips, clipId);
+            if (!clip || isClipOnLockedTrack(clip, state.tracks)) return state;
+
+            // Collect all clips that will be removed (clip + linked pair). Compute the
+            // per-track shift amount based on each removed clip's duration and right edge.
+            const removeIds = new Set<string>([clip.id]);
+            const shifts: Array<{ trackId: string; fromTime: number; delta: number }> = [
+              {
+                trackId: clip.trackId,
+                fromTime: clip.startTime + clip.duration,
+                delta: -clip.duration,
+              },
+            ];
+            if (clip.linkedClipId) {
+              const linked = state.clips.find((c) => c.id === clip.linkedClipId);
+              if (linked && !isClipOnLockedTrack(linked, state.tracks)) {
+                removeIds.add(linked.id);
+                shifts.push({
+                  trackId: linked.trackId,
+                  fromTime: linked.startTime + linked.duration,
+                  delta: -linked.duration,
+                });
+              }
+            }
+
+            let clips = state.clips.filter((c) => !removeIds.has(c.id));
+            clips = shiftDownstreamClips(clips, state.tracks, shifts, new Set());
+            clips = sortClipsByStartTime(clips);
+
+            const crossTransitions = validateCrossTransitions(
+              clips,
+              removeIds.size > 1
+                ? Array.from(removeIds).reduce(
+                    (acc, id) => removeCrossTransitionsForClip(acc, id),
+                    state.crossTransitions,
+                  )
+                : removeCrossTransitionsForClip(state.crossTransitions, clipId),
+            );
+
+            return {
+              clips,
+              crossTransitions,
+              selectedClipIds: state.selectedClipIds.filter((id) => !removeIds.has(id)),
+              durationFrames: calculateDurationFrames(clips, get().settings.fps),
+            };
+          }),
+
+        rippleTrimLeft: (clipId, newStartTime) =>
+          set((state) => {
+            const [, clip] = findClipById(state.clips, clipId);
+            if (!clip || isClipOnLockedTrack(clip, state.tracks)) return state;
+
+            const delta = newStartTime - clip.startTime;
+            if (delta === 0) return state;
+            const newDuration = clip.duration - delta;
+            if (newDuration <= 0) return state;
+
+            // Ripple trim left: the clip's right edge shifts left by `delta` (head trimmed),
+            // and downstream clips shift by the same amount so no gap opens to the right.
+            // The clip's visual startTime stays put (as the user is pulling its left edge inward/outward
+            // but the ripple absorbs the change into the timeline).
+            const oldRightEdge = clip.startTime + clip.duration;
+            const shifts: Array<{ trackId: string; fromTime: number; delta: number }> = [
+              { trackId: clip.trackId, fromTime: oldRightEdge, delta: -delta },
+            ];
+
+            const excludedIds = new Set<string>([clip.id]);
+            const clipUpdates = new Map<string, Partial<EditorClip>>();
+            clipUpdates.set(clip.id, {
+              duration: newDuration,
+              inPoint: clip.inPoint + delta,
+            });
+
+            if (clip.linkedClipId) {
+              const linked = state.clips.find((c) => c.id === clip.linkedClipId);
+              if (linked && !isClipOnLockedTrack(linked, state.tracks)) {
+                excludedIds.add(linked.id);
+                const linkedNewDuration = linked.duration - delta;
+                if (linkedNewDuration > 0) {
+                  clipUpdates.set(linked.id, {
+                    duration: linkedNewDuration,
+                    inPoint: linked.inPoint + delta,
+                  });
+                  shifts.push({
+                    trackId: linked.trackId,
+                    fromTime: linked.startTime + linked.duration,
+                    delta: -delta,
+                  });
+                }
+              }
+            }
+
+            let clips = state.clips.map((c) => {
+              const update = clipUpdates.get(c.id);
+              return update ? ({ ...c, ...update } as EditorClip) : c;
+            });
+            clips = shiftDownstreamClips(clips, state.tracks, shifts, excludedIds);
+            clips = sortClipsByStartTime(clips);
+
+            return {
+              clips,
+              crossTransitions: validateCrossTransitions(clips, state.crossTransitions),
+              durationFrames: calculateDurationFrames(clips, get().settings.fps),
+            };
+          }),
+
+        rippleTrimRight: (clipId, newDuration) =>
+          set((state) => {
+            const [, clip] = findClipById(state.clips, clipId);
+            if (!clip || isClipOnLockedTrack(clip, state.tracks)) return state;
+            if (newDuration <= 0) return state;
+            const delta = newDuration - clip.duration;
+            if (delta === 0) return state;
+
+            const oldRightEdge = clip.startTime + clip.duration;
+            const shifts: Array<{ trackId: string; fromTime: number; delta: number }> = [
+              { trackId: clip.trackId, fromTime: oldRightEdge, delta },
+            ];
+
+            const excludedIds = new Set<string>([clip.id]);
+            const clipUpdates = new Map<string, Partial<EditorClip>>();
+            clipUpdates.set(clip.id, { duration: newDuration });
+
+            if (clip.linkedClipId) {
+              const linked = state.clips.find((c) => c.id === clip.linkedClipId);
+              if (linked && !isClipOnLockedTrack(linked, state.tracks)) {
+                excludedIds.add(linked.id);
+                clipUpdates.set(linked.id, { duration: newDuration });
+                shifts.push({
+                  trackId: linked.trackId,
+                  fromTime: linked.startTime + linked.duration,
+                  delta,
+                });
+              }
+            }
+
+            let clips = state.clips.map((c) => {
+              const update = clipUpdates.get(c.id);
+              return update ? ({ ...c, ...update } as EditorClip) : c;
+            });
+            clips = shiftDownstreamClips(clips, state.tracks, shifts, excludedIds);
+            clips = sortClipsByStartTime(clips);
+
+            return {
+              clips,
+              crossTransitions: validateCrossTransitions(clips, state.crossTransitions),
+              durationFrames: calculateDurationFrames(clips, get().settings.fps),
+            };
+          }),
+
+        rippleBatchTrimClips: (edge, trims) => {
+          // Fall back to sequential ripple trims. Multi-clip ripple trims are unusual
+          // in practice (users typically trim one clip at a time).
+          for (const { clipId, newStartTime, newDuration } of trims) {
+            if (edge === "left") {
+              get().rippleTrimLeft(clipId, newStartTime);
+            } else {
+              get().rippleTrimRight(clipId, newDuration);
+            }
+          }
+        },
 
         linkClipPair: (clipId1, clipId2) =>
           set((state) => ({
@@ -2121,6 +2438,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
           tracks: state.tracks,
           clips: state.clips,
           crossTransitions: state.crossTransitions,
+          markers: state.markers,
           assets: state.assets,
           settings: state.settings,
         }),
@@ -2128,6 +2446,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
           pastState.tracks === currentState.tracks &&
           pastState.clips === currentState.clips &&
           pastState.crossTransitions === currentState.crossTransitions &&
+          pastState.markers === currentState.markers &&
           pastState.assets === currentState.assets &&
           pastState.settings === currentState.settings,
       },

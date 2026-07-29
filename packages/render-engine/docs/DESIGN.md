@@ -178,6 +178,26 @@ Clips are **always sorted by `startTime`** in ascending order. This enables:
 - `moveClip()` re-sorts after position change
 - `addClips()` uses concat + sort for bulk operations
 
+### Ripple Editing
+
+Ripple editing is implemented at the **store layer** (`apps/ui/src/state/video-editor-store.ts`), not in `clip-operations.ts`, because it is a UI editing mode rather than a rendering concern.
+
+When ripple mode is on (toggled with `R` or the timeline toolbar button):
+
+- **Ripple delete** removes a clip (and its linked pair) and shifts downstream clips on the affected tracks left by the removed clip's duration.
+- **Ripple trim right** shifts downstream clips by the duration delta so no gap opens or closes.
+- **Ripple trim left** keeps the clip's `startTime` anchored — the head trim is absorbed by adjusting `inPoint`/`duration` and shifting downstream clips left, so the edit point stays put on the timeline.
+
+Shifts are computed per track from the trimmed clip's old right edge (`shiftDownstreamClips`). Locked tracks are never shifted. Only the tracks of the edited clip and its linked pair ripple; other tracks are unaffected. During a ripple trim drag, the timeline renders ghost outlines of downstream clips at their landing positions.
+
+### Timeline Markers and In/Out Points
+
+Also store-layer features (`apps/ui/src/state/video-editor-store.ts`), with times in integer frames:
+
+- **Markers** (`{ id, time, name, color }`) are kept sorted by time, are undo-tracked, and persist with the project content in IndexedDB. Two markers can never share the same frame.
+- **In/out points** (`inPoint`/`outPoint`, nullable frames) are session-only — not persisted and not undo-tracked. The invariant `inPoint < outPoint` is enforced by dropping the conflicting point when one is set past the other.
+- When both in/out are set, the export pipeline accepts a `range` option: video renders frames `[startFrame, endFrame)` re-timestamped from zero, and audio clips are shifted/clamped into range space before mixing.
+
 ---
 
 ## Z-Order and Layering

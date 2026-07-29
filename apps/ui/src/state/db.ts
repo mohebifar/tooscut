@@ -2,7 +2,7 @@ import type { EditableTrack, CrossTransitionRef } from "@tooscut/render-engine";
 
 import Dexie, { type Table } from "dexie";
 
-import type { EditorClip, MediaAsset, ProjectSettings } from "./video-editor-store";
+import type { EditorClip, MediaAsset, ProjectSettings, TimelineMarker } from "./video-editor-store";
 
 export interface LocalProject {
   id: string;
@@ -12,6 +12,7 @@ export interface LocalProject {
     tracks: EditableTrack[];
     clips: EditorClip[];
     crossTransitions?: CrossTransitionRef[];
+    markers?: TimelineMarker[];
     assets: MediaAsset[];
   };
   thumbnailDataUrl: string | null;

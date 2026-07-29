@@ -74,10 +74,23 @@ const shortcutSections: ShortcutSection[] = [
     ],
   },
   {
+    title: "Markers & In/Out",
+    shortcuts: [
+      { keys: ["M"], description: "Add marker at playhead" },
+      { keys: ["Shift", "M"], description: "Go to next marker" },
+      { keys: ["Alt", "M"], description: "Go to previous marker" },
+      { keys: ["I"], description: "Set in-point at playhead" },
+      { keys: ["O"], description: "Set out-point at playhead" },
+      { keys: ["Alt", "I"], description: "Clear in-point" },
+      { keys: ["Alt", "O"], description: "Clear out-point" },
+    ],
+  },
+  {
     title: "Tools",
     shortcuts: [
       { keys: ["V"], description: "Select tool" },
       { keys: ["C"], description: "Razor / Cut tool" },
+      { keys: ["R"], description: "Toggle ripple edit mode" },
     ],
   },
   {
