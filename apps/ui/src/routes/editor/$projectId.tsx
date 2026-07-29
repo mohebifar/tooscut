@@ -70,6 +70,7 @@ function EditorPage() {
           tracks: project.content.tracks,
           clips: project.content.clips,
           crossTransitions: project.content.crossTransitions,
+          markers: project.content.markers,
           assets: project.content.assets,
           settings: project.settings,
         });

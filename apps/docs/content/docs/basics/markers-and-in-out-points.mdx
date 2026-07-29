@@ -1,0 +1,39 @@
+---
+title: Markers and In/Out Points
+description: Bookmark moments and mark a region of the timeline for export in Tooscut.
+---
+
+## Markers
+
+Markers are named bookmarks on the timeline ruler, useful for flagging moments to revisit.
+
+| Shortcut                        | Action                 |
+| ------------------------------- | ---------------------- |
+| <kbd>M</kbd>                    | Add marker at playhead |
+| <kbd>Shift</kbd> + <kbd>M</kbd> | Go to next marker      |
+| <kbd>Alt</kbd> + <kbd>M</kbd>   | Go to previous marker  |
+
+Markers appear as small colored triangles on the ruler.
+
+- **Click** a marker to jump the playhead to it.
+- **Double-click** a marker to rename it inline.
+- **Right-click** a marker for a context menu — rename, change color, or delete.
+
+Markers are saved with your project and are undoable like any other edit.
+
+## In/out points
+
+In/out points mark a region of the timeline — useful for exporting just a segment of your edit.
+
+| Shortcut                      | Action                    |
+| ----------------------------- | ------------------------- |
+| <kbd>I</kbd>                  | Set in-point at playhead  |
+| <kbd>O</kbd>                  | Set out-point at playhead |
+| <kbd>Alt</kbd> + <kbd>I</kbd> | Clear in-point            |
+| <kbd>Alt</kbd> + <kbd>O</kbd> | Clear out-point           |
+
+The marked region shows as a highlighted overlay on the ruler between `[` and `]` brackets.
+
+Unlike markers, in/out points are **not saved with the project** — they reset when you reload.
+
+When an in/out range is set, the [export dialog](/docs/basics/exporting) offers an option to export only that range instead of the full timeline.

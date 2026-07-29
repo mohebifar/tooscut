@@ -50,6 +50,8 @@ export interface ExportOptions {
   audioBitrate?: number;
   /** File handle from showSaveFilePicker for streaming to disk */
   fileHandle: FileSystemFileHandle;
+  /** Restrict export to a frame range (e.g. in/out points). Defaults to the full content. */
+  range?: { startFrame: number; endFrame: number };
 }
 
 interface ExportProgress {
@@ -357,8 +359,19 @@ export function useMp4Export(): Mp4ExportHandle {
       throw new Error("No content to export");
     }
 
-    // contentDuration is in frames (project frame rate)
-    const totalFrames = Math.ceil(contentDuration);
+    // Resolve export range in frames (defaults to the full content)
+    const rangeStart = options.range ? Math.max(0, Math.round(options.range.startFrame)) : 0;
+    const rangeEnd = options.range
+      ? Math.min(Math.round(options.range.endFrame), contentDuration)
+      : contentDuration;
+
+    if (rangeEnd <= rangeStart) {
+      throw new Error("Export range is empty");
+    }
+
+    // Durations are in frames (project frame rate)
+    const exportDuration = rangeEnd - rangeStart;
+    const totalFrames = Math.ceil(exportDuration);
     const resolvedBitrate = videoBitrate ?? QUALITY_HIGH;
 
     let pool: FrameRendererPool | null = null;
@@ -518,7 +531,23 @@ export function useMp4Export(): Mp4ExportHandle {
       updateProgress(1);
 
       const sampleRate = 48000;
-      const audioClips = clips.filter((c) => c.type === "audio");
+      // Audio clips shifted/clamped into range space (range start becomes time 0)
+      const audioClips = clips
+        .filter((c) => c.type === "audio")
+        .flatMap((c) => {
+          if (rangeStart === 0 && rangeEnd === contentDuration) return [c];
+          const clipEnd = c.startTime + c.duration;
+          if (clipEnd <= rangeStart || c.startTime >= rangeEnd) return [];
+          const headTrim = Math.max(0, rangeStart - c.startTime);
+          return [
+            {
+              ...c,
+              startTime: Math.max(0, c.startTime - rangeStart),
+              inPoint: c.inPoint + headTrim,
+              duration: Math.min(clipEnd, rangeEnd) - Math.max(c.startTime, rangeStart),
+            },
+          ];
+        });
       const hasAudio = audioClips.length > 0;
 
       if (cancelledRef.current) {
@@ -622,7 +651,7 @@ export function useMp4Export(): Mp4ExportHandle {
           audioClips,
           tracks,
           assetMap as Map<string, { id: string; file?: Blob; type: string }>,
-          contentDuration,
+          exportDuration,
           settings.fps,
           sampleRate,
           audioSource,
@@ -650,12 +679,14 @@ export function useMp4Export(): Mp4ExportHandle {
 
       function* generateFrameTasks(): Generator<RenderFrameTask> {
         for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+          // frameIndex is output-space; timelineFrame is the absolute timeline frame
+          const timelineFrame = rangeStart + frameIndex;
           const { frame, visibleMediaClips, crossTransitionTextureMap } = buildLayersForTime({
             clips,
             tracks,
             crossTransitions,
             settings: exportSettings,
-            timelineTime: frameIndex,
+            timelineTime: timelineFrame,
             evaluatorManager,
             includeMutedTracks: false,
           });
@@ -667,7 +698,7 @@ export function useMp4Export(): Mp4ExportHandle {
             const asset = assetMap.get(assetId);
             if (!asset) continue;
 
-            const sourceTime = calculateSourceTime(frameIndex, clip, exportFps);
+            const sourceTime = calculateSourceTime(timelineFrame, clip, exportFps);
             textureRequests.push({
               assetId,
               sourceTime,
@@ -678,7 +709,7 @@ export function useMp4Export(): Mp4ExportHandle {
 
           yield {
             frameIndex,
-            timelineFrame: frameIndex,
+            timelineFrame,
             frame,
             textureRequests,
             timestampMicros: frameIndex * frameDurationMicros,
@@ -928,7 +959,7 @@ export function useMp4Export(): Mp4ExportHandle {
       outputRef.current = null;
 
       return {
-        duration: framesToSeconds(contentDuration, settings.fps),
+        duration: framesToSeconds(exportDuration, settings.fps),
         renderTime,
       };
     } catch (error) {

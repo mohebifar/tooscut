@@ -1,4 +1,4 @@
-import { MousePointer2, Scissors, Minus, Plus } from "lucide-react";
+import { MousePointer2, Scissors, Minus, Plus, GitCommitHorizontal } from "lucide-react";
 import { useCallback } from "react";
 
 import { useVideoEditorStore } from "../../state/video-editor-store";
@@ -18,6 +18,8 @@ export function TimelineToolbar() {
   const setScrollX = useVideoEditorStore((s) => s.setScrollX);
   const activeTool = useVideoEditorStore((s) => s.activeTool);
   const setActiveTool = useVideoEditorStore((s) => s.setActiveTool);
+  const rippleMode = useVideoEditorStore((s) => s.rippleMode);
+  const toggleRippleMode = useVideoEditorStore((s) => s.toggleRippleMode);
 
   /** Zoom to a new level, adjusting scrollX to keep the playhead in place. */
   const zoomAroundPlayhead = useCallback(
@@ -101,6 +103,23 @@ export function TimelineToolbar() {
           </TooltipTrigger>
           <TooltipContent side="bottom">
             <p>Razor Tool (C)</p>
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Toggle
+              size="sm"
+              className="h-6 w-6 p-0"
+              pressed={rippleMode}
+              onPressedChange={toggleRippleMode}
+              aria-label="Ripple edit mode"
+            >
+              <GitCommitHorizontal className="h-3.5 w-3.5" />
+            </Toggle>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <p>Ripple Edit (R)</p>
           </TooltipContent>
         </Tooltip>
 

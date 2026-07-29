@@ -129,6 +129,18 @@ When making architectural decisions, update `packages/render-engine/docs/DESIGN.
 - Keyframe evaluation
 - Text/shape rendering
 
+## User-Facing Documentation
+
+The docs site (`apps/docs/content/docs/`) is user-facing reference material — treat it as part of the deliverable, not an afterthought. **Before considering a feature or critical change complete, check whether it needs a docs update, and make it in the same PR.**
+
+Update docs when a change:
+- Adds, removes, or changes a **keyboard shortcut** → update `apps/docs/content/docs/advanced/keyboard-shortcuts.mdx` (and keep it in sync with `apps/ui/src/components/editor/keyboard-shortcuts-modal.tsx`, the in-app modal — both must list the same shortcuts).
+- Adds a new **editor feature or workflow** (new panel, new tool, new timeline behavior, new export option, etc.) → add or extend a page under the relevant section (`basics/`, `advanced/`, `animation/`, `color-grading/`, `effects/`, `media/`). Add new pages to that section's `meta.json`.
+- Changes **existing documented behavior** (e.g. how trimming, export, or track operations work) → update the existing page describing it; don't leave stale instructions.
+- Is purely internal (refactor, perf, non-user-visible bug fix) → no docs update needed. Internal architecture still goes in `packages/render-engine/docs/DESIGN.md` per the section above.
+
+After editing `.mdx` or `meta.json` files, run `pnpm --filter @tooscut/docs typecheck` (regenerates `apps/docs/source.generated.ts` and validates MDX) before finishing — see the `preflight` skill.
+
 
 # Agent Instructions for task management
 
