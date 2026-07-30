@@ -15,8 +15,8 @@
  * Requires a browser environment with WebGPU support.
  */
 
-import { commands } from "@vitest/browser/context";
 import { describe, it, beforeAll, afterAll } from "vitest";
+import { commands } from "vitest/browser";
 
 import type { TransitionType, RenderFrame } from "../src/types.js";
 
