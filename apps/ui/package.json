@@ -31,7 +31,7 @@
     "dexie": "^4.4.4",
     "dexie-react-hooks": "^4.4.0",
     "konva": "^10.3.0",
-    "lucide-react": "^0.561.0",
+    "lucide-react": "^1.27.0",
     "mediabunny": "^1.51.0",
     "nitro": "npm:nitro-nightly@3.0.1-20260410-164248-8ab58a4b",
     "radix-ui": "^1.6.7",

@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { GithubIcon } from "lucide-react";
 
+import { GithubIcon } from "@/components/github-icon";
 import { LogoIcon } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { useScroll } from "@/hooks/use-scroll";
