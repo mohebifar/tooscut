@@ -19,19 +19,30 @@ const config = defineConfig({
   server: {
     headers: COOP_HEADERS,
   },
-  // Nitro-level headers — this is what actually sets headers in dev
-  // since Nitro is the HTTP request handler in TanStack Start.
+  // Nitro-level headers. In dev these are applied by Nitro itself; in
+  // production the Vercel preset compiles these routeRules into
+  // .vercel/output/config.json, which is what actually serves the site.
+  // (Under the Build Output API that generated config is authoritative, so
+  // putting these in vercel.json instead does not work.)
   //
-  // These only cover requests that reach Nitro. In production on Vercel,
-  // /assets/* is served straight off the CDN and never touches this handler,
-  // so the same headers are declared in vercel.json — keep the two in sync.
   // Getting this wrong is silent locally and fatal in production: a COEP
-  // document may only spawn a worker whose own script carries a COEP header,
-  // so an unheadered compositor.worker.js is blocked with
-  // ERR_BLOCKED_BY_RESPONSE and the editor hangs on "Initializing GPU...".
+  // document may only spawn a worker whose own script response also carries a
+  // COEP header, otherwise the browser blocks it with ERR_BLOCKED_BY_RESPONSE
+  // and the editor hangs on "Initializing GPU...".
+  //
+  // To check a change here, build with NITRO_PRESET=vercel and read
+  // .vercel/output/config.json — the routes are matched first-wins.
   nitro: {
     routeRules: {
       "/**": { headers: COOP_HEADERS },
+      // /assets/** needs its own rule even though /** already covers it.
+      // Nitro emits a `/assets/(.*)` cache-control route into Vercel's build
+      // output config, and Vercel stops at the first matching route — so
+      // assets never reached the `/(.*)` rule above and shipped without COEP.
+      // Repeating the headers here puts them on the route that actually wins.
+      "/assets/**": {
+        headers: { ...COOP_HEADERS, "cache-control": "public, max-age=31536000, immutable" },
+      },
     },
   },
   resolve: {
