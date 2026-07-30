@@ -421,11 +421,15 @@ interface HydratedAsset extends StoreMediaAsset {
 export async function hydrateAssets(assets: StoreMediaAsset[]): Promise<{
   hydrated: HydratedAsset[];
   pendingIds: string[];
-  failedIds: string[];
+  /** No stored file handle, or an error reading it — the file is gone/inaccessible. */
+  missingIds: string[];
+  /** A stored file handle exists but permission was explicitly denied — re-grantable. */
+  deniedIds: string[];
 }> {
   const hydrated: HydratedAsset[] = [];
   const pendingIds: string[] = [];
-  const failedIds: string[] = [];
+  const missingIds: string[] = [];
+  const deniedIds: string[] = [];
 
   for (const asset of assets) {
     // Assets that already have URLs (e.g. remote) don't need file handle hydration
@@ -436,7 +440,7 @@ export async function hydrateAssets(assets: StoreMediaAsset[]): Promise<{
     try {
       const stored = await db.fileHandles.get(asset.id);
       if (!stored) {
-        failedIds.push(asset.id);
+        missingIds.push(asset.id);
         continue;
       }
 
@@ -453,15 +457,17 @@ export async function hydrateAssets(assets: StoreMediaAsset[]): Promise<{
         // Needs user gesture to request — can't do it automatically
         pendingIds.push(asset.id);
       } else {
-        failedIds.push(asset.id);
+        // "denied" — the handle is still there, the user just said no.
+        // Distinct from a missing file: re-granting access can recover it.
+        deniedIds.push(asset.id);
       }
     } catch (err) {
       console.error(`[hydrate] asset ${asset.id}: error`, err);
-      failedIds.push(asset.id);
+      missingIds.push(asset.id);
     }
   }
 
-  return { hydrated, pendingIds, failedIds };
+  return { hydrated, pendingIds, missingIds, deniedIds };
 }
 
 /**
@@ -471,8 +477,9 @@ export async function hydrateAssets(assets: StoreMediaAsset[]): Promise<{
 export async function requestPermissionAndHydrate(
   assetIds: string[],
   allAssets: StoreMediaAsset[],
-): Promise<HydratedAsset[]> {
+): Promise<{ hydrated: HydratedAsset[]; deniedIds: string[] }> {
   const hydrated: HydratedAsset[] = [];
+  const deniedIds: string[] = [];
 
   for (const assetId of assetIds) {
     const asset = allAssets.find((a) => a.id === assetId);
@@ -491,13 +498,16 @@ export async function requestPermissionAndHydrate(
         const file = await stored.handle.getFile();
         const url = URL.createObjectURL(file);
         hydrated.push({ ...asset, url, file, size: file.size });
+      } else {
+        deniedIds.push(assetId);
       }
     } catch (err) {
       console.error(`[permission] asset ${assetId}: error`, err);
+      deniedIds.push(assetId);
     }
   }
 
-  return hydrated;
+  return { hydrated, deniedIds };
 }
 
 /**

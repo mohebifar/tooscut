@@ -24,6 +24,7 @@ import {
   type CompositorApi,
 } from "../../workers/compositor-api";
 import { useAssetStore, type MediaAsset } from "../timeline/use-asset-store";
+import { Button } from "../ui/button";
 import { TransformOverlay } from "./transform/transform-overlay";
 
 // Image element entry for the pool
@@ -41,6 +42,10 @@ export function PreviewPanel() {
   const evaluatorManagerRef = useRef(new EvaluatorManager());
   const [isInitialized, setIsInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set when the compositor worker crashes (e.g. a WASM panic) rather than
+  // failing to initialize — the worker can't recover in place, so the only
+  // safe path forward is a full reload (the project is autosaved).
+  const [crashed, setCrashed] = useState(false);
 
   // Video frame loader manager - uses HTMLVideoElement in preview mode
   const loaderManagerRef = useRef(new VideoFrameLoaderManager({ mode: "preview" }));
@@ -124,6 +129,11 @@ export function PreviewPanel() {
   // transferControlToOffscreen() is a one-shot operation per canvas element,
   // so we must ensure initialization only happens once.
   const initStartedRef = useRef(false);
+  // Unsubscribe for the compositor crash listener, released on unmount so a
+  // late crash (e.g. a queued call rejecting during teardown) can't setState
+  // on an unmounted component.
+  const crashUnsubscribeRef = useRef<(() => void) | null>(null);
+  const isMountedRef = useRef(true);
 
   // Initialize compositor (worker-based)
   useEffect(() => {
@@ -146,6 +156,17 @@ export function PreviewPanel() {
 
         compositorRef.current = compositor;
         setSharedCompositor(compositor);
+
+        crashUnsubscribeRef.current = compositor.onCrash((crashError) => {
+          console.error("[PreviewPanel] Compositor crashed:", crashError);
+          if (!isMountedRef.current) return;
+          setCrashed(true);
+          setError(
+            // Don't promise the project is safe: the last edits may still be
+            // inside the autosave debounce window, or their save may have failed.
+            "The GPU preview crashed and can't recover automatically. Reload to continue editing — any changes from the last few seconds may not have been saved.",
+          );
+        });
 
         // If project settings were loaded while the compositor was initializing,
         // the resize effect would have been skipped (isReady was false). Catch up now.
@@ -188,6 +209,9 @@ export function PreviewPanel() {
   // dispose the compositor between mount cycles.
   useEffect(() => {
     return () => {
+      isMountedRef.current = false;
+      crashUnsubscribeRef.current?.();
+      crashUnsubscribeRef.current = null;
       useFontStore.getState().clearCompositorFunctions();
       setSharedCompositor(null);
       if (compositorRef.current) {
@@ -1044,11 +1068,19 @@ export function PreviewPanel() {
               {error && (
                 <div className="absolute inset-0 flex items-center justify-center bg-background/80">
                   <div className="text-center text-foreground">
-                    <div className="text-lg font-medium text-destructive">GPU Error</div>
-                    <div className="mt-2 text-sm text-muted-foreground">{error}</div>
-                    <div className="mt-4 text-xs text-muted-foreground">
-                      WebGPU may not be supported in your browser
+                    <div className="text-lg font-medium text-destructive">
+                      {crashed ? "Preview Crashed" : "GPU Error"}
                     </div>
+                    <div className="mt-2 max-w-sm text-sm text-muted-foreground">{error}</div>
+                    {crashed ? (
+                      <Button className="mt-4" onClick={() => window.location.reload()}>
+                        Reload
+                      </Button>
+                    ) : (
+                      <div className="mt-4 text-xs text-muted-foreground">
+                        WebGPU may not be supported in your browser
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

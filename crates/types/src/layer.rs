@@ -166,7 +166,10 @@ pub struct RenderFrame {
     pub shape_layers: Vec<ShapeLayerData>,
     /// Line layers.
     pub line_layers: Vec<LineLayerData>,
-    /// Current timeline time in seconds.
+    /// Current timeline time in frames (not seconds, despite the f64 type —
+    /// the TS side always passes a frame count here). Currently unused by
+    /// the compositor (only ever set to 0.0 at init); if this is ever wired
+    /// up for time-based effects, don't assume it's seconds.
     pub timeline_time: f64,
     /// Canvas width in pixels.
     pub width: u32,

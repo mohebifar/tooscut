@@ -98,6 +98,11 @@ function getNodePreview(node: CGNode): string {
       return node.lut.lut_id || "No LUT";
     case "Qualifier":
       return "HSL Key";
+    case "Window": {
+      const shape = node.window.shape;
+      const shapeName = "Circle" in shape ? "Ellipse" : "Rectangle" in shape ? "Rect" : "Gradient";
+      return shapeName;
+    }
     case "ColorSpaceTransform":
       return `${node.from_space} → ${node.to_space}`;
     default:
@@ -117,6 +122,8 @@ function getNodeTheme(type: CGNode["type"]): { bg: string; border: string; accen
       return { bg: "bg-green-950/50", border: "border-green-700/50", accent: "text-green-400" };
     case "Qualifier":
       return { bg: "bg-pink-950/50", border: "border-pink-700/50", accent: "text-pink-400" };
+    case "Window":
+      return { bg: "bg-teal-950/50", border: "border-teal-700/50", accent: "text-teal-400" };
     case "ColorSpaceTransform":
       return { bg: "bg-sky-950/50", border: "border-sky-700/50", accent: "text-sky-400" };
     default:
@@ -137,6 +144,8 @@ function getNodeLabel(node: CGNode): string {
       return "LUT";
     case "Qualifier":
       return "Qualifier";
+    case "Window":
+      return "Window";
     case "ColorSpaceTransform":
       return "CST";
     default:
@@ -463,7 +472,9 @@ function ColorGradingNodeGraphInner({
 
   // Persist position to store on drag end
   const onNodeDragStop = useCallback(
-    (_event: React.MouseEvent, node: Node) => {
+    // @xyflow/react >= 12.11 types this as the native MouseEvent | TouchEvent,
+    // not React's synthetic MouseEvent.
+    (_event: MouseEvent | TouchEvent, node: Node) => {
       if (node.id !== INPUT_NODE_ID && node.id !== OUTPUT_NODE_ID) {
         onUpdateNodePosition(node.id, node.position.x, node.position.y);
       }

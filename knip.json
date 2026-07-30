@@ -2,8 +2,9 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     "apps/ui": {
-      "entry": ["src/routes/**/*.tsx", "src/router.tsx"],
+      "entry": ["src/routes/**/*.tsx"],
       "project": ["src/**/*.{ts,tsx}"],
+      "ignoreExportsUsedInFile": { "interface": true },
       "ignoreDependencies": [
         "tw-animate-css",
         "tailwindcss",
@@ -34,8 +35,6 @@
     "apps/ui/src/components/ui/tabs.tsx",
     "apps/ui/src/components/ui/toggle.tsx",
     "apps/ui/src/components/ui/input.tsx",
-    "apps/ui/src/components/ui/numeric-input.tsx",
-    "apps/ui/src/components/ui/color-input.tsx",
     "apps/ui/src/components/ui/tooltip.tsx",
     "apps/docs/source.generated.ts",
     "apps/docs/src/components/mdx.tsx"

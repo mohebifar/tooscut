@@ -16,7 +16,7 @@ import audioWasmUrl from "@tooscut/render-engine/wasm/audio-engine/audio_engine_
 import { useEffect, useRef, useCallback, useState } from "react";
 
 import { useAssetStore } from "../components/timeline/use-asset-store";
-import { useVideoEditorStore } from "../state/video-editor-store";
+import { effectiveClipFades, useVideoEditorStore } from "../state/video-editor-store";
 
 /** Module-level ref so other components can access the engine for metering */
 let _audioEngineInstance: BrowserAudioEngine | null = null;
@@ -113,8 +113,10 @@ export function useAudioEngine() {
         inPoint: framesToSeconds(clip.inPoint, fps),
         speed: clip.speed,
         gain: clip.volume ?? 1.0,
-        fadeIn: 0,
-        fadeOut: 0,
+        // Clamped at read time: a trim or speed change can leave a stored fade
+        // longer than the (now shorter) clip. See effectiveClipFades().
+        fadeIn: framesToSeconds(effectiveClipFades(clip).fadeIn, fps),
+        fadeOut: framesToSeconds(effectiveClipFades(clip).fadeOut, fps),
         keyframes: clip.keyframes,
         effects: clip.audioEffects,
       }));

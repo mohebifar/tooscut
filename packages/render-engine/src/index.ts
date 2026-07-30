@@ -51,6 +51,14 @@ export {
   CUBIC_BEZIER_PRESETS,
 } from "./keyframe-evaluator.js";
 
+// Color matching (pure TypeScript)
+export {
+  computeChannelStats,
+  matchColorCorrection,
+  matchColorFromPixels,
+  type ChannelStats,
+} from "./color-matching.js";
+
 // Compositor (WASM)
 export { Compositor, initCompositorWasm } from "./compositor.js";
 

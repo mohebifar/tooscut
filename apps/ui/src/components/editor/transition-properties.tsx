@@ -109,6 +109,8 @@ function TransitionSection({ label, transition, onChange }: TransitionSectionPro
                 step={0.1}
                 value={[duration]}
                 onValueChange={handleDurationChange}
+                onPointerDown={() => useVideoEditorStore.temporal.getState().pause()}
+                onValueCommit={() => useVideoEditorStore.temporal.getState().resume()}
                 className="w-20"
               />
               <span className="w-8 text-right text-xs text-muted-foreground">

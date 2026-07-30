@@ -347,8 +347,20 @@ pub struct ColorGradingUniforms {
     pub tone_mapping_b: f32,
     pub _pad_tone: f32,
 
-    // Padding to 512 bytes (416 used, 96 remaining = 24 floats)
-    pub _pad: [f32; 24],
+    // === Master curve (piecewise-linear, up to 6 control points) ===
+    // R/G/B channel curves and non-linear (spline) interpolation are not
+    // implemented yet — only the master curve, evaluated identically on all
+    // three channels, matching Curve1D::evaluate()'s linear interpolation.
+    /// Control points packed 2-per-vec4 as (x,y,x,y): up to 6 points.
+    pub curve_master: [[f32; 4]; 3], // 48 bytes
+    /// Number of valid points in curve_master (< 2 disables the curve).
+    pub curve_master_count: f32,
+    /// Curves node mix (0 = bypass, 1 = full effect).
+    pub curves_mix: f32,
+    pub _pad_curve: [f32; 2],
+
+    // Padding to 512 bytes (480 used, 32 remaining = 8 floats)
+    pub _pad: [f32; 8],
 }
 
 impl Default for ColorGradingUniforms {
@@ -394,7 +406,11 @@ impl Default for ColorGradingUniforms {
             tone_mapping_a: 1.0,
             tone_mapping_b: 1.0,
             _pad_tone: 0.0,
-            _pad: [0.0; 24],
+            curve_master: [[0.0; 4]; 3],
+            curve_master_count: 0.0,
+            curves_mix: 1.0,
+            _pad_curve: [0.0; 2],
+            _pad: [0.0; 8],
         }
     }
 }
@@ -411,6 +427,9 @@ pub const FLAG_INPUT_CST: u32 = 1 << 7;
 pub const FLAG_OUTPUT_CST: u32 = 1 << 8;
 pub const FLAG_INPUT_GAMUT: u32 = 1 << 9;
 pub const FLAG_OUTPUT_GAMUT: u32 = 1 << 10;
+
+/// Number of control points that fit in ColorGradingUniforms::curve_master.
+const MAX_CURVE_POINTS: usize = 6;
 
 /// Get peak scene-linear luminance (in nits) for a source transfer function.
 /// Used to compute tone mapping parameters.
@@ -588,6 +607,38 @@ impl ColorGradingUniforms {
                     uniforms.gain = [gain_rgb[0], gain_rgb[1], gain_rgb[2], wheels.gain_luminance];
                     uniforms.wheels_mix = *mix;
                 }
+                ColorGradingNode::Curves { curves, mix, .. } => {
+                    // Only the master curve is applied on the GPU today (see
+                    // ColorGradingUniforms::curve_master docs) — R/G/B channel
+                    // curves and non-linear interpolation are follow-up work.
+                    let points = &curves.master.points;
+                    if points.len() >= 2 && !curves.master.is_identity() {
+                        uniforms.flags |= FLAG_CURVES_ENABLED;
+                        uniforms.curves_mix = *mix;
+                        let capped = points.len().min(MAX_CURVE_POINTS);
+                        if points.len() > MAX_CURVE_POINTS {
+                            // Don't fail silently — the rendered curve won't
+                            // match what the user drew in the editor.
+                            log::warn!(
+                                "Curves node has {} control points but only {} fit in the uniform \
+                                 buffer; the master curve will render truncated",
+                                points.len(),
+                                MAX_CURVE_POINTS
+                            );
+                        }
+                        uniforms.curve_master_count = capped as f32;
+                        for (i, point) in points.iter().take(capped).enumerate() {
+                            let vec_idx = i / 2;
+                            if i % 2 == 0 {
+                                uniforms.curve_master[vec_idx][0] = point.x;
+                                uniforms.curve_master[vec_idx][1] = point.y;
+                            } else {
+                                uniforms.curve_master[vec_idx][2] = point.x;
+                                uniforms.curve_master[vec_idx][3] = point.y;
+                            }
+                        }
+                    }
+                }
                 ColorGradingNode::Lut { lut, .. } => {
                     uniforms.flags |= FLAG_LUT_ENABLED;
                     uniforms.lut_mix = lut.mix;
@@ -672,8 +723,6 @@ impl ColorGradingUniforms {
                 }
                 // CST handled above in the pre-scan
                 ColorGradingNode::ColorSpaceTransform { .. } => {}
-                // Curves require additional texture, handled separately
-                _ => {}
             }
         }
 
@@ -720,6 +769,86 @@ mod tests {
         grading.bypass = true;
         let uniforms = ColorGradingUniforms::from_color_grading(&grading);
         assert_eq!(uniforms.flags & FLAG_BYPASS, FLAG_BYPASS);
+    }
+
+    #[test]
+    fn from_color_grading_curves_identity_is_noop() {
+        use tooscut_types::{Curve1D, Curves};
+        let grading = ColorGrading {
+            bypass: false,
+            input_color_space: tooscut_types::ColorSpace::Srgb,
+            output_color_space: tooscut_types::ColorSpace::Srgb,
+            nodes: vec![ColorGradingNode::Curves {
+                id: "curves-1".into(),
+                enabled: true,
+                mix: 1.0,
+                label: None,
+                position: None,
+                curves: Curves {
+                    master: Curve1D::identity(),
+                    red: Curve1D::identity(),
+                    green: Curve1D::identity(),
+                    blue: Curve1D::identity(),
+                    hue_vs_sat: None,
+                    hue_vs_hue: None,
+                    hue_vs_lum: None,
+                    lum_vs_sat: None,
+                    sat_vs_sat: None,
+                },
+            }],
+        };
+        let uniforms = ColorGradingUniforms::from_color_grading(&grading);
+        assert_eq!(
+            uniforms.flags & FLAG_CURVES_ENABLED,
+            0,
+            "identity curve should not enable the curves flag"
+        );
+    }
+
+    #[test]
+    fn from_color_grading_curves_master_applied() {
+        use tooscut_types::{Curve1D, CurvePoint, Curves};
+        let grading = ColorGrading {
+            bypass: false,
+            input_color_space: tooscut_types::ColorSpace::Srgb,
+            output_color_space: tooscut_types::ColorSpace::Srgb,
+            nodes: vec![ColorGradingNode::Curves {
+                id: "curves-1".into(),
+                enabled: true,
+                mix: 1.0,
+                label: None,
+                position: None,
+                curves: Curves {
+                    master: Curve1D {
+                        points: vec![
+                            CurvePoint::new(0.0, 0.0),
+                            CurvePoint::new(0.5, 0.7),
+                            CurvePoint::new(1.0, 1.0),
+                        ],
+                    },
+                    red: Curve1D::identity(),
+                    green: Curve1D::identity(),
+                    blue: Curve1D::identity(),
+                    hue_vs_sat: None,
+                    hue_vs_hue: None,
+                    hue_vs_lum: None,
+                    lum_vs_sat: None,
+                    sat_vs_sat: None,
+                },
+            }],
+        };
+        let uniforms = ColorGradingUniforms::from_color_grading(&grading);
+        assert_eq!(uniforms.flags & FLAG_CURVES_ENABLED, FLAG_CURVES_ENABLED);
+        assert_eq!(uniforms.curve_master_count, 3.0);
+        // Point 0: (0.0, 0.0) packed into curve_master[0].xy
+        assert_eq!(uniforms.curve_master[0][0], 0.0);
+        assert_eq!(uniforms.curve_master[0][1], 0.0);
+        // Point 1: (0.5, 0.7) packed into curve_master[0].zw
+        assert_eq!(uniforms.curve_master[0][2], 0.5);
+        assert_eq!(uniforms.curve_master[0][3], 0.7);
+        // Point 2: (1.0, 1.0) packed into curve_master[1].xy
+        assert_eq!(uniforms.curve_master[1][0], 1.0);
+        assert_eq!(uniforms.curve_master[1][1], 1.0);
     }
 
     #[test]

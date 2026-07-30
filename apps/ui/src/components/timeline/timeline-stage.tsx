@@ -1,7 +1,7 @@
 "use client";
 
 import Konva from "konva";
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Layer, Line, Rect, Stage, Text } from "react-konva";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 
@@ -11,7 +11,7 @@ import type {
   TransitionDropPreview,
 } from "./canvas-timeline";
 
-import { useVideoEditorStore } from "../../state/video-editor-store";
+import { effectiveClipFades, useVideoEditorStore } from "../../state/video-editor-store";
 import { ClipNode, type ClipNodeProps } from "./clip-node";
 import { ClipRenderer, ClipRendererProps } from "./clip-renderer";
 import {
@@ -35,7 +35,11 @@ import {
   TransitionResizeState,
   TrimState,
 } from "./types";
-import { getThumbnailsForClip, useClipThumbnails } from "./use-clip-thumbnails";
+import {
+  getThumbnailsForClip,
+  indexThumbnailsByClip,
+  useClipThumbnails,
+} from "./use-clip-thumbnails";
 import { useClipWaveforms } from "./use-clip-waveform";
 
 interface TimelineStageProps {
@@ -731,6 +735,9 @@ export function TimelineStage({
     trackHeaderWidth: TRACK_HEADER_WIDTH,
     viewportWidth: width,
   });
+  // Indexed once per thumbnailData change so per-clip prop building doesn't
+  // do an O(n) array scan per clip (O(n^2) across all visible clips).
+  const thumbnailDataByClip = useMemo(() => indexThumbnailsByClip(thumbnailData), [thumbnailData]);
 
   // Audio clip waveforms
   const waveformMap = useClipWaveforms(thumbnailClips);
@@ -746,6 +753,17 @@ export function TimelineStage({
     (x: number) => (x - TRACK_HEADER_WIDTH + scrollX) / zoom,
     [zoom, scrollX],
   );
+
+  // Cheap time-range pre-filter so off-screen clips skip track lookup and
+  // prop building entirely, instead of only being culled after that work is
+  // already done. A small buffer avoids pop-in right at the viewport edge.
+  const visibleTimeRange = useMemo(() => {
+    const buffer = (width / zoom) * 0.25;
+    return {
+      start: xToFrame(TRACK_HEADER_WIDTH) - buffer,
+      end: xToFrame(width) + buffer,
+    };
+  }, [xToFrame, width, zoom]);
 
   // Compute split layout (video section + audio section with mirrored heights)
   const splitLayout = useMemo(
@@ -848,75 +866,129 @@ export function TimelineStage({
     return lines;
   }, [scrollX, zoom, width, duration, fpsFloat, frameToX]);
 
+  // Wheel deltas are accumulated across events and flushed at most once per
+  // animation frame — trackpads especially can fire many wheel events per
+  // frame, and each state commit forces a full clip re-map (see
+  // handleStageMouseMoveThrottled above for the same pattern).
+  interface WheelAccum {
+    mode: "zoom" | "shift-scroll" | "scroll";
+    zoomFactor: number;
+    deltaX: number;
+    deltaY: number;
+    mouseX: number;
+    pointerY: number;
+  }
+  const wheelAccumRef = useRef<WheelAccum | null>(null);
+  const wheelRafRef = useRef<number | null>(null);
+
+  const flushWheel = useCallback(() => {
+    if (wheelRafRef.current !== null) {
+      cancelAnimationFrame(wheelRafRef.current);
+      wheelRafRef.current = null;
+    }
+    const accum = wheelAccumRef.current;
+    wheelAccumRef.current = null;
+    if (!accum) return;
+
+    if (accum.mode === "zoom") {
+      const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * accum.zoomFactor));
+      // Keep the time under the mouse at the same screen position
+      const timeAtMouse = (accum.mouseX - TRACK_HEADER_WIDTH + scrollX) / zoom;
+      const newScrollX = Math.max(0, timeAtMouse * newZoom - (accum.mouseX - TRACK_HEADER_WIDTH));
+      setZoom(newZoom);
+      setScrollX(newScrollX);
+    } else if (accum.mode === "shift-scroll") {
+      if (Math.abs(accum.deltaY) > 0) {
+        const newScrollX = Math.max(0, Math.min(contentWidth - width, scrollX + accum.deltaY));
+        setScrollX(newScrollX);
+      }
+    } else {
+      if (Math.abs(accum.deltaY) > 0) {
+        // Video section is bottom-aligned, so scrolling is inverted:
+        // scroll down (deltaY > 0) in video section should decrease scrollY
+        // to reveal higher-numbered tracks from the top.
+        // Audio section scrolls normally.
+        const maxScrollY = Math.max(0, sectionContentHeight - sectionHeight);
+        const inVideoSection =
+          accum.pointerY >= videoSectionTop && accum.pointerY < audioSectionTop;
+        const effectiveDelta = inVideoSection ? -accum.deltaY : accum.deltaY;
+        const newScrollY = Math.max(0, Math.min(maxScrollY, scrollY + effectiveDelta));
+        setScrollY(newScrollY);
+      }
+      if (Math.abs(accum.deltaX) > 0) {
+        const newScrollX = Math.max(0, Math.min(contentWidth - width, scrollX + accum.deltaX));
+        setScrollX(newScrollX);
+      }
+    }
+  }, [
+    zoom,
+    scrollX,
+    scrollY,
+    contentWidth,
+    sectionContentHeight,
+    sectionHeight,
+    width,
+    setZoom,
+    setScrollX,
+    setScrollY,
+    videoSectionTop,
+    audioSectionTop,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (wheelRafRef.current !== null) {
+        cancelAnimationFrame(wheelRafRef.current);
+      }
+    };
+  }, []);
+
   // Handle wheel for zoom/scroll
   const handleWheel = useCallback(
     (e: Konva.KonvaEventObject<WheelEvent>) => {
       const evt = e.evt;
+      // Must call preventDefault synchronously within the native event to
+      // stop page scroll — the actual state update is deferred/coalesced.
       evt.preventDefault();
 
-      if (evt.metaKey || evt.ctrlKey) {
-        // Zoom centered around mouse pointer
-        const stage = e.target.getStage();
-        const pointerPos = stage?.getPointerPosition();
-        const mouseX = pointerPos?.x ?? width / 2;
+      const stage = e.target.getStage();
+      const pointerPos = stage?.getPointerPosition();
+      const mode: WheelAccum["mode"] =
+        evt.metaKey || evt.ctrlKey ? "zoom" : evt.shiftKey ? "shift-scroll" : "scroll";
 
-        const zoomDelta = evt.deltaY > 0 ? 0.9 : 1.1;
-        const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * zoomDelta));
+      const prev = wheelAccumRef.current;
+      if (!prev || prev.mode !== mode) {
+        // Mode changed mid-gesture (rare) — flush what's pending first so
+        // deltas from different modes never get mixed together.
+        flushWheel();
+        wheelAccumRef.current = {
+          mode,
+          zoomFactor: 1,
+          deltaX: 0,
+          deltaY: 0,
+          mouseX: pointerPos?.x ?? width / 2,
+          pointerY: pointerPos?.y ?? 0,
+        };
+      }
 
-        // Keep the time under the mouse at the same screen position
-        const timeAtMouse = (mouseX - TRACK_HEADER_WIDTH + scrollX) / zoom;
-        const newScrollX = Math.max(0, timeAtMouse * newZoom - (mouseX - TRACK_HEADER_WIDTH));
-
-        setZoom(newZoom);
-        setScrollX(newScrollX);
+      const accum = wheelAccumRef.current!;
+      if (mode === "zoom") {
+        accum.zoomFactor *= evt.deltaY > 0 ? 0.9 : 1.1;
+        accum.mouseX = pointerPos?.x ?? accum.mouseX;
       } else {
-        // Scroll: deltaY scrolls tracks vertically, deltaX scrolls time horizontally.
-        // Shift+wheel swaps: deltaY scrolls horizontally.
-        if (evt.shiftKey) {
-          const horizontalDelta = evt.deltaY;
-          if (Math.abs(horizontalDelta) > 0) {
-            const newScrollX = Math.max(
-              0,
-              Math.min(contentWidth - width, scrollX + horizontalDelta),
-            );
-            setScrollX(newScrollX);
-          }
-        } else {
-          if (Math.abs(evt.deltaY) > 0) {
-            // Video section is bottom-aligned, so scrolling is inverted:
-            // scroll down (deltaY > 0) in video section should decrease scrollY
-            // to reveal higher-numbered tracks from the top.
-            // Audio section scrolls normally.
-            const maxScrollY = Math.max(0, sectionContentHeight - sectionHeight);
-            const stage = e.target.getStage();
-            const pointerPos = stage?.getPointerPosition();
-            const pointerY = pointerPos?.y ?? 0;
-            const inVideoSection = pointerY >= videoSectionTop && pointerY < audioSectionTop;
-            const effectiveDelta = inVideoSection ? -evt.deltaY : evt.deltaY;
-            const newScrollY = Math.max(0, Math.min(maxScrollY, scrollY + effectiveDelta));
-            setScrollY(newScrollY);
-          }
-          if (Math.abs(evt.deltaX) > 0) {
-            const newScrollX = Math.max(0, Math.min(contentWidth - width, scrollX + evt.deltaX));
-            setScrollX(newScrollX);
-          }
-        }
+        accum.deltaX += evt.deltaX;
+        accum.deltaY += evt.deltaY;
+        accum.pointerY = pointerPos?.y ?? accum.pointerY;
+      }
+
+      if (wheelRafRef.current === null) {
+        wheelRafRef.current = requestAnimationFrame(() => {
+          wheelRafRef.current = null;
+          flushWheel();
+        });
       }
     },
-    [
-      zoom,
-      scrollX,
-      scrollY,
-      contentWidth,
-      sectionContentHeight,
-      sectionHeight,
-      width,
-      setZoom,
-      setScrollX,
-      setScrollY,
-      videoSectionTop,
-      audioSectionTop,
-    ],
+    [width, flushWheel],
   );
 
   // Get clip at position
@@ -2100,8 +2172,53 @@ export function TimelineStage({
     ],
   );
 
+  // Raw mousemove can fire far more often than the display refresh rate
+  // (especially on high-poll-rate mice), and each call rebuilds clip props
+  // for the whole timeline. Coalesce to at most one handleStageMouseMove
+  // call per animation frame.
+  const pendingMouseMoveEventRef = useRef<Konva.KonvaEventObject<MouseEvent> | null>(null);
+  const mouseMoveRafRef = useRef<number | null>(null);
+
+  const flushPendingMouseMove = useCallback(() => {
+    if (mouseMoveRafRef.current !== null) {
+      cancelAnimationFrame(mouseMoveRafRef.current);
+      mouseMoveRafRef.current = null;
+    }
+    const pending = pendingMouseMoveEventRef.current;
+    if (pending) {
+      pendingMouseMoveEventRef.current = null;
+      handleStageMouseMove(pending);
+    }
+  }, [handleStageMouseMove]);
+
+  const handleStageMouseMoveThrottled = useCallback(
+    (e: Konva.KonvaEventObject<MouseEvent>) => {
+      pendingMouseMoveEventRef.current = e;
+      if (mouseMoveRafRef.current !== null) return;
+      mouseMoveRafRef.current = requestAnimationFrame(() => {
+        mouseMoveRafRef.current = null;
+        const pending = pendingMouseMoveEventRef.current;
+        pendingMouseMoveEventRef.current = null;
+        if (pending) handleStageMouseMove(pending);
+      });
+    },
+    [handleStageMouseMove],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (mouseMoveRafRef.current !== null) {
+        cancelAnimationFrame(mouseMoveRafRef.current);
+      }
+    };
+  }, []);
+
   // Handle mouse up
   const handleStageMouseUp = useCallback(() => {
+    // Apply the latest coalesced mousemove before committing, so the drag
+    // doesn't end one frame behind the actual pointer position.
+    flushPendingMouseMove();
+
     // End track height resize
     if (trackResizeRef.current) {
       trackResizeRef.current = null;
@@ -2228,6 +2345,7 @@ export function TimelineStage({
       setSnapLines([]);
     }
   }, [
+    flushPendingMouseMove,
     trimPreview,
     dragPreview,
     transitionResizePreview,
@@ -2311,12 +2429,16 @@ export function TimelineStage({
         clips.some((c) => c.linkedClipId === clip.id) || clip.linkedClipId !== undefined;
 
       const thumbnails =
-        (clip.type === "video" || clip.type === "image") && thumbnailData
-          ? getThumbnailsForClip(thumbnailData, clip.id)
+        clip.type === "video" || clip.type === "image"
+          ? getThumbnailsForClip(thumbnailDataByClip, clip.id)
           : [];
 
       const clipAssetId = "assetId" in clip ? clip.assetId : undefined;
       const wf = clip.type === "audio" && clipAssetId ? waveformMap.get(clipAssetId) : undefined;
+      // Clamped so the overlay matches what playback/export actually apply
+      // after a trim or speed change shortened the clip.
+      const { fadeIn, fadeOut } =
+        clip.type === "audio" ? effectiveClipFades(clip) : { fadeIn: 0, fadeOut: 0 };
 
       // transitionIn/transitionOut only exist on VisualClipBase descendants (not AudioClip)
       const clipTransitionIn = "transitionIn" in clip ? clip.transitionIn : undefined;
@@ -2380,6 +2502,8 @@ export function TimelineStage({
         thumbnails,
         waveformData: wf?.data,
         waveformDuration: wf?.duration,
+        fadeIn,
+        fadeOut,
         isZooming,
         zoom,
         fps,
@@ -2393,7 +2517,7 @@ export function TimelineStage({
       transitionResizePreview,
       transitionHover,
       selectedTransition,
-      thumbnailData,
+      thumbnailDataByClip,
       waveformMap,
       zoom,
       width,
@@ -2493,7 +2617,7 @@ export function TimelineStage({
       style={{ cursor }}
       onWheel={handleWheel}
       onMouseDown={handleStageMouseDown}
-      onMouseMove={handleStageMouseMove}
+      onMouseMove={handleStageMouseMoveThrottled}
       onMouseUp={handleStageMouseUp}
       onMouseLeave={handleStageMouseUp}
     >
@@ -2530,6 +2654,7 @@ export function TimelineStage({
               dragPreview={dragPreview}
               trimPreview={trimPreview}
               buildClipNodeProps={buildClipNodeProps}
+              visibleTimeRange={visibleTimeRange}
             />
           </Group>
           <CrossTransitionOverlays
@@ -2577,6 +2702,7 @@ export function TimelineStage({
               dragPreview={dragPreview}
               trimPreview={trimPreview}
               buildClipNodeProps={buildClipNodeProps}
+              visibleTimeRange={visibleTimeRange}
             />
           </Group>
           <Group x={TRACK_HEADER_WIDTH - scrollX} y={audioBaseY} listening={false}>
@@ -2765,8 +2891,12 @@ export function TimelineStage({
           fill="#444444"
           listening={false}
         />
+      </Layer>
 
-        {/* Playhead */}
+      {/* Playhead redraws every animation frame during playback — kept on
+          its own layer so that doesn't force a redraw of the ruler, track
+          headers, and other static content above. */}
+      <Layer perfectDrawEnabled={false} listening={false}>
         <Playhead width={width} height={height} />
       </Layer>
     </Stage>

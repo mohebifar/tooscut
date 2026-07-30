@@ -1,5 +1,13 @@
-import { HeadContent, Outlet, Scripts, createRootRoute } from "@tanstack/react-router";
+import {
+  HeadContent,
+  Outlet,
+  Scripts,
+  createRootRoute,
+  Link,
+  type ErrorComponentProps,
+} from "@tanstack/react-router";
 
+import { Button } from "../components/ui/button";
 import appCss from "../styles.css?url";
 
 export const Route = createRootRoute({
@@ -43,10 +51,32 @@ export const Route = createRootRoute({
 
   component: RootComponent,
   shellComponent: RootDocument,
+  errorComponent: RootErrorComponent,
 });
 
 function RootComponent() {
   return <Outlet />;
+}
+
+function RootErrorComponent({ error, reset }: ErrorComponentProps) {
+  console.error(error);
+
+  return (
+    <div className="flex h-screen w-screen flex-col items-center justify-center gap-4 bg-background p-8 text-center">
+      <h1 className="text-lg font-semibold">Something went wrong</h1>
+      <p className="max-w-md text-sm text-muted-foreground">
+        The editor hit an unexpected error. Your project is autosaved, so it's safe to reload.
+      </p>
+      <div className="flex gap-2">
+        <Button variant="secondary" onClick={() => reset()}>
+          Try again
+        </Button>
+        <Button asChild>
+          <Link to="/">Go to projects</Link>
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function RootDocument({ children }: { children: React.ReactNode }) {

@@ -514,7 +514,9 @@ class MediaBunnyAdapter implements VideoFrameSourceAdapter {
       index,
       timestamp: Math.max(0, Math.min(timestamp, this._info.duration)),
     }));
-    const results: Array<ImageBitmap | null> = new Array(timestamps.length).fill(null);
+    const results: Array<ImageBitmap | null> = Array.from<ImageBitmap | null>({
+      length: timestamps.length,
+    }).fill(null);
     const lastTimestamp = clamped[clamped.length - 1]!.timestamp;
     const iterator = this.frames(
       clamped[0]!.timestamp,

@@ -505,6 +505,7 @@ export interface RenderFrame {
   text_layers: TextLayerData[];
   shape_layers: ShapeLayerData[];
   line_layers: LineLayerData[];
+  /** Frames, not seconds. Currently unused by the compositor. */
   timeline_time: number;
   width: number;
   height: number;

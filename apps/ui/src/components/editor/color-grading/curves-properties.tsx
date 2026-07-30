@@ -126,7 +126,7 @@ function evaluateCurve(curve: Curve1D, x: number): number {
   }
 
   // Initial tangents
-  const tangents = new Array<number>(n);
+  const tangents: number[] = Array.from({ length: n });
   tangents[0] = deltas[0];
   tangents[n - 1] = deltas[n - 2];
 

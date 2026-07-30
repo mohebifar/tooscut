@@ -91,6 +91,10 @@ export interface AudioClip extends EditableClip {
   keyframes?: KeyframeTracks;
   /** Per-clip audio effects (EQ, compressor, noise gate, reverb) */
   audioEffects?: AudioEffectsParams;
+  /** Fade-in duration in frames, relative to the clip's start edge. */
+  fadeIn?: number;
+  /** Fade-out duration in frames, relative to the clip's end edge. */
+  fadeOut?: number;
 }
 
 export interface ImageClip extends VisualClipBase {
@@ -332,6 +336,8 @@ interface VideoEditorState {
   updateClipEffects: (clipId: string, effects: Partial<Effects>) => void;
   updateClipVolume: (clipId: string, volume: number) => void;
   updateClipSpeed: (clipId: string, speed: number) => void;
+  setClipFadeIn: (clipId: string, frames: number) => void;
+  setClipFadeOut: (clipId: string, frames: number) => void;
   updateClipAudioEffects: (
     clipId: string,
     effectType: keyof AudioEffectsParams,
@@ -502,6 +508,36 @@ function isClipOnLockedTrack(clip: EditorClip, tracks: EditableTrack[]): boolean
 }
 
 /**
+ * Clamp a fade to a whole number of frames within [0, half the clip duration].
+ * Rounds because fadeIn/fadeOut are frame counts — `duration / 2` is fractional
+ * for odd durations and would otherwise persist e.g. 12.5 frames.
+ */
+function clampFadeFrames(frames: number, durationFrames: number): number {
+  const max = Math.max(0, Math.floor(durationFrames / 2));
+  return Math.max(0, Math.min(max, Math.round(frames)));
+}
+
+/**
+ * The fades that should actually be applied to a clip right now.
+ *
+ * Trims and speed changes alter `duration` without touching the fades, so a
+ * stored fade can exceed half — or all — of a shortened clip. Rather than
+ * destructively re-clamping on every duration change (which would also lose
+ * the user's intent if they later lengthen the clip again), the stored value is
+ * treated as intent and clamped at every point it's read for playback, export,
+ * or display.
+ */
+export function effectiveClipFades(clip: { duration: number; fadeIn?: number; fadeOut?: number }): {
+  fadeIn: number;
+  fadeOut: number;
+} {
+  return {
+    fadeIn: clampFadeFrames(clip.fadeIn ?? 0, clip.duration),
+    fadeOut: clampFadeFrames(clip.fadeOut ?? 0, clip.duration),
+  };
+}
+
+/**
  * Shift clips on the given tracks whose startTime is >= fromTime by delta (can be negative).
  * Excludes clips whose ids are in the exclude set (e.g., the clip being trimmed/deleted).
  * Clamps startTime to >= 0.
@@ -512,7 +548,8 @@ function shiftDownstreamClips(
   shifts: Array<{ trackId: string; fromTime: number; delta: number }>,
   exclude: ReadonlySet<string>,
 ): EditorClip[] {
-  if (shifts.length === 0 || shifts.every((s) => s.delta === 0)) return clips;
+  // every() is already true for an empty array, so no separate length check.
+  if (shifts.every((s) => s.delta === 0)) return clips;
   const lockedTrackIds = new Set(tracks.filter((t) => t.locked).map((t) => t.id));
   const byTrack = new Map<string, Array<{ fromTime: number; delta: number }>>();
   for (const s of shifts) {
@@ -1737,6 +1774,22 @@ export const useVideoEditorStore = create<VideoEditorState>()(
             clips: state.clips.map((clip) =>
               clip.id === clipId ? { ...clip, volume: Math.max(0, Math.min(2, volume)) } : clip,
             ),
+          })),
+
+        setClipFadeIn: (clipId, frames) =>
+          set((state) => ({
+            clips: state.clips.map((clip) => {
+              if (clip.id !== clipId || clip.type !== "audio") return clip;
+              return { ...clip, fadeIn: clampFadeFrames(frames, clip.duration) };
+            }),
+          })),
+
+        setClipFadeOut: (clipId, frames) =>
+          set((state) => ({
+            clips: state.clips.map((clip) => {
+              if (clip.id !== clipId || clip.type !== "audio") return clip;
+              return { ...clip, fadeOut: clampFadeFrames(frames, clip.duration) };
+            }),
           })),
 
         updateClipSpeed: (clipId, speed) =>

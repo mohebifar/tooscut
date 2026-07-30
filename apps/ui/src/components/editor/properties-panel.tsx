@@ -1,5 +1,6 @@
 import type { Effects, AudioEffectsParams, ColorGrading } from "@tooscut/render-engine";
 
+import { framesToSeconds, secondsToFrames } from "@tooscut/render-engine";
 import {
   ClapperboardIcon,
   ImageIcon,
@@ -11,7 +12,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState, useCallback } from "react";
 
-import { useVideoEditorStore } from "../../state/video-editor-store";
+import { effectiveClipFades, useVideoEditorStore } from "../../state/video-editor-store";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { AudioEffectsProperties } from "./audio-effects-properties";
 import { AudioProperties } from "./audio-properties";
@@ -32,6 +33,8 @@ export function PropertiesPanel() {
   const updateClipTransform = useVideoEditorStore((s) => s.updateClipTransform);
   const updateClipEffects = useVideoEditorStore((s) => s.updateClipEffects);
   const updateClipVolume = useVideoEditorStore((s) => s.updateClipVolume);
+  const setClipFadeIn = useVideoEditorStore((s) => s.setClipFadeIn);
+  const setClipFadeOut = useVideoEditorStore((s) => s.setClipFadeOut);
   const updateClipText = useVideoEditorStore((s) => s.updateClipText);
   const updateClipTextStyle = useVideoEditorStore((s) => s.updateClipTextStyle);
   const updateClipTextBox = useVideoEditorStore((s) => s.updateClipTextBox);
@@ -138,6 +141,16 @@ export function PropertiesPanel() {
       ? (selectedClip.volume ?? 1)
       : 1;
 
+  // Fade in/out, in seconds (stored on the clip in frames). Clamped for display
+  // so the shown value matches what actually gets applied — a trim can leave a
+  // stored fade longer than half the (now shorter) clip.
+  const effectiveFades =
+    selectedClip?.type === "audio" ? effectiveClipFades(selectedClip) : { fadeIn: 0, fadeOut: 0 };
+  const fadeIn = framesToSeconds(effectiveFades.fadeIn, settings.fps);
+  const fadeOut = framesToSeconds(effectiveFades.fadeOut, settings.fps);
+  const maxFade =
+    selectedClip?.type === "audio" ? framesToSeconds(selectedClip.duration / 2, settings.fps) : 0;
+
   // Transform update handlers
   const handleTransformChange = useCallback(
     (key: string, value: number) => {
@@ -166,6 +179,23 @@ export function PropertiesPanel() {
       updateClipVolume(selectedClip.id, value);
     },
     [selectedClip, updateClipVolume],
+  );
+
+  // Fade in/out handlers — seconds from the UI, converted to frames for storage
+  const handleFadeInChange = useCallback(
+    (seconds: number) => {
+      if (!selectedClip) return;
+      setClipFadeIn(selectedClip.id, secondsToFrames(seconds, settings.fps));
+    },
+    [selectedClip, setClipFadeIn, settings.fps],
+  );
+
+  const handleFadeOutChange = useCallback(
+    (seconds: number) => {
+      if (!selectedClip) return;
+      setClipFadeOut(selectedClip.id, secondsToFrames(seconds, settings.fps));
+    },
+    [selectedClip, setClipFadeOut, settings.fps],
   );
 
   // Speed update handler
@@ -326,8 +356,13 @@ export function PropertiesPanel() {
               clipStartTime={selectedClip.startTime}
               volume={volume}
               speed={speed}
+              fadeIn={fadeIn}
+              fadeOut={fadeOut}
+              maxFade={maxFade}
               onVolumeChange={handleVolumeChange}
               onSpeedChange={handleSpeedChange}
+              onFadeInChange={handleFadeInChange}
+              onFadeOutChange={handleFadeOutChange}
             />
             <div className="mt-4">
               <AudioEffectsProperties

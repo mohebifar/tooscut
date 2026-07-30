@@ -6,6 +6,7 @@ import { useState, useRef, useCallback, useEffect, memo } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { useVideoEditorStore } from "../../state/video-editor-store";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 
 /** RGBA color: [r, g, b, a] where each component is 0–1. */
@@ -116,6 +117,9 @@ const SelectionArea = memo(function SelectionArea({
   useEffect(() => {
     const move = (e: PointerEvent) => dragging.current && update(e.clientX, e.clientY);
     const up = () => {
+      if (dragging.current) {
+        useVideoEditorStore.temporal.getState().resume();
+      }
       dragging.current = false;
     };
     window.addEventListener("pointermove", move);
@@ -137,6 +141,7 @@ const SelectionArea = memo(function SelectionArea({
       }}
       onPointerDown={(e) => {
         e.preventDefault();
+        useVideoEditorStore.temporal.getState().pause();
         dragging.current = true;
         update(e.clientX, e.clientY);
       }}
@@ -270,6 +275,8 @@ export function ColorInput({ value, onChange, showAlpha = false, className }: Co
           step={1}
           value={[hue]}
           onValueChange={([h]) => handleHue(h)}
+          onPointerDown={() => useVideoEditorStore.temporal.getState().pause()}
+          onValueCommit={() => useVideoEditorStore.temporal.getState().resume()}
         >
           <Slider.Track className="relative my-0.5 h-3 w-full grow rounded-full bg-[linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)]">
             <Slider.Range className="absolute h-full" />
@@ -285,6 +292,8 @@ export function ColorInput({ value, onChange, showAlpha = false, className }: Co
             step={1}
             value={[Math.round(alpha * 100)]}
             onValueChange={([a]) => handleAlpha(a / 100)}
+            onPointerDown={() => useVideoEditorStore.temporal.getState().pause()}
+            onValueCommit={() => useVideoEditorStore.temporal.getState().resume()}
           >
             <Slider.Track
               className="relative my-0.5 h-3 w-full grow rounded-full"

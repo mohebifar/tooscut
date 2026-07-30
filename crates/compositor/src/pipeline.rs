@@ -80,7 +80,22 @@ struct ColorGradingUniforms {
     tone_mapping_a: f32,
     tone_mapping_b: f32,
     _pad_tone2: f32,
-    _pad: array<vec4<f32>, 6>,
+    // Master curve control points, packed 2-per-vec4 as (x,y,x,y): up to 6 points.
+    curve_master: array<vec4<f32>, 3>,
+    curve_master_count: f32,
+    curves_mix: f32,
+    // 8 bytes of padding as scalar f32 fields — NOT vec2/vec3<f32> (which get
+    // 8/16-byte alignment in the uniform address space, unlike Rust's
+    // #[repr(C)] [f32; N] which gets none) and NOT array<f32, N> either (naga
+    // rejects arrays in the uniform address space whose element stride isn't a
+    // multiple of 16, i.e. no raw scalar arrays here at all). Either would
+    // silently grow this struct's total size beyond the 512 bytes the Rust
+    // side allocates/asserts, breaking the buffer binding for every field,
+    // not just curves. Verified against naga (the wgpu project's own WGSL
+    // validator) after getting this wrong twice.
+    _pad_curve_0: f32,
+    _pad_curve_1: f32,
+    _pad: array<vec4<f32>, 2>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: LayerUniforms;
@@ -561,6 +576,7 @@ fn apply_tone_mapping(color: vec3<f32>, method: u32) -> vec3<f32> {
 const CG_FLAG_BYPASS: u32 = 1u;
 const CG_FLAG_PRIMARY_ENABLED: u32 = 2u;
 const CG_FLAG_WHEELS_ENABLED: u32 = 4u;
+const CG_FLAG_CURVES_ENABLED: u32 = 8u;
 const CG_FLAG_LUT_ENABLED: u32 = 16u;
 const CG_FLAG_QUALIFIER_ENABLED: u32 = 32u;
 const CG_FLAG_WINDOW_ENABLED: u32 = 64u;
@@ -644,6 +660,73 @@ fn apply_lift_gamma_gain(
     let gain_factor = 1.0 + gain_rgb + gain_lum;
     result = result * gain_factor;
     return mix(color, result, mix_amount);
+}
+
+// ============================================================================
+// Curves (master curve only — see ColorGradingUniforms.curve_master)
+// ============================================================================
+
+fn get_master_curve_point(i: u32) -> vec2<f32> {
+    let vec_idx = i / 2u;
+    let v = cg.curve_master[vec_idx];
+    if (i % 2u == 0u) {
+        return v.xy;
+    }
+    return v.zw;
+}
+
+// Piecewise-linear interpolation through the curve's control points.
+//
+// Mirrors Curve1D::evaluate() *inside* the curve's [0,1] domain. It
+// deliberately differs outside it: the CPU version clamps because it only ever
+// bakes a [0,1] LUT, but this runs after input CST / tone mapping / primary /
+// wheels, where the value is scene-linear and can legitimately exceed 1.0
+// (exposure, gain, log->linear sources). Clamping there would collapse every
+// highlight above 1.0 onto the curve's last point, so any non-identity curve
+// would silently crush highlights. Instead, values outside the domain are
+// shifted by the curve's offset at the nearest endpoint — continuous at the
+// boundary, and a no-op for the usual (0,0)..(1,1) endpoints.
+fn evaluate_master_curve(x_in: f32) -> f32 {
+    let count = u32(cg.curve_master_count);
+    if (count < 2u) {
+        return x_in;
+    }
+
+    let first = get_master_curve_point(0u);
+    let last = get_master_curve_point(count - 1u);
+    if (x_in <= first.x) {
+        return x_in + (first.y - first.x);
+    }
+    if (x_in >= last.x) {
+        return x_in + (last.y - last.x);
+    }
+
+    var lower = first;
+    var upper = last;
+    for (var i: u32 = 0u; i < count - 1u; i = i + 1u) {
+        let p0 = get_master_curve_point(i);
+        let p1 = get_master_curve_point(i + 1u);
+        if (x_in >= p0.x && x_in <= p1.x) {
+            lower = p0;
+            upper = p1;
+            break;
+        }
+    }
+    let denom = upper.x - lower.x;
+    if (abs(denom) < 1e-6) {
+        return lower.y;
+    }
+    let t = (x_in - lower.x) / denom;
+    return lower.y + t * (upper.y - lower.y);
+}
+
+fn apply_curves(color: vec3<f32>) -> vec3<f32> {
+    let curved = vec3<f32>(
+        evaluate_master_curve(color.r),
+        evaluate_master_curve(color.g),
+        evaluate_master_curve(color.b)
+    );
+    return mix(color, curved, cg.curves_mix);
 }
 
 // ============================================================================
@@ -839,6 +922,11 @@ fn apply_color_grading(color: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
             cg.gain.rgb, cg.gain.w,
             cg.wheels_mix
         );
+    }
+
+    // Curves (master curve, applied identically to R/G/B)
+    if ((cg.flags & CG_FLAG_CURVES_ENABLED) != 0u) {
+        result = apply_curves(result);
     }
 
     // 3D LUT

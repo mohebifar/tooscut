@@ -36,11 +36,38 @@ pub struct TextRenderer {
     viewport: Viewport,
     atlas: TextAtlas,
     renderer: GlyphonTextRenderer,
-    buffers: Vec<Buffer>,
+    /// Shaped buffers keyed by layer id, persisted across frames. Reshaping
+    /// (set_text/set_rich_text + shape_until_scroll) is one of the more
+    /// expensive parts of text rendering, so a layer whose TextLayerData is
+    /// unchanged from the previous frame reuses its buffer instead of
+    /// reshaping identically every frame it's on screen.
+    buffer_cache: HashMap<String, CachedTextBuffer>,
     width: u32,
     height: u32,
+    /// Incremented on every successful font load. Cached buffers record the
+    /// value they were shaped under so a late-arriving font invalidates them.
+    font_generation: u64,
     loaded_fonts: HashSet<String>,
     font_info: HashMap<String, LoadedFontInfo>,
+}
+
+/// A shaped text buffer plus everything the shaping depended on, so a later
+/// frame can detect whether it needs reshaping.
+///
+/// Layer data alone is NOT sufficient: box size and `scaled_font_size` are both
+/// derived from the renderer's current width/height, and glyph selection depends
+/// on which fonts are registered. Without capturing those, a `resize()` (e.g.
+/// preview resolution -> export resolution) or a `load_font()` that lands after
+/// a layer was first shaped with the fallback family would keep serving a stale
+/// buffer forever, rendering text at the wrong size or in the wrong font.
+struct CachedTextBuffer {
+    layer: TextLayerData,
+    /// Renderer dimensions this buffer was shaped against.
+    shaped_at_width: u32,
+    shaped_at_height: u32,
+    /// Value of `font_generation` when shaped; bumped on every font load.
+    shaped_at_font_generation: u64,
+    buffer: Buffer,
 }
 
 /// Stored info about a loaded font variant.
@@ -102,7 +129,8 @@ impl TextRenderer {
             viewport,
             atlas,
             renderer,
-            buffers: Vec::new(),
+            buffer_cache: HashMap::new(),
+            font_generation: 0,
             width,
             height,
             loaded_fonts: HashSet::new(),
@@ -114,6 +142,11 @@ impl TextRenderer {
     pub fn resize(&mut self, queue: &Queue, width: u32, height: u32) {
         if width == 0 || height == 0 {
             return;
+        }
+        if self.width != width || self.height != height {
+            // Font size and box size are derived from these, so every cached
+            // buffer is now shaped at the wrong scale.
+            self.buffer_cache.clear();
         }
         self.width = width;
         self.height = height;
@@ -179,6 +212,12 @@ impl TextRenderer {
         }
 
         self.loaded_fonts.insert(font_family.to_string());
+
+        // Any already-shaped buffer may have fallen back to a different family
+        // (or a different subset) before this font existed, so it has to be
+        // reshaped now that the real font is available.
+        self.font_generation = self.font_generation.wrapping_add(1);
+        self.buffer_cache.clear();
 
         // Return true if:
         // 1. A new face was created (first subset for this variant), OR
@@ -331,13 +370,30 @@ impl TextRenderer {
             return Ok(());
         }
 
-        // Clear previous buffers
-        self.buffers.clear();
+        // First pass: create/update text buffers. Layers whose TextLayerData
+        // is byte-for-byte identical to what's cached skip reshaping entirely.
+        let mut seen_ids: HashSet<String> = HashSet::new();
 
-        // First pass: create text buffers
         for layer_ref in layers {
             let layer = layer_ref.as_ref();
             if layer.text.is_empty() || layer.opacity <= 0.0 {
+                continue;
+            }
+
+            seen_ids.insert(layer.id.clone());
+
+            // Validity depends on the renderer state the buffer was shaped
+            // under, not just the layer data — see CachedTextBuffer's docs.
+            // resize()/load_font() also clear the cache outright; this check is
+            // the backstop for any path that mutates those without going
+            // through them.
+            let up_to_date = self.buffer_cache.get(&layer.id).is_some_and(|cached| {
+                &cached.layer == layer
+                    && cached.shaped_at_width == self.width
+                    && cached.shaped_at_height == self.height
+                    && cached.shaped_at_font_generation == self.font_generation
+            });
+            if up_to_date {
                 continue;
             }
 
@@ -464,16 +520,28 @@ impl TextRenderer {
             // Shape the text
             buffer.shape_until_scroll(&mut self.font_system, false);
 
-            self.buffers.push(buffer);
+            self.buffer_cache.insert(
+                layer.id.clone(),
+                CachedTextBuffer {
+                    layer: layer.clone(),
+                    shaped_at_width: self.width,
+                    shaped_at_height: self.height,
+                    shaped_at_font_generation: self.font_generation,
+                    buffer,
+                },
+            );
         }
 
-        if self.buffers.is_empty() {
+        // Drop buffers for layers no longer present/visible this frame so the
+        // cache doesn't grow unbounded as clips are deleted or trimmed off-screen.
+        self.buffer_cache.retain(|id, _| seen_ids.contains(id));
+
+        if self.buffer_cache.is_empty() {
             return Ok(());
         }
 
         // Second pass: create text areas with positioning
         let mut text_areas: Vec<TextArea> = Vec::new();
-        let mut buffer_idx = 0;
 
         for layer_ref in layers {
             let layer = layer_ref.as_ref();
@@ -481,8 +549,13 @@ impl TextRenderer {
                 continue;
             }
 
-            let buffer = &self.buffers[buffer_idx];
-            buffer_idx += 1;
+            let Some(buffer) = self
+                .buffer_cache
+                .get(&layer.id)
+                .map(|cached| &cached.buffer)
+            else {
+                continue;
+            };
 
             // Calculate box position and size in pixels
             let box_x = (layer.text_box.x / 100.0) * self.width as f32;

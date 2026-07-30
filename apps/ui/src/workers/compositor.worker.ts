@@ -35,6 +35,43 @@ let isInitialized = false;
 // Track which textures are currently uploaded to avoid re-uploading
 const uploadedTextures = new Set<string>();
 
+// Once a render call throws (e.g. a WASM panic trapped the instance), the
+// linear memory may be left in an inconsistent state. Further calls into the
+// same instance are unsafe, so we stop calling into it and fail fast instead
+// — the main thread is responsible for tearing down and recreating the
+// worker/compositor from a fresh canvas.
+let crashed = false;
+
+class CompositorCrashedError extends Error {
+  constructor(cause?: unknown) {
+    super("Compositor crashed and cannot continue rendering");
+    this.name = "CompositorCrashedError";
+    this.cause = cause;
+  }
+}
+
+/**
+ * Whether it's safe to call into the WASM compositor right now. Every entry
+ * point below must check this — a trapped instance stays non-null, so a plain
+ * `if (!compositor)` guard is NOT sufficient to keep callers out of it.
+ */
+function isUsable(): boolean {
+  return compositor !== null && !crashed;
+}
+
+/**
+ * Latch the crash so no further calls reach the (possibly corrupted) instance.
+ * Returns the error to throw, for entry points whose contract is to throw;
+ * callers that return a fallback value instead can ignore the return.
+ */
+function markCrashed(label: string, error: unknown): CompositorCrashedError {
+  if (!crashed) {
+    crashed = true;
+    console.error(`[CompositorWorker] ${label} failed; compositor is now unusable:`, error);
+  }
+  return new CompositorCrashedError(error);
+}
+
 // ===================== WORKER API =====================
 
 /**
@@ -73,29 +110,31 @@ async function initialize(config: CompositorWorkerConfig): Promise<void> {
  * Resize the compositor output.
  */
 function resize(width: number, height: number): void {
-  if (!compositor || !canvas) {
-    console.warn("[CompositorWorker] Cannot resize - not initialized");
+  if (!compositor || !canvas || crashed) {
     return;
   }
 
-  canvas.width = width;
-  canvas.height = height;
-  compositor.resize(width, height);
+  try {
+    canvas.width = width;
+    canvas.height = height;
+    compositor.resize(width, height);
+  } catch (error) {
+    markCrashed("resize", error);
+  }
 }
 
 /**
  * Load a font into the WASM compositor.
  */
 function loadFont(fontId: string, fontData: Uint8Array): boolean {
-  if (!compositor) {
-    console.warn("[CompositorWorker] Cannot load font - not initialized");
+  if (!isUsable()) {
     return false;
   }
 
   try {
-    return compositor.loadFont(fontId, fontData);
+    return compositor!.loadFont(fontId, fontData);
   } catch (error) {
-    console.error(`[CompositorWorker] Failed to load font ${fontId}:`, error);
+    markCrashed(`loadFont(${fontId})`, error);
     return false;
   }
 }
@@ -104,11 +143,12 @@ function loadFont(fontId: string, fontData: Uint8Array): boolean {
  * Check if a font is loaded.
  */
 function isFontLoaded(fontId: string): boolean {
-  if (!compositor) return false;
+  if (!isUsable()) return false;
 
   try {
-    return compositor.isFontLoaded(fontId);
-  } catch {
+    return compositor!.isFontLoaded(fontId);
+  } catch (error) {
+    markCrashed(`isFontLoaded(${fontId})`, error);
     return false;
   }
 }
@@ -118,16 +158,16 @@ function isFontLoaded(fontId: string): boolean {
  * ImageBitmaps are transferred (not copied) for zero-copy performance.
  */
 function uploadBitmap(bitmap: ImageBitmap, textureId: string): void {
-  if (!compositor) {
+  if (!isUsable()) {
     bitmap.close();
     return;
   }
 
   try {
-    compositor.uploadBitmap(bitmap, textureId);
+    compositor!.uploadBitmap(bitmap, textureId);
     uploadedTextures.add(textureId);
   } catch (error) {
-    console.warn(`[CompositorWorker] Failed to upload texture ${textureId}:`, error);
+    markCrashed(`uploadBitmap(${textureId})`, error);
   }
   // Close bitmap after GPU upload to free memory
   bitmap.close();
@@ -141,8 +181,15 @@ function renderFrame(frame: RenderFrame): void {
   if (!compositor || !canvas) {
     return;
   }
+  if (crashed) {
+    throw new CompositorCrashedError();
+  }
 
-  compositor.renderFrame(frame);
+  try {
+    compositor.renderFrame(frame);
+  } catch (error) {
+    throw markCrashed("renderFrame", error);
+  }
 }
 
 /**
@@ -153,8 +200,15 @@ async function renderToPixels(frame: RenderFrame): Promise<Uint8Array> {
   if (!compositor) {
     throw new Error("Compositor not initialized");
   }
+  if (crashed) {
+    throw new CompositorCrashedError();
+  }
 
-  return compositor.renderToPixels(frame);
+  try {
+    return await compositor.renderToPixels(frame);
+  } catch (error) {
+    throw markCrashed("renderToPixels", error);
+  }
 }
 
 /**
@@ -169,8 +223,16 @@ async function captureThumbnail(
   if (!compositor || !canvas) {
     throw new Error("Compositor not initialized");
   }
+  if (crashed) {
+    throw new CompositorCrashedError();
+  }
 
-  const pixels = await compositor.renderToPixels(frame);
+  let pixels: Uint8Array;
+  try {
+    pixels = await compositor.renderToPixels(frame);
+  } catch (error) {
+    throw markCrashed("captureThumbnail", error);
+  }
   const fullWidth = canvas.width;
   const fullHeight = canvas.height;
 
@@ -195,16 +257,57 @@ async function captureThumbnail(
 }
 
 /**
+ * Snapshot whatever is currently drawn on the canvas as RGBA pixels.
+ *
+ * Unlike renderToPixels/captureThumbnail, this does NOT re-render through
+ * the WASM compositor — it reads back the canvas's existing bitmap output
+ * via createImageBitmap, so it works regardless of what's on screen (any
+ * already-uploaded/rendered content) without needing a RenderFrame with
+ * correctly-referenced texture IDs. Used for color matching, where the
+ * two frames being compared may be arbitrary points in the timeline the
+ * user scrubbed to, not necessarily ones with fresh texture uploads.
+ */
+async function captureCurrentFramePixels(): Promise<{
+  data: ArrayBuffer;
+  width: number;
+  height: number;
+}> {
+  if (!canvas) {
+    throw new Error("Canvas not initialized");
+  }
+  // Doesn't call into WASM, but after a trap the canvas holds whatever was
+  // last successfully drawn — stale content that shouldn't be presented as a
+  // capture of the current frame.
+  if (crashed) {
+    throw new CompositorCrashedError();
+  }
+
+  const bitmap = await createImageBitmap(canvas);
+  try {
+    const scratch = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const ctx = scratch.getContext("2d");
+    if (!ctx) {
+      throw new Error("Failed to get 2D context for pixel capture");
+    }
+    ctx.drawImage(bitmap, 0, 0);
+    const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+    return { data: imageData.data.buffer, width: bitmap.width, height: bitmap.height };
+  } finally {
+    bitmap.close();
+  }
+}
+
+/**
  * Clear a specific texture from GPU memory.
  */
 function clearTexture(textureId: string): void {
-  if (!compositor) return;
+  if (!isUsable()) return;
 
   try {
-    compositor.clearTexture(textureId);
+    compositor!.clearTexture(textureId);
     uploadedTextures.delete(textureId);
-  } catch {
-    // Ignore
+  } catch (error) {
+    markCrashed(`clearTexture(${textureId})`, error);
   }
 }
 
@@ -212,42 +315,52 @@ function clearTexture(textureId: string): void {
  * Clear all textures from GPU memory.
  */
 function clearAllTextures(): void {
-  if (!compositor) return;
+  if (!isUsable()) return;
 
   try {
-    compositor.clearAllTextures();
+    compositor!.clearAllTextures();
     uploadedTextures.clear();
-  } catch {
-    // Ignore
+  } catch (error) {
+    markCrashed("clearAllTextures", error);
   }
 }
 
 /**
- * Flush pending GPU operations.
- */
-/**
  * Upload a 3D LUT to the compositor.
  */
 function uploadLut(lutId: string, size: number, data: Float32Array): void {
-  if (!compositor) return;
-  compositor.uploadLut(lutId, size, data);
+  if (!isUsable()) return;
+
+  try {
+    compositor!.uploadLut(lutId, size, data);
+  } catch (error) {
+    markCrashed(`uploadLut(${lutId})`, error);
+  }
 }
 
 /**
  * Remove the active LUT.
  */
 function removeLut(): void {
-  if (!compositor) return;
-  compositor.removeLut();
-}
-
-function flush(): void {
-  if (!compositor) return;
+  if (!isUsable()) return;
 
   try {
-    compositor.flush();
-  } catch {
-    // Ignore
+    compositor!.removeLut();
+  } catch (error) {
+    markCrashed("removeLut", error);
+  }
+}
+
+/**
+ * Flush pending GPU operations.
+ */
+function flush(): void {
+  if (!isUsable()) return;
+
+  try {
+    compositor!.flush();
+  } catch (error) {
+    markCrashed("flush", error);
   }
 }
 
@@ -279,6 +392,7 @@ const workerApi = {
   renderFrame,
   renderToPixels,
   captureThumbnail,
+  captureCurrentFramePixels,
   clearTexture,
   clearAllTextures,
   uploadLut,

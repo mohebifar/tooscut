@@ -17,6 +17,7 @@ import {
   Output,
   QUALITY_HIGH,
   StreamTarget,
+  type StreamTargetChunk,
 } from "mediabunny";
 import { useCallback, useRef, useState, type RefObject } from "react";
 
@@ -33,7 +34,11 @@ import { downloadAllSubsets, findNearestWeight } from "../lib/font-service";
 import { FrameRendererPool } from "../lib/frame-renderer-pool";
 import { buildLayersForTime, calculateSourceTime } from "../lib/layer-builder";
 import { useFontStore } from "../state/font-store";
-import { useVideoEditorStore, type TextClip } from "../state/video-editor-store";
+import {
+  effectiveClipFades,
+  useVideoEditorStore,
+  type TextClip,
+} from "../state/video-editor-store";
 
 // ===================== TYPES =====================
 
@@ -48,8 +53,12 @@ export interface ExportOptions {
   videoBitrate?: number;
   /** Audio bitrate in bits per second (default: 128000) */
   audioBitrate?: number;
-  /** File handle from showSaveFilePicker for streaming to disk */
-  fileHandle: FileSystemFileHandle;
+  /**
+   * Where to stream the encoded output. Either a file handle from
+   * showSaveFilePicker (Chromium) or a raw WritableStream target (fallback
+   * for browsers without the File System Access API, e.g. an in-memory sink).
+   */
+  target: FileSystemFileHandle | WritableStream<StreamTargetChunk>;
   /** Restrict export to a frame range (e.g. in/out points). Defaults to the full content. */
   range?: { startFrame: number; endFrame: number };
 }
@@ -122,6 +131,8 @@ function buildAudioTimelineState(
     inPoint: number;
     speed?: number;
     volume?: number;
+    fadeIn?: number;
+    fadeOut?: number;
     audioEffects?: import("@tooscut/render-engine").AudioEffectsParams;
   }>,
   tracks: Array<{ id: string; type: string; volume: number; muted: boolean }>,
@@ -157,8 +168,8 @@ function buildAudioTimelineState(
       inPoint: framesToSeconds(clip.inPoint, fps),
       speed: clip.speed ?? 1,
       gain: clip.volume ?? 1,
-      fadeIn: 0,
-      fadeOut: 0,
+      fadeIn: framesToSeconds(clip.fadeIn ?? 0, fps),
+      fadeOut: framesToSeconds(clip.fadeOut ?? 0, fps),
       effects: clip.audioEffects,
     }));
 
@@ -194,6 +205,8 @@ async function renderAudioToSource(
     inPoint: number;
     speed?: number;
     volume?: number;
+    fadeIn?: number;
+    fadeOut?: number;
     audioEffects?: import("@tooscut/render-engine").AudioEffectsParams;
   }>,
   tracks: Array<{ id: string; type: string; volume: number; muted: boolean }>,
@@ -338,7 +351,7 @@ export function useMp4Export(): Mp4ExportHandle {
   }, []);
 
   const startExport = useCallback(async (options: ExportOptions): Promise<ExportResult> => {
-    const { width, height, frameRate, videoBitrate, audioBitrate = 128000, fileHandle } = options;
+    const { width, height, frameRate, videoBitrate, audioBitrate = 128000, target } = options;
 
     cancelledRef.current = false;
     setIsExporting(true);
@@ -375,7 +388,12 @@ export function useMp4Export(): Mp4ExportHandle {
     const resolvedBitrate = videoBitrate ?? QUALITY_HIGH;
 
     let pool: FrameRendererPool | null = null;
-    let fileWritable: FileSystemWritableFileStream | null = null;
+    // Only the FSA writable we open ourselves needs closing on the error path.
+    // A caller-provided WritableStream (the in-memory fallback sink) is not
+    // ours to close — and can't be: mediabunny's StreamTarget holds a writer
+    // lock on it, so getWriter() would throw. It also holds no OS handle, so
+    // there's nothing to release; the buffer is just garbage collected.
+    let ownedFileWritable: FileSystemWritableFileStream | null = null;
 
     try {
       const exportStartTime = Date.now();
@@ -535,16 +553,40 @@ export function useMp4Export(): Mp4ExportHandle {
       const audioClips = clips
         .filter((c) => c.type === "audio")
         .flatMap((c) => {
-          if (rangeStart === 0 && rangeEnd === contentDuration) return [c];
+          if (rangeStart === 0 && rangeEnd === contentDuration) {
+            const fades = effectiveClipFades(c);
+            return [{ ...c, fadeIn: fades.fadeIn, fadeOut: fades.fadeOut }];
+          }
           const clipEnd = c.startTime + c.duration;
           if (clipEnd <= rangeStart || c.startTime >= rangeEnd) return [];
           const headTrim = Math.max(0, rangeStart - c.startTime);
+          const tailTrim = Math.max(0, clipEnd - rangeEnd);
+          const newDuration = Math.min(clipEnd, rangeEnd) - Math.max(c.startTime, rangeStart);
+
+          // Fades are relative to the clip's edges, so a range that cuts into
+          // the clip must shorten them by however much of the fade it removed.
+          // Without this, exporting from inside a fade-in would restart the
+          // whole fade from silence.
+          //
+          // Approximation: the mixer's fade is a linear 0->1 ramp with no
+          // start-gain parameter, so a partially-consumed fade-in is exported
+          // as a (steeper) full ramp over the remaining frames rather than
+          // resuming at the gain the fade had already reached.
+          const fades = effectiveClipFades(c);
+          const adjustedFadeIn = Math.max(0, fades.fadeIn - headTrim);
+          const adjustedFadeOut = Math.max(0, fades.fadeOut - tailTrim);
+
           return [
             {
               ...c,
               startTime: Math.max(0, c.startTime - rangeStart),
               inPoint: c.inPoint + headTrim,
-              duration: Math.min(clipEnd, rangeEnd) - Math.max(c.startTime, rangeStart),
+              duration: newDuration,
+              ...effectiveClipFades({
+                duration: newDuration,
+                fadeIn: adjustedFadeIn,
+                fadeOut: adjustedFadeOut,
+              }),
             },
           ];
         });
@@ -555,10 +597,17 @@ export function useMp4Export(): Mp4ExportHandle {
         throw new Error("Export cancelled");
       }
 
-      // Open file for streaming writes
-      fileWritable = await fileHandle.createWritable();
+      // Open file for streaming writes — either the real FSA writable, or the
+      // caller-provided fallback WritableStream (e.g. an in-memory sink).
+      let streamTargetWritable: WritableStream<StreamTargetChunk>;
+      if ("createWritable" in target) {
+        ownedFileWritable = await target.createWritable();
+        streamTargetWritable = ownedFileWritable;
+      } else {
+        streamTargetWritable = target;
+      }
 
-      const streamTarget = new StreamTarget(fileWritable);
+      const streamTarget = new StreamTarget(streamTargetWritable);
 
       const output = new Output({
         format: new Mp4OutputFormat({
@@ -942,7 +991,7 @@ export function useMp4Export(): Mp4ExportHandle {
       // mediabunny writes directly to the FileSystemWritableFileStream
       // and closes it internally during finalize.
       await output.finalize();
-      fileWritable = null;
+      ownedFileWritable = null;
 
       const renderTime = (Date.now() - exportStartTime) / 1000;
 
@@ -990,9 +1039,9 @@ export function useMp4Export(): Mp4ExportHandle {
       if (pool) {
         pool.dispose();
       }
-      if (fileWritable) {
+      if (ownedFileWritable) {
         try {
-          await fileWritable.close();
+          await ownedFileWritable.close();
         } catch {
           // Ignore close errors during cleanup
         }

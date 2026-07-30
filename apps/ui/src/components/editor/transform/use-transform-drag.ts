@@ -611,11 +611,22 @@ export function useTransformDrag({ displayScale, settings, assetMap }: UseTransf
       setActiveGuides([]);
     };
 
+    // Losing window focus mid-drag (tab switch, alt-tab, OS drag target) never
+    // fires `mouseup` on window, which would otherwise leave temporal history
+    // paused for the rest of the session. Treat blur the same as mouseup.
+    const handleBlur = () => {
+      handleMouseUp();
+    };
+
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("blur", handleBlur);
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("blur", handleBlur);
+      // Safety net for unmount mid-drag (e.g. navigating away from the editor).
+      handleMouseUp();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handlers accessed via refs
   }, []);
