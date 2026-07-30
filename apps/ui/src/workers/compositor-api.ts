@@ -159,10 +159,32 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
         type: "module",
       });
 
-      // Listen for worker errors (uncaught exceptions, e.g. the worker itself crashing)
+      // Listen for worker errors (uncaught exceptions, e.g. the worker itself
+      // crashing, or the script failing to load at all).
+      //
+      // A load failure fires `error` with a bare Event carrying no message,
+      // and Comlink's pending request never settles because the worker that
+      // would answer it is already dead. Race the handshake against this so a
+      // dead worker surfaces as a rejection instead of hanging the caller
+      // forever on "Initializing GPU...".
+      let onWorkerError!: (error: unknown) => void;
+      const workerFailed = new Promise<never>((_, reject) => {
+        onWorkerError = reject;
+      });
+      // Nothing awaits this rejection unless the race below picks it up.
+      void workerFailed.catch(() => {});
+
       worker.onerror = (e) => {
         console.error("[CompositorApi] Worker error:", e);
-        reportCrash(e);
+        const error =
+          e instanceof ErrorEvent && e.message
+            ? new Error(`Compositor worker error: ${e.message}`)
+            : new Error(
+                "Compositor worker failed to load. This usually means the worker " +
+                  "script was blocked or could not be fetched.",
+              );
+        reportCrash(error);
+        onWorkerError(error);
       };
 
       api = Comlink.wrap<CompositorWorkerApi>(worker);
@@ -171,16 +193,19 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
       offscreenCanvas = canvas.transferControlToOffscreen();
 
       // Initialize worker with transferred canvas
-      await api.initialize(
-        Comlink.transfer(
-          {
-            canvas: offscreenCanvas,
-            width,
-            height,
-          },
-          [offscreenCanvas],
+      await Promise.race([
+        api.initialize(
+          Comlink.transfer(
+            {
+              canvas: offscreenCanvas,
+              width,
+              height,
+            },
+            [offscreenCanvas],
+          ),
         ),
-      );
+        workerFailed,
+      ]);
 
       isReady = true;
     },

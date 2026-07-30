@@ -21,6 +21,14 @@ const config = defineConfig({
   },
   // Nitro-level headers — this is what actually sets headers in dev
   // since Nitro is the HTTP request handler in TanStack Start.
+  //
+  // These only cover requests that reach Nitro. In production on Vercel,
+  // /assets/* is served straight off the CDN and never touches this handler,
+  // so the same headers are declared in vercel.json — keep the two in sync.
+  // Getting this wrong is silent locally and fatal in production: a COEP
+  // document may only spawn a worker whose own script carries a COEP header,
+  // so an unheadered compositor.worker.js is blocked with
+  // ERR_BLOCKED_BY_RESPONSE and the editor hangs on "Initializing GPU...".
   nitro: {
     routeRules: {
       "/**": { headers: COOP_HEADERS },
