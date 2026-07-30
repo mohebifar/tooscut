@@ -1,7 +1,8 @@
+import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import { devtools } from "@tanstack/devtools-vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
-import viteReact from "@vitejs/plugin-react";
+import viteReact, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { nitro } from "nitro/vite";
 import { fileURLToPath, URL } from "url";
 import { defineConfig } from "vite";
@@ -42,18 +43,13 @@ const config = defineConfig({
     }),
     tailwindcss(),
     tanstackStart(),
-    viteReact({
-      babel: {
-        plugins: [
-          [
-            "babel-plugin-react-compiler",
-            {
-              target: "19",
-            },
-          ],
-        ],
-      },
-    }),
+    viteReact(),
+    // React Compiler. @vitejs/plugin-react 6 dropped its `babel` option (it
+    // transforms JSX with oxc now), so the compiler is applied as a separate
+    // Rolldown-Babel pass via the plugin's reactCompilerPreset helper.
+    // `target` is omitted deliberately — it's only for React 17/18, and this
+    // app is on React 19, which is the preset's default.
+    babel({ presets: [reactCompilerPreset()] }),
   ],
 });
 
