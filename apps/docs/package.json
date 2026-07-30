@@ -33,7 +33,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
     "oxlint": "catalog:",
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "vite": "catalog:",
     "vite-tsconfig-paths": "^6.1.1"
   }

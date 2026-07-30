@@ -62,7 +62,7 @@
     "oxlint": "catalog:",
     "oxlint-tsgolint": "catalog:",
     "shadcn": "^4.16.0",
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "vite": "catalog:",
     "vitest": "^3.2.7",
     "web-vitals": "^6.0.1"

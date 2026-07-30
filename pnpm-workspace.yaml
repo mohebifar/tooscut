@@ -6,5 +6,5 @@ packages:
 catalog:
   oxfmt: ^0.42.0
   oxlint: ^1.76.0
-  oxlint-tsgolint: ^0.17.4
+  oxlint-tsgolint: ^7.0.2001
   vite: ^7.3.6
