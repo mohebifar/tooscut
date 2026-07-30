@@ -47,19 +47,24 @@ export function VideoEditorLayout({
       {/* Menubar/toolbar row */}
       {toolbar && <div className="shrink-0">{toolbar}</div>}
 
+      {/* Sizes carry explicit units on purpose. react-resizable-panels changed
+          how bare numbers are read (v4.5 treated them as percentages, v4.12+
+          treats them as pixels), which silently blew up the asset panel — its
+          20 became 20px while its min stayed 350px, pinning it to 350px.
+          Spelling out "%" / "px" keeps intent unambiguous and immune to that. */}
       <ResizablePanelGroup orientation="vertical" className="flex-1">
         {/* Top row: Assets | Preview | Properties */}
-        <ResizablePanel defaultSize={60} minSize={200}>
+        <ResizablePanel defaultSize="60%" minSize="200px">
           <ResizablePanelGroup orientation="horizontal">
             {/* Asset Panel */}
-            <ResizablePanel defaultSize={20} minSize={350}>
+            <ResizablePanel defaultSize="20%" minSize="220px">
               <div className="h-full overflow-auto bg-card">{assetPanel}</div>
             </ResizablePanel>
 
             <ResizableHandle withHandle orientation="horizontal" />
 
             {/* Preview Panel */}
-            <ResizablePanel defaultSize={55} minSize={30}>
+            <ResizablePanel defaultSize="55%" minSize="240px">
               <div className="flex h-full flex-col bg-background">
                 {/* Video Preview Canvas */}
                 <div className="flex-1 overflow-hidden">{previewPanel}</div>
@@ -75,7 +80,7 @@ export function VideoEditorLayout({
             <ResizableHandle withHandle orientation="horizontal" />
 
             {/* Properties Panel */}
-            <ResizablePanel defaultSize={25} minSize={15}>
+            <ResizablePanel defaultSize="25%" minSize="220px">
               <div className="h-full overflow-auto bg-card">{propertiesPanel}</div>
             </ResizablePanel>
           </ResizablePanelGroup>
@@ -84,7 +89,7 @@ export function VideoEditorLayout({
         <ResizableHandle withHandle orientation="vertical" />
 
         {/* Bottom row: Timeline */}
-        <ResizablePanel defaultSize={40} minSize={100}>
+        <ResizablePanel defaultSize="40%" minSize="120px">
           <div className="h-full overflow-hidden border-t border-border bg-card">{timeline}</div>
         </ResizablePanel>
       </ResizablePanelGroup>
