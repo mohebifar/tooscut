@@ -1,12 +1,13 @@
 import type React from "react";
 
 import {
-  ZapIcon,
-  LayersIcon,
-  SlidersHorizontalIcon,
-  MonitorIcon,
-  WandSparklesIcon,
-} from "lucide-react";
+  ComputerIcon,
+  FilterHorizontalIcon,
+  FlashIcon,
+  Layers01Icon,
+  MagicWand01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 import { cn } from "@/lib/utils";
 
@@ -79,7 +80,7 @@ function GpuRenderingVisual() {
     <>
       <div className="relative mx-auto flex size-32 items-center justify-center rounded-full border-4 border-dashed bg-background shadow-xs outline outline-offset-4 outline-border">
         <div className="absolute inset-0 z-10 scale-120 bg-radial from-foreground/20 via-foreground/5 to-transparent blur-xl" />
-        <ZapIcon className="size-14 text-primary/90" />
+        <HugeiconsIcon icon={FlashIcon} className="size-14 text-primary/90" />
       </div>
 
       <div className="relative mt-8 space-y-1.5 text-center">
@@ -97,7 +98,7 @@ function TimelineVisual() {
   return (
     <>
       <div className="relative mx-auto flex size-32 items-center justify-center rounded-full border bg-background shadow-xs outline outline-offset-4 outline-border">
-        <LayersIcon className="size-14 text-primary/90" />
+        <HugeiconsIcon icon={Layers01Icon} className="size-14 text-primary/90" />
         <div className="absolute inset-0 scale-120 bg-radial from-foreground/15 via-foreground/5 to-transparent blur-xl" />
       </div>
 
@@ -134,7 +135,7 @@ function EffectsVisual() {
     <div className="grid h-full sm:grid-cols-2">
       <div className="relative z-10 space-y-6 py-0 pe-2">
         <div className="flex size-12 items-center justify-center rounded-full border bg-card shadow-xs outline outline-offset-2 outline-border/80">
-          <WandSparklesIcon className="size-5 text-primary/80" />
+          <HugeiconsIcon icon={MagicWand01Icon} className="size-5 text-primary/80" />
         </div>
         <div className="space-y-2">
           <FeatureTitle className="text-base">Real-Time Effects</FeatureTitle>
@@ -173,7 +174,7 @@ function BrowserVisual() {
     <div className="grid h-full sm:grid-cols-2">
       <div className="space-y-6 pb-4 sm:pb-0">
         <div className="flex size-12 items-center justify-center rounded-full border bg-card shadow-xs outline outline-offset-2 outline-border/80">
-          <MonitorIcon className="size-5 text-primary/80" />
+          <HugeiconsIcon icon={ComputerIcon} className="size-5 text-primary/80" />
         </div>
         <div className="space-y-2">
           <FeatureTitle className="text-base">Zero Install, Full Power</FeatureTitle>
@@ -189,7 +190,10 @@ function BrowserVisual() {
           <div className="absolute inset-4 animate-[spin_15s_linear_infinite_reverse] rounded-full border border-muted-foreground/10" />
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="flex flex-col items-center gap-1">
-              <SlidersHorizontalIcon className="size-6 text-muted-foreground/60" />
+              <HugeiconsIcon
+                icon={FilterHorizontalIcon}
+                className="size-6 text-muted-foreground/60"
+              />
               <span className="text-[10px] text-muted-foreground/60">Local-first</span>
             </div>
           </div>

@@ -9,8 +9,9 @@ import type { AnyAnimatableProperty, CubicBezier } from "@tooscut/render-engine"
 import type Konva from "konva";
 import type React from "react";
 
+import { ArrowDown01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { CUBIC_BEZIER_PRESETS, evaluateCubicBezier } from "@tooscut/render-engine";
-import { ChevronDown, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Layer, Line, Rect, Stage, Text, Circle } from "react-konva";
 
@@ -790,9 +791,9 @@ export function KeyframeCurveEditor({ width, clipId, properties }: KeyframeCurve
               onClick={() => toggleProperty(property)}
             >
               {isExpanded ? (
-                <ChevronDown className="h-3.5 w-3.5 text-neutral-400" />
+                <HugeiconsIcon icon={ArrowDown01Icon} className="h-3.5 w-3.5 text-neutral-400" />
               ) : (
-                <ChevronRight className="h-3.5 w-3.5 text-neutral-400" />
+                <HugeiconsIcon icon={ArrowRight01Icon} className="h-3.5 w-3.5 text-neutral-400" />
               )}
               <div className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: config.color }} />
               <span className="text-xs font-medium text-neutral-200">

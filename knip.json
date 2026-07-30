@@ -6,6 +6,7 @@
       "project": ["src/**/*.{ts,tsx}"],
       "ignoreExportsUsedInFile": { "interface": true },
       "ignoreDependencies": [
+        "h3-rules",
         "tw-animate-css",
         "tailwindcss",
         "web-vitals",

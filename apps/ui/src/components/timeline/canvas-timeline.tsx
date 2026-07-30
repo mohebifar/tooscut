@@ -1,6 +1,17 @@
 "use client";
 
 import {
+  Delete02Icon,
+  EyeIcon,
+  EyeOffIcon,
+  LockIcon,
+  PaintBoardIcon,
+  PencilIcon,
+  PlusSignIcon,
+  SquareUnlock01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
   secondsToFrames,
   type Transition,
   type CrossTransitionType,
@@ -12,16 +23,6 @@ import {
   type LineStyle,
   type LineBox,
 } from "@tooscut/render-engine";
-import {
-  EyeIcon,
-  EyeOffIcon,
-  LockIcon,
-  LockOpenIcon,
-  PaletteIcon,
-  PencilIcon,
-  PlusIcon,
-  Trash2Icon,
-} from "lucide-react";
 import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 
@@ -1484,7 +1485,7 @@ export function CanvasTimeline() {
             className="absolute top-2 left-2 z-10 h-6 px-2 py-0"
             title="Add track pair"
           >
-            <PlusIcon className="size-3" /> Track
+            <HugeiconsIcon icon={PlusSignIcon} className="size-3" /> Track
           </Button>
         </ContextMenuTrigger>
 
@@ -1496,12 +1497,12 @@ export function CanvasTimeline() {
                 openMarkerRename(contextMarker.id, x);
               }}
             >
-              <PencilIcon />
+              <HugeiconsIcon icon={PencilIcon} />
               Rename
             </ContextMenuItem>
             <ContextMenuSub>
               <ContextMenuSubTrigger>
-                <PaletteIcon />
+                <HugeiconsIcon icon={PaintBoardIcon} />
                 Change Color
               </ContextMenuSubTrigger>
               <ContextMenuSubContent>
@@ -1527,7 +1528,7 @@ export function CanvasTimeline() {
                 setContextMarkerId(null);
               }}
             >
-              <Trash2Icon />
+              <HugeiconsIcon icon={Delete02Icon} />
               Delete Marker
             </ContextMenuItem>
           </ContextMenuContent>
@@ -1540,7 +1541,11 @@ export function CanvasTimeline() {
                 toggleTrackMuted(contextTrack.id);
               }}
             >
-              {contextTrack.muted ? <EyeIcon /> : <EyeOffIcon />}
+              {contextTrack.muted ? (
+                <HugeiconsIcon icon={EyeIcon} />
+              ) : (
+                <HugeiconsIcon icon={EyeOffIcon} />
+              )}
               {contextTrack.muted
                 ? contextTrack.type === "video"
                   ? "Show"
@@ -1554,7 +1559,11 @@ export function CanvasTimeline() {
                 toggleTrackLocked(contextTrack.id);
               }}
             >
-              {contextTrack.locked ? <LockOpenIcon /> : <LockIcon />}
+              {contextTrack.locked ? (
+                <HugeiconsIcon icon={SquareUnlock01Icon} />
+              ) : (
+                <HugeiconsIcon icon={LockIcon} />
+              )}
               {contextTrack.locked ? "Unlock" : "Lock"}
             </ContextMenuItem>
             <ContextMenuSeparator />
@@ -1574,7 +1583,7 @@ export function CanvasTimeline() {
                 }
               }}
             >
-              <Trash2Icon />
+              <HugeiconsIcon icon={Delete02Icon} />
               Delete Track
             </ContextMenuItem>
           </ContextMenuContent>

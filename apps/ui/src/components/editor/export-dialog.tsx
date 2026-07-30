@@ -6,7 +6,8 @@
  * Streams output directly to disk via File System Access API.
  */
 
-import { DownloadIcon, XIcon } from "lucide-react";
+import { Cancel01Icon, Download01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useState, useCallback, useEffect } from "react";
 
 import { useMp4Export, type ExportOptions, type ExportResult } from "../../hooks/use-mp4-export";
@@ -316,7 +317,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
                 Cancel
               </Button>
               <Button onClick={() => void handleExport()}>
-                <DownloadIcon className="mr-2 size-4" />
+                <HugeiconsIcon icon={Download01Icon} className="mr-2 size-4" />
                 Export
               </Button>
             </>
@@ -324,7 +325,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
           {isExporting && !isComplete && (
             <Button variant="destructive" onClick={handleCancel}>
-              <XIcon className="mr-2 size-4" />
+              <HugeiconsIcon icon={Cancel01Icon} className="mr-2 size-4" />
               Cancel Export
             </Button>
           )}

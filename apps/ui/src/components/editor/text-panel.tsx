@@ -1,11 +1,12 @@
 import type { TextStyle, TextBox, Color } from "@tooscut/render-engine";
 
-import { Type, Heading1, Heading2, MessageSquare } from "lucide-react";
+import { Heading01Icon, Heading02Icon, Message01Icon, TextIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 
 interface TextTemplate {
   id: string;
   name: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconSvgElement;
   text: string;
   style: TextStyle;
   box: TextBox;
@@ -18,7 +19,7 @@ const TEXT_TEMPLATES: TextTemplate[] = [
   {
     id: "title",
     name: "Title",
-    icon: Heading1,
+    icon: Heading01Icon,
     text: "Title",
     style: {
       font_family: "Inter",
@@ -37,7 +38,7 @@ const TEXT_TEMPLATES: TextTemplate[] = [
   {
     id: "subtitle",
     name: "Subtitle",
-    icon: Heading2,
+    icon: Heading02Icon,
     text: "Subtitle",
     style: {
       font_family: "Inter",
@@ -56,7 +57,7 @@ const TEXT_TEMPLATES: TextTemplate[] = [
   {
     id: "lower-third",
     name: "Lower Third",
-    icon: MessageSquare,
+    icon: Message01Icon,
     text: "Lower Third",
     style: {
       font_family: "Inter",
@@ -78,7 +79,7 @@ const TEXT_TEMPLATES: TextTemplate[] = [
   {
     id: "caption",
     name: "Caption",
-    icon: Type,
+    icon: TextIcon,
     text: "Caption text",
     style: {
       font_family: "Inter",
@@ -122,7 +123,7 @@ function TextTemplateCard({ template }: { template: TextTemplate }) {
       onDragStart={handleDragStart}
     >
       <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <HugeiconsIcon icon={Icon} className="h-4 w-4 shrink-0 text-muted-foreground" />
         <span className="truncate text-sm font-medium">{template.name}</span>
       </div>
       <div className="mt-1 text-[10px] text-muted-foreground">

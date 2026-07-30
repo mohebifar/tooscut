@@ -1,12 +1,13 @@
-import { Link } from "@tanstack/react-router";
 import {
-  ArrowRightIcon,
-  SkipBack,
-  ChevronsLeft,
-  Play,
-  ChevronsRight,
-  SkipForward,
-} from "lucide-react";
+  ArrowLeftDoubleIcon,
+  ArrowRight01Icon,
+  ArrowRightDoubleIcon,
+  NextIcon,
+  PlayIcon,
+  PreviousIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Link } from "@tanstack/react-router";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -52,7 +53,7 @@ export function HeroSection() {
           <Button asChild>
             <Link to="/projects">
               Start Editing
-              <ArrowRightIcon data-icon="inline-end" />
+              <HugeiconsIcon icon={ArrowRight01Icon} data-icon="inline-end" />
             </Link>
           </Button>
         </div>
@@ -133,11 +134,11 @@ function EditorMockup() {
 
           {/* Transport controls */}
           <div className="flex items-center justify-center gap-2 border-t border-neutral-800 py-1.5">
-            <SkipBack className="size-2.5 text-neutral-500" />
-            <ChevronsLeft className="size-2.5 text-neutral-500" />
-            <Play className="size-3 text-neutral-400" />
-            <ChevronsRight className="size-2.5 text-neutral-500" />
-            <SkipForward className="size-2.5 text-neutral-500" />
+            <HugeiconsIcon icon={PreviousIcon} className="size-2.5 text-neutral-500" />
+            <HugeiconsIcon icon={ArrowLeftDoubleIcon} className="size-2.5 text-neutral-500" />
+            <HugeiconsIcon icon={PlayIcon} className="size-3 text-neutral-400" />
+            <HugeiconsIcon icon={ArrowRightDoubleIcon} className="size-2.5 text-neutral-500" />
+            <HugeiconsIcon icon={NextIcon} className="size-2.5 text-neutral-500" />
             <span className="ml-1 font-mono text-[9px] text-neutral-600">00:00:12.15</span>
           </div>
         </div>

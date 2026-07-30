@@ -23,6 +23,22 @@ import type {
 } from "@tooscut/render-engine";
 
 import {
+  ArrowDown01Icon,
+  ArrowRight01Icon,
+  CrosshairIcon,
+  DropperIcon,
+  EaseCurveControlPointsIcon,
+  EyeIcon,
+  EyeOffIcon,
+  Grid3X3Icon,
+  MagicWand01Icon,
+  PaintBoardIcon,
+  PlusSignIcon,
+  RecordIcon,
+  SquareIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import {
   DEFAULT_PRIMARY_CORRECTION,
   DEFAULT_COLOR_GRADING,
   DEFAULT_COLOR_WHEELS,
@@ -33,21 +49,6 @@ import {
   computeChannelStats,
   matchColorCorrection,
 } from "@tooscut/render-engine";
-import {
-  Eye,
-  EyeOff,
-  Plus,
-  ChevronDown,
-  ChevronRight,
-  Palette,
-  CircleDot,
-  Spline,
-  Grid3X3,
-  Crosshair,
-  Square,
-  Pipette,
-  Wand2,
-} from "lucide-react";
 import { useState, useCallback, useMemo } from "react";
 
 import { useColorMatchStore } from "../../../state/color-match-store";
@@ -84,7 +85,7 @@ interface ColorGradingPanelProps {
 interface NodeTypeConfig {
   type: CGNode["type"];
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconSvgElement;
   description: string;
   available: boolean;
 }
@@ -93,49 +94,49 @@ const NODE_TYPE_CONFIGS: NodeTypeConfig[] = [
   {
     type: "Primary",
     label: "Primary Correction",
-    icon: Palette,
+    icon: PaintBoardIcon,
     description: "Exposure, temperature, CDL",
     available: true,
   },
   {
     type: "ColorWheels",
     label: "Color Wheels",
-    icon: CircleDot,
+    icon: RecordIcon,
     description: "Lift, Gamma, Gain",
     available: true,
   },
   {
     type: "Curves",
     label: "Curves",
-    icon: Spline,
+    icon: EaseCurveControlPointsIcon,
     description: "RGB curves adjustment",
     available: true,
   },
   {
     type: "Lut",
     label: "LUT",
-    icon: Grid3X3,
+    icon: Grid3X3Icon,
     description: "3D lookup table",
     available: true,
   },
   {
     type: "Qualifier",
     label: "HSL Qualifier",
-    icon: Crosshair,
+    icon: CrosshairIcon,
     description: "Secondary color keying",
     available: true,
   },
   {
     type: "Window",
     label: "Power Window",
-    icon: Square,
+    icon: SquareIcon,
     description: "Shape mask for regional correction",
     available: true,
   },
   {
     type: "ColorSpaceTransform",
     label: "Color Space",
-    icon: Palette,
+    icon: PaintBoardIcon,
     description: "Convert color space",
     available: true,
   },
@@ -613,7 +614,11 @@ export function ColorGradingPanel({
           title="Bypass all color grading"
           className="h-7 gap-1.5 px-2 text-xs data-[state=on]:bg-yellow-500/20 data-[state=on]:text-yellow-500"
         >
-          {grading.bypass ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          {grading.bypass ? (
+            <HugeiconsIcon icon={EyeOffIcon} className="h-3.5 w-3.5" />
+          ) : (
+            <HugeiconsIcon icon={EyeIcon} className="h-3.5 w-3.5" />
+          )}
           {grading.bypass ? "Bypassed" : "Bypass"}
         </Toggle>
       </div>
@@ -636,7 +641,7 @@ export function ColorGradingPanel({
             disabled={isCapturing}
             onClick={() => void handleCaptureReference()}
           >
-            <Pipette className="h-3.5 w-3.5" />
+            <HugeiconsIcon icon={DropperIcon} className="h-3.5 w-3.5" />
             Capture Reference
           </Button>
           <Button
@@ -647,7 +652,7 @@ export function ColorGradingPanel({
             onClick={() => void handleMatchToReference()}
             title={referenceStats ? undefined : "Capture a reference frame first"}
           >
-            <Wand2 className="h-3.5 w-3.5" />
+            <HugeiconsIcon icon={MagicWand01Icon} className="h-3.5 w-3.5" />
             Match to Reference
           </Button>
         </div>
@@ -731,7 +736,7 @@ function AddNodeMenu({ onAddNode }: AddNodeMenuProps) {
       align="start"
     >
       <Button variant="outline" size="sm" className="w-full">
-        <Plus className="mr-1.5 h-3.5 w-3.5" />
+        <HugeiconsIcon icon={PlusSignIcon} className="mr-1.5 h-3.5 w-3.5" />
         Add Node
       </Button>
     </SearchableDropdown>
@@ -819,9 +824,9 @@ function NodeParameterEditor({
         className="flex w-full items-center gap-2 text-left"
       >
         {expanded ? (
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          <HugeiconsIcon icon={ArrowDown01Icon} className="h-4 w-4 text-muted-foreground" />
         ) : (
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          <HugeiconsIcon icon={ArrowRight01Icon} className="h-4 w-4 text-muted-foreground" />
         )}
         <span className="text-sm font-medium">{nodeLabel}</span>
         {!node.enabled && <span className="ml-auto text-xs text-muted-foreground">(Disabled)</span>}

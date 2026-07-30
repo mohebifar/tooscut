@@ -6,7 +6,7 @@
  * where WebGPU is available.
  */
 
-import { page, commands } from "@vitest/browser/context";
+import { page, commands } from "vitest/browser";
 
 import type {
   RenderFrame,

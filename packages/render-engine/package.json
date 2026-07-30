@@ -49,16 +49,16 @@
   },
   "devDependencies": {
     "@types/audioworklet": "^0.0.100",
-    "@types/node": "^22.20.1",
-    "@vitest/browser": "^3.2.7",
+    "@types/node": "^26.1.2",
+    "@vitest/browser-playwright": "^4.1.10",
     "@webgpu/types": "^0.1.71",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "catalog:",
     "playwright": "^1.62.0",
     "tsdown": "^0.22.14",
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "vite": "catalog:",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.10"
   }
 }

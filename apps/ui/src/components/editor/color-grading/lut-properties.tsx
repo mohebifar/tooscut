@@ -7,7 +7,8 @@
 
 import type { LutReference, LutInterpolation } from "@tooscut/render-engine";
 
-import { Upload, X } from "lucide-react";
+import { Cancel01Icon, Upload01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useMemo } from "react";
 
 import { importLutWithPicker } from "../../../lib/lut-manager";
@@ -90,13 +91,13 @@ export function LutProperties({ lut, onChange }: LutPropertiesProps) {
               onClick={handleRemoveLut}
               title="Remove LUT"
             >
-              <X className="h-4 w-4" />
+              <HugeiconsIcon icon={Cancel01Icon} className="h-4 w-4" />
             </Button>
           </div>
         ) : (
           <div className="space-y-2">
             <Button variant="outline" size="sm" className="w-full" onClick={handleLoadFile}>
-              <Upload className="mr-1.5 h-3.5 w-3.5" />
+              <HugeiconsIcon icon={Upload01Icon} className="mr-1.5 h-3.5 w-3.5" />
               Load .cube File
             </Button>
             {lutAssets.length > 0 && (

@@ -1,10 +1,11 @@
-import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
+import { ArrowUpDownIcon, Loading03Icon, Tick02Icon } from "@hugeicons/core-free-icons";
 /**
  * Searchable font family picker using Fontsource catalog.
  *
  * Lazy-loads the catalog on first open. Shows first 50 matching results
  * with category badges and a check icon for the current selection.
  */
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 
 import { cn } from "@/lib/utils";
@@ -97,7 +98,7 @@ export function FontPicker({ value, onChange }: FontPickerProps) {
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" className="w-full justify-between font-normal">
           <span className="truncate">{value || "Select font..."}</span>
-          <ChevronsUpDown className="ml-1 h-3.5 w-3.5 shrink-0 opacity-50" />
+          <HugeiconsIcon icon={ArrowUpDownIcon} className="ml-1 h-3.5 w-3.5 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-64 p-0" align="start">
@@ -113,7 +114,10 @@ export function FontPicker({ value, onChange }: FontPickerProps) {
         <ScrollArea className="h-64">
           {catalogLoading && (
             <div className="flex items-center justify-center py-6">
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <HugeiconsIcon
+                icon={Loading03Icon}
+                className="h-4 w-4 animate-spin text-muted-foreground"
+              />
               <span className="ml-2 text-sm text-muted-foreground">Loading fonts...</span>
             </div>
           )}
@@ -151,7 +155,8 @@ export function FontPicker({ value, onChange }: FontPickerProps) {
                     )}
                     onClick={() => handleSelect(font)}
                   >
-                    <Check
+                    <HugeiconsIcon
+                      icon={Tick02Icon}
                       className={cn("size-3.5 shrink-0", isSelected ? "opacity-100" : "opacity-0")}
                     />
                     <span className="truncate">{font.family}</span>

@@ -1,8 +1,17 @@
+import {
+  Alert02Icon,
+  Clock01Icon,
+  ComputerIcon,
+  Delete02Icon,
+  Film01Icon,
+  PlusSignIcon,
+  SmartPhone01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
 import { addTrackPair, type EditableTrack } from "@tooscut/render-engine";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Plus, Trash2, Film, Clock, Monitor, TriangleAlert, Smartphone } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
 import { LogoIcon } from "../components/logo";
@@ -134,7 +143,7 @@ function ProjectChooser() {
           </Link>
           {projects.length > 0 && (
             <Button onClick={() => void handleCreateProject()} size="sm">
-              <Plus className="size-3.5" />
+              <HugeiconsIcon icon={PlusSignIcon} className="size-3.5" />
               New Project
             </Button>
           )}
@@ -144,7 +153,10 @@ function ProjectChooser() {
       <main className="mx-auto max-w-5xl px-6 py-10">
         {showMobileWarning && (
           <div className="mb-4 flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
-            <Smartphone className="mt-0.5 size-4 shrink-0 text-yellow-400" />
+            <HugeiconsIcon
+              icon={SmartPhone01Icon}
+              className="mt-0.5 size-4 shrink-0 text-yellow-400"
+            />
             <div className="flex-1">
               <p className="font-medium text-yellow-100">Designed for desktop</p>
               <p className="mt-0.5 text-yellow-300/80">
@@ -164,7 +176,7 @@ function ProjectChooser() {
 
         {showBrowserWarning && (
           <div className="mb-6 flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
-            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-yellow-400" />
+            <HugeiconsIcon icon={Alert02Icon} className="mt-0.5 size-4 shrink-0 text-yellow-400" />
             <div className="flex-1">
               <p className="font-medium text-yellow-100">Browser not fully supported</p>
               <p className="mt-0.5 text-yellow-300/80">
@@ -196,7 +208,7 @@ function ProjectChooser() {
             <Empty>
               <EmptyHeader>
                 <EmptyMedia variant="icon">
-                  <Film className="size-4" />
+                  <HugeiconsIcon icon={Film01Icon} className="size-4" />
                 </EmptyMedia>
                 <EmptyTitle>No projects yet</EmptyTitle>
                 <EmptyDescription>
@@ -205,7 +217,7 @@ function ProjectChooser() {
               </EmptyHeader>
               <EmptyContent>
                 <Button onClick={() => void handleCreateProject()}>
-                  <Plus className="size-4" />
+                  <HugeiconsIcon icon={PlusSignIcon} className="size-4" />
                   New Project
                 </Button>
               </EmptyContent>
@@ -270,7 +282,7 @@ function ProjectCard({
           />
         ) : (
           <div className="flex flex-col items-center gap-1.5 text-muted-foreground/50">
-            <Film className="size-8" />
+            <HugeiconsIcon icon={Film01Icon} className="size-8" />
           </div>
         )}
         <Button
@@ -282,7 +294,7 @@ function ProjectCard({
             onDelete(project);
           }}
         >
-          <Trash2 className="size-3.5 text-destructive-foreground" />
+          <HugeiconsIcon icon={Delete02Icon} className="size-3.5 text-destructive-foreground" />
         </Button>
       </div>
 
@@ -290,11 +302,11 @@ function ProjectCard({
         <ProjectName project={project} />
         <div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1">
-            <Clock className="size-3" />
+            <HugeiconsIcon icon={Clock01Icon} className="size-3" />
             {formatDate(project.updatedAt)}
           </span>
           <span className="inline-flex items-center gap-1">
-            <Monitor className="size-3" />
+            <HugeiconsIcon icon={ComputerIcon} className="size-3" />
             {project.settings.width}x{project.settings.height}
           </span>
         </div>

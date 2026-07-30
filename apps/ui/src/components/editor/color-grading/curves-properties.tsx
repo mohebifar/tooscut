@@ -13,8 +13,9 @@
 
 import type { Curves, Curve1D } from "@tooscut/render-engine";
 
+import { RefreshIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { DEFAULT_CURVES } from "@tooscut/render-engine";
-import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "../../../lib/utils";
@@ -234,7 +235,7 @@ export function CurvesProperties({ curves, onCurvesChange }: CurvesPropertiesPro
             onClick={handleResetAll}
             title="Reset all curves"
           >
-            <RotateCcw className="mr-1 h-3 w-3" />
+            <HugeiconsIcon icon={RefreshIcon} className="mr-1 h-3 w-3" />
             Reset All
           </Button>
         )}

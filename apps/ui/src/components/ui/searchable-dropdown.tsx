@@ -9,7 +9,8 @@
  */
 
 import { Combobox } from "@base-ui/react/combobox";
-import { Search } from "lucide-react";
+import { Search01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { useCallback } from "react";
 
 import { cn } from "@/lib/utils";
@@ -24,7 +25,7 @@ export interface SearchableDropdownItem {
   /** Whether the item is selectable. */
   disabled?: boolean;
   /** Optional icon component. */
-  icon?: React.ComponentType<{ className?: string }>;
+  icon?: IconSvgElement;
   /** Optional trailing content (e.g. "Soon" badge). */
   trailing?: React.ReactNode;
 }
@@ -85,7 +86,10 @@ export function SearchableDropdown({
             {/* Search input inside popup */}
             <div className="border-b p-2">
               <div className="relative">
-                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <HugeiconsIcon
+                  icon={Search01Icon}
+                  className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+                />
                 <Combobox.Input
                   placeholder={placeholder}
                   className="h-8 w-full rounded-md border border-input bg-background pr-2 pl-8 text-sm outline-none placeholder:text-muted-foreground focus:border-ring"
@@ -108,7 +112,12 @@ export function SearchableDropdown({
                         "data-disabled:pointer-events-none data-disabled:opacity-50",
                       )}
                     >
-                      {Icon && <Icon className="size-4 shrink-0 text-muted-foreground" />}
+                      {Icon && (
+                        <HugeiconsIcon
+                          icon={Icon}
+                          className="size-4 shrink-0 text-muted-foreground"
+                        />
+                      )}
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">{item.label}</p>
                         {item.description && (

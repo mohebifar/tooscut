@@ -13,14 +13,15 @@
     "clean": "rm -rf dist .output .source .tanstack node_modules/.vite"
   },
   "dependencies": {
+    "@hugeicons/core-free-icons": "^4.2.3",
+    "@hugeicons/react": "^1.1.9",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-router": "^1.170.18",
     "@tanstack/react-start": "^1.168.33",
     "fumadocs-core": "^15.8.5",
     "fumadocs-mdx": "^12.0.3",
     "fumadocs-ui": "^15.8.5",
-    "lucide-react": "^0.561.0",
-    "nitro": "npm:nitro-nightly@3.0.1-20260410-164248-8ab58a4b",
+    "nitro": "npm:nitro-nightly@3.0.1-20260722-224121-77b77ffb",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3",
@@ -28,13 +29,13 @@
   },
   "devDependencies": {
     "@types/mdx": "^2.0.14",
-    "@types/node": "^22.20.1",
+    "@types/node": "^26.1.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
     "oxlint": "catalog:",
-    "typescript": "^5.9.3",
-    "vite": "catalog:",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6",
     "vite-tsconfig-paths": "^6.1.1"
   }
 }

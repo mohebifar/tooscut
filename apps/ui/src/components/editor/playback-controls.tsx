@@ -1,5 +1,13 @@
+import {
+  ArrowLeftDoubleIcon,
+  ArrowRightDoubleIcon,
+  NextIcon,
+  PauseIcon,
+  PlayIcon,
+  PreviousIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { type FrameRate } from "@tooscut/render-engine";
-import { Play, Pause, SkipBack, SkipForward, ChevronsLeft, ChevronsRight } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -58,7 +66,7 @@ export function PlaybackControls() {
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleJumpToStart}>
-              <ChevronsLeft className="h-4 w-4" />
+              <HugeiconsIcon icon={ArrowLeftDoubleIcon} className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
@@ -70,7 +78,7 @@ export function PlaybackControls() {
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleStepBackward}>
-              <SkipBack className="h-4 w-4" />
+              <HugeiconsIcon icon={PreviousIcon} className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
@@ -87,7 +95,11 @@ export function PlaybackControls() {
               className="size-10 rounded-full"
               onClick={handlePlayPause}
             >
-              {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+              {isPlaying ? (
+                <HugeiconsIcon icon={PauseIcon} className="h-5 w-5" />
+              ) : (
+                <HugeiconsIcon icon={PlayIcon} className="h-5 w-5" />
+              )}
             </Button>
           </TooltipTrigger>
           <TooltipContent>
@@ -99,7 +111,7 @@ export function PlaybackControls() {
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleStepForward}>
-              <SkipForward className="h-4 w-4" />
+              <HugeiconsIcon icon={NextIcon} className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
@@ -111,7 +123,7 @@ export function PlaybackControls() {
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleJumpToEnd}>
-              <ChevronsRight className="h-4 w-4" />
+              <HugeiconsIcon icon={ArrowRightDoubleIcon} className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
