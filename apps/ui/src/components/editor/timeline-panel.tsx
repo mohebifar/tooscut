@@ -1,6 +1,7 @@
 import type { AnyAnimatableProperty } from "@tooscut/render-engine";
 
-import { ChevronDown, ChevronUp, GripHorizontal } from "lucide-react";
+import { ArrowDown01Icon, ArrowUp01Icon, Drag02Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useVideoEditorStore } from "../../state/video-editor-store";
@@ -113,9 +114,9 @@ export function TimelinePanel() {
               onClick={() => setCurveEditorVisible(!curveEditorVisible)}
             >
               {curveEditorVisible ? (
-                <ChevronDown className="h-3 w-3" />
+                <HugeiconsIcon icon={ArrowDown01Icon} className="h-3 w-3" />
               ) : (
-                <ChevronUp className="h-3 w-3" />
+                <HugeiconsIcon icon={ArrowUp01Icon} className="h-3 w-3" />
               )}
               Curves
             </Button>
@@ -144,7 +145,7 @@ export function TimelinePanel() {
               className="flex h-2 cursor-row-resize items-center justify-center bg-neutral-800 transition-colors hover:bg-neutral-700"
               onMouseDown={handleResizeMouseDown}
             >
-              <GripHorizontal className="h-3 w-3 text-neutral-500" />
+              <HugeiconsIcon icon={Drag02Icon} className="h-3 w-3 text-neutral-500" />
             </div>
             <KeyframeCurveEditor
               width={containerWidth}

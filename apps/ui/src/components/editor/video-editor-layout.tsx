@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
-import { Eye, Move } from "lucide-react";
+import { EyeIcon, MoveIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 import { useVideoEditorStore } from "../../state/video-editor-store";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../ui/resizable";
@@ -123,7 +124,7 @@ function PreviewModeToggle() {
           pressed={previewMode === "view"}
           onPressedChange={() => setPreviewMode("view")}
         >
-          <Eye className="h-3.5 w-3.5" />
+          <HugeiconsIcon icon={EyeIcon} className="h-3.5 w-3.5" />
         </Toggle>
         <Toggle
           size="sm"
@@ -131,7 +132,7 @@ function PreviewModeToggle() {
           pressed={previewMode === "transform"}
           onPressedChange={() => setPreviewMode("transform")}
         >
-          <Move className="h-3.5 w-3.5" />
+          <HugeiconsIcon icon={MoveIcon} className="h-3.5 w-3.5" />
         </Toggle>
       </div>
 

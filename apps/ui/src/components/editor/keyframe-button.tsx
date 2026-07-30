@@ -12,7 +12,8 @@
 
 import type { AnyAnimatableProperty } from "@tooscut/render-engine";
 
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ArrowLeft01Icon, ArrowRight01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 import {
   isAtKeyframe,
@@ -138,7 +139,7 @@ export function KeyframeButton({
         disabled={prevTime === null}
         title="Previous keyframe"
       >
-        <ChevronLeft className="size-3" />
+        <HugeiconsIcon icon={ArrowLeft01Icon} className="size-3" />
       </Button>
 
       {/* Diamond toggle button */}
@@ -169,7 +170,7 @@ export function KeyframeButton({
         disabled={nextTime === null}
         title="Next keyframe"
       >
-        <ChevronRight className="h-3 w-3" />
+        <HugeiconsIcon icon={ArrowRight01Icon} className="h-3 w-3" />
       </Button>
 
       {/* Reset button - only show when property has keyframes */}
@@ -181,7 +182,7 @@ export function KeyframeButton({
           onClick={handleResetClick}
           title="Remove all keyframes"
         >
-          <X className="h-3 w-3" />
+          <HugeiconsIcon icon={Cancel01Icon} className="h-3 w-3" />
         </Button>
       )}
     </div>

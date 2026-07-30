@@ -1,6 +1,7 @@
 import type { ColorWheels, ColorWheelValue } from "@tooscut/render-engine";
 
-import { RotateCcw } from "lucide-react";
+import { RefreshIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useMemo } from "react";
 
 import { Button } from "../../ui/button";
@@ -130,7 +131,7 @@ export function ColorWheelsProperties({ wheels, onWheelsChange }: ColorWheelsPro
             onClick={handleResetAll}
             title="Reset all wheels"
           >
-            <RotateCcw className="mr-1 h-3 w-3" />
+            <HugeiconsIcon icon={RefreshIcon} className="mr-1 h-3 w-3" />
             Reset All
           </Button>
         )}

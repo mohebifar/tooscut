@@ -1,5 +1,11 @@
+import {
+  AspectRatioIcon,
+  ComputerIcon,
+  SmartPhone01Icon,
+  SquareIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { FRAME_RATE_PRESETS, type FrameRate } from "@tooscut/render-engine";
-import { Monitor, Smartphone, Square, RectangleHorizontal } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 
 import { db } from "../../state/db";
@@ -36,22 +42,36 @@ interface ResolutionPreset {
   group: string;
   width: number;
   height: number;
-  icon: typeof Monitor;
+  icon: typeof ComputerIcon;
   value: string;
 }
 
 const RESOLUTION_PRESETS: ResolutionPreset[] = [
   // Landscape
-  { label: "4K UHD", group: "Landscape", width: 3840, height: 2160, icon: Monitor, value: "0" },
+  {
+    label: "4K UHD",
+    group: "Landscape",
+    width: 3840,
+    height: 2160,
+    icon: ComputerIcon,
+    value: "0",
+  },
   {
     label: "1080p Full HD",
     group: "Landscape",
     width: 1920,
     height: 1080,
-    icon: Monitor,
+    icon: ComputerIcon,
     value: "1",
   },
-  { label: "720p HD", group: "Landscape", width: 1280, height: 720, icon: Monitor, value: "2" },
+  {
+    label: "720p HD",
+    group: "Landscape",
+    width: 1280,
+    height: 720,
+    icon: ComputerIcon,
+    value: "2",
+  },
 
   // Vertical / Mobile
   {
@@ -59,13 +79,20 @@ const RESOLUTION_PRESETS: ResolutionPreset[] = [
     group: "Portrait",
     width: 1080,
     height: 1920,
-    icon: Smartphone,
+    icon: SmartPhone01Icon,
     value: "3",
   },
-  { label: "720×1280", group: "Portrait", width: 720, height: 1280, icon: Smartphone, value: "4" },
+  {
+    label: "720×1280",
+    group: "Portrait",
+    width: 720,
+    height: 1280,
+    icon: SmartPhone01Icon,
+    value: "4",
+  },
 
-  // Square
-  { label: "1080×1080", group: "Square", width: 1080, height: 1080, icon: Square, value: "5" },
+  // SquareIcon
+  { label: "1080×1080", group: "Square", width: 1080, height: 1080, icon: SquareIcon, value: "5" },
 
   // Platform presets
   {
@@ -73,7 +100,7 @@ const RESOLUTION_PRESETS: ResolutionPreset[] = [
     group: "Platform",
     width: 1920,
     height: 1080,
-    icon: RectangleHorizontal,
+    icon: AspectRatioIcon,
     value: "6",
   },
   {
@@ -81,7 +108,7 @@ const RESOLUTION_PRESETS: ResolutionPreset[] = [
     group: "Platform",
     width: 1080,
     height: 1920,
-    icon: Smartphone,
+    icon: SmartPhone01Icon,
     value: "7",
   },
   {
@@ -89,7 +116,7 @@ const RESOLUTION_PRESETS: ResolutionPreset[] = [
     group: "Platform",
     width: 1080,
     height: 1920,
-    icon: Smartphone,
+    icon: SmartPhone01Icon,
     value: "8",
   },
   {
@@ -97,10 +124,17 @@ const RESOLUTION_PRESETS: ResolutionPreset[] = [
     group: "Platform",
     width: 1080,
     height: 1080,
-    icon: Square,
+    icon: SquareIcon,
     value: "9",
   },
-  { label: "TikTok", group: "Platform", width: 1080, height: 1920, icon: Smartphone, value: "10" },
+  {
+    label: "TikTok",
+    group: "Platform",
+    width: 1080,
+    height: 1920,
+    icon: SmartPhone01Icon,
+    value: "10",
+  },
 ];
 
 const GROUPS = ["Landscape", "Portrait", "Square", "Platform"] as const;
@@ -243,7 +277,7 @@ export function ProjectSettingsDialog({
                           return (
                             <SelectItem key={p.value} value={String(p.value)}>
                               <span className="flex items-center gap-2">
-                                <Icon className="size-3.5 shrink-0" />
+                                <HugeiconsIcon icon={Icon} className="size-3.5 shrink-0" />
                                 <span>{p.label}</span>
                                 <span className="text-muted-foreground">
                                   {p.width}×{p.height}

@@ -11,6 +11,8 @@
 import type { ColorGradingNode as CGNode } from "@tooscut/render-engine";
 import type { Node, NodeProps, Edge, Connection, OnConnect } from "@xyflow/react";
 
+import { Delete02Icon, EyeIcon, EyeOffIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -24,7 +26,6 @@ import {
   addEdge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Eye, EyeOff, Trash2 } from "lucide-react";
 import { useCallback, useMemo, useEffect, useRef, memo } from "react";
 
 import { cn } from "../../../lib/utils";
@@ -236,7 +237,11 @@ const ColorGradingNodeComponent = memo(function ColorGradingNodeComponent({
               )}
               title={node.enabled ? "Disable" : "Enable"}
             >
-              {node.enabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+              {node.enabled ? (
+                <HugeiconsIcon icon={EyeIcon} className="h-3.5 w-3.5" />
+              ) : (
+                <HugeiconsIcon icon={EyeOffIcon} className="h-3.5 w-3.5" />
+              )}
             </button>
             <button
               type="button"
@@ -247,7 +252,7 @@ const ColorGradingNodeComponent = memo(function ColorGradingNodeComponent({
               className="rounded p-1 text-neutral-500 transition-colors hover:bg-white/10 hover:text-red-400"
               title="Remove"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <HugeiconsIcon icon={Delete02Icon} className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>

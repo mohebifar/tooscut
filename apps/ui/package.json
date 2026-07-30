@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
+    "@hugeicons/core-free-icons": "^4.2.3",
+    "@hugeicons/react": "^1.1.9",
     "@radix-ui/react-separator": "^1.1.15",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-devtools": "^0.10.9",
@@ -32,7 +34,6 @@
     "dexie-react-hooks": "^4.4.0",
     "h3-rules": "^0.1.0",
     "konva": "^10.3.0",
-    "lucide-react": "^1.27.0",
     "mediabunny": "^1.51.0",
     "nitro": "npm:nitro-nightly@3.0.1-20260722-224121-77b77ffb",
     "radix-ui": "^1.6.7",

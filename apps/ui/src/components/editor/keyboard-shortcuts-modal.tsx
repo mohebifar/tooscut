@@ -1,4 +1,5 @@
-import { Keyboard } from "lucide-react";
+import { KeyboardIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useState, useCallback } from "react";
 
 import {
@@ -181,8 +182,8 @@ export function KeyboardShortcutsModal() {
       <DialogPopup className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Keyboard className="h-5 w-5" />
-            Keyboard Shortcuts
+            <HugeiconsIcon icon={KeyboardIcon} className="h-5 w-5" />
+            KeyboardIcon Shortcuts
           </DialogTitle>
           <DialogDescription>
             Press <KeyboardKey>?</KeyboardKey> to toggle this panel

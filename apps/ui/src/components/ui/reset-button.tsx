@@ -1,4 +1,5 @@
-import { RotateCcw } from "lucide-react";
+import { RefreshIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 import { cn } from "@/lib/utils";
 
@@ -33,7 +34,7 @@ export function ResetButton({
       )}
       title={title}
     >
-      <RotateCcw className="size-3" />
+      <HugeiconsIcon icon={RefreshIcon} className="size-3" />
     </button>
   );
 }

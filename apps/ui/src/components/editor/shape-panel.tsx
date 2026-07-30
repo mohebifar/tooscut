@@ -7,12 +7,19 @@ import type {
   Color,
 } from "@tooscut/render-engine";
 
-import { Square, Circle, Triangle, Minus, MoveRight } from "lucide-react";
+import {
+  ArrowRight01Icon,
+  CircleIcon,
+  MinusSignIcon,
+  SquareIcon,
+  Triangle01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 
 interface ShapeTemplate {
   id: string;
   name: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconSvgElement;
   shape: ShapeType;
   style: ShapeStyle;
   box: ShapeBox;
@@ -22,7 +29,7 @@ interface ShapeTemplate {
 interface LineTemplate {
   id: string;
   name: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconSvgElement;
   style: LineStyle;
   box: LineBox;
   defaultDuration: number;
@@ -34,7 +41,7 @@ const SHAPE_TEMPLATES: ShapeTemplate[] = [
   {
     id: "rectangle",
     name: "Rectangle",
-    icon: Square,
+    icon: SquareIcon,
     shape: "Rectangle",
     style: {
       fill: WHITE,
@@ -48,7 +55,7 @@ const SHAPE_TEMPLATES: ShapeTemplate[] = [
   {
     id: "ellipse",
     name: "Ellipse",
-    icon: Circle,
+    icon: CircleIcon,
     shape: "Ellipse",
     style: {
       fill: WHITE,
@@ -62,7 +69,7 @@ const SHAPE_TEMPLATES: ShapeTemplate[] = [
   {
     id: "polygon",
     name: "Polygon",
-    icon: Triangle,
+    icon: Triangle01Icon,
     shape: "Polygon",
     style: {
       fill: WHITE,
@@ -80,7 +87,7 @@ const LINE_TEMPLATES: LineTemplate[] = [
   {
     id: "line",
     name: "Line",
-    icon: Minus,
+    icon: MinusSignIcon,
     style: {
       stroke: WHITE,
       stroke_width: 2,
@@ -94,7 +101,7 @@ const LINE_TEMPLATES: LineTemplate[] = [
   {
     id: "arrow",
     name: "Arrow",
-    icon: MoveRight,
+    icon: ArrowRight01Icon,
     style: {
       stroke: WHITE,
       stroke_width: 2,
@@ -114,7 +121,7 @@ function TemplateCard({
   onDragStart,
 }: {
   name: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconSvgElement;
   subtitle: string;
   onDragStart: (e: React.DragEvent) => void;
 }) {
@@ -125,7 +132,7 @@ function TemplateCard({
       onDragStart={onDragStart}
     >
       <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <HugeiconsIcon icon={Icon} className="h-4 w-4 shrink-0 text-muted-foreground" />
         <span className="truncate text-sm font-medium">{name}</span>
       </div>
       <div className="mt-1 text-[10px] text-muted-foreground">{subtitle}</div>

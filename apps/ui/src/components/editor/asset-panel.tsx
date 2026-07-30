@@ -1,4 +1,15 @@
-import { X, Plus, Music, Video, Image, FolderOpen, Type, Shapes, Sparkles } from "lucide-react";
+import {
+  Cancel01Icon,
+  FolderOpenIcon,
+  Image01Icon,
+  MusicNote01Icon,
+  PlusSignIcon,
+  ShapesIcon,
+  SparklesIcon,
+  TextIcon,
+  Video01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { useRef, useCallback, useState, type DragEvent } from "react";
 
 import { cn } from "@/lib/utils";
@@ -63,9 +74,9 @@ function AssetCard({ asset }: { asset: MediaAsset }) {
         {asset.thumbnailUrl ? (
           <img src={asset.thumbnailUrl} alt={asset.name} className="h-full w-full object-cover" />
         ) : asset.type === "audio" ? (
-          <Music className="h-8 w-8 text-muted-foreground" />
+          <HugeiconsIcon icon={MusicNote01Icon} className="h-8 w-8 text-muted-foreground" />
         ) : (
-          <Video className="h-8 w-8 text-muted-foreground" />
+          <HugeiconsIcon icon={Video01Icon} className="h-8 w-8 text-muted-foreground" />
         )}
 
         {/* Duration badge */}
@@ -75,7 +86,7 @@ function AssetCard({ asset }: { asset: MediaAsset }) {
           </div>
         )}
 
-        {/* Type badge */}
+        {/* TextIcon badge */}
         <div className="absolute top-1 left-1 rounded bg-muted/90 px-1 text-[10px] text-foreground uppercase">
           {asset.type}
         </div>
@@ -104,7 +115,7 @@ function AssetCard({ asset }: { asset: MediaAsset }) {
               removeAsset(asset.id);
             }}
           >
-            <X className="h-3 w-3" />
+            <HugeiconsIcon icon={Cancel01Icon} className="h-3 w-3" />
           </Button>
         </TooltipTrigger>
         <TooltipContent side="left">
@@ -124,7 +135,7 @@ function ImportButton({
   accept: string;
   onImport: (assets: MediaAsset[]) => void;
   label?: string;
-  icon?: React.ComponentType<{ className?: string }>;
+  icon?: IconSvgElement;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const hasFilePicker = "showOpenFilePicker" in window;
@@ -148,7 +159,7 @@ function ImportButton({
     }
   };
 
-  const IconComponent = Icon || Plus;
+  const IconComponent = Icon || PlusSignIcon;
 
   return (
     <>
@@ -163,7 +174,7 @@ function ImportButton({
         />
       )}
       <Button variant="outline" size="lg" className="w-full" onClick={() => void handleClick()}>
-        <IconComponent className="mr-2 h-4 w-4" />
+        <HugeiconsIcon icon={IconComponent} className="mr-2 h-4 w-4" />
         {label || "Import"}
       </Button>
     </>
@@ -189,13 +200,13 @@ function AssetsContent() {
           All ({assets.length})
         </TabsTrigger>
         <TabsTrigger value="video" className="text-xs">
-          Video ({videoAssets.length})
+          Video01Icon ({videoAssets.length})
         </TabsTrigger>
         <TabsTrigger value="audio" className="text-xs">
           Audio ({audioAssets.length})
         </TabsTrigger>
         <TabsTrigger value="image" className="text-xs">
-          Image ({imageAssets.length})
+          Image01Icon ({imageAssets.length})
         </TabsTrigger>
       </TabsList>
 
@@ -221,8 +232,8 @@ function AssetsContent() {
           <ImportButton
             accept="video/*"
             onImport={handleImportedAssets}
-            label="Import Video"
-            icon={Video}
+            label="Import Video01Icon"
+            icon={Video01Icon}
           />
           <div className="grid grid-cols-1 gap-2 @[200px]:grid-cols-2 @[400px]:grid-cols-3 @[600px]:grid-cols-4">
             {videoAssets.map((asset) => (
@@ -239,7 +250,7 @@ function AssetsContent() {
             accept="audio/*"
             onImport={handleImportedAssets}
             label="Import Audio"
-            icon={Music}
+            icon={MusicNote01Icon}
           />
           <div className="grid grid-cols-1 gap-2 @[200px]:grid-cols-2 @[400px]:grid-cols-3 @[600px]:grid-cols-4">
             {audioAssets.map((asset) => (
@@ -255,8 +266,8 @@ function AssetsContent() {
           <ImportButton
             accept="image/*"
             onImport={handleImportedAssets}
-            label="Import Image"
-            icon={Image}
+            label="Import Image01Icon"
+            icon={Image01Icon}
           />
           <div className="grid grid-cols-1 gap-2 @[200px]:grid-cols-2 @[400px]:grid-cols-3 @[600px]:grid-cols-4">
             {imageAssets.map((asset) => (
@@ -273,10 +284,10 @@ function AssetsContent() {
 }
 
 const PANEL_TABS = [
-  { id: "assets", label: "Assets", icon: FolderOpen },
-  { id: "text", label: "Text", icon: Type },
-  { id: "shapes", label: "Shapes", icon: Shapes },
-  { id: "transitions", label: "Transitions", icon: Sparkles },
+  { id: "assets", label: "Assets", icon: FolderOpenIcon },
+  { id: "text", label: "Text", icon: TextIcon },
+  { id: "shapes", label: "Shapes", icon: ShapesIcon },
+  { id: "transitions", label: "Transitions", icon: SparklesIcon },
 ] as const;
 
 type PanelTab = (typeof PANEL_TABS)[number]["id"];
@@ -366,7 +377,7 @@ export function AssetPanel() {
                   isActive ? "border-b-2 border-primary text-foreground" : "text-muted-foreground",
                 )}
               >
-                <Icon className="size-3.5" />
+                <HugeiconsIcon icon={Icon} className="size-3.5" />
                 {tab.label}
               </Button>
             );

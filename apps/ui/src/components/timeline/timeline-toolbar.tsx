@@ -1,4 +1,11 @@
-import { MousePointer2, Scissors, Minus, Plus, GitCommitHorizontal } from "lucide-react";
+import {
+  Cursor01Icon,
+  GitCommitHorizontalIcon,
+  MinusSignIcon,
+  PlusSignIcon,
+  ScissorIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback } from "react";
 
 import { useVideoEditorStore } from "../../state/video-editor-store";
@@ -82,7 +89,7 @@ export function TimelineToolbar() {
               pressed={activeTool === "select"}
               onPressedChange={() => setActiveTool("select")}
             >
-              <MousePointer2 className="h-3.5 w-3.5" />
+              <HugeiconsIcon icon={Cursor01Icon} className="h-3.5 w-3.5" />
             </Toggle>
           </TooltipTrigger>
           <TooltipContent side="bottom">
@@ -98,7 +105,7 @@ export function TimelineToolbar() {
               pressed={activeTool === "razor"}
               onPressedChange={() => setActiveTool("razor")}
             >
-              <Scissors className="h-3.5 w-3.5" />
+              <HugeiconsIcon icon={ScissorIcon} className="h-3.5 w-3.5" />
             </Toggle>
           </TooltipTrigger>
           <TooltipContent side="bottom">
@@ -115,7 +122,7 @@ export function TimelineToolbar() {
               onPressedChange={toggleRippleMode}
               aria-label="Ripple edit mode"
             >
-              <GitCommitHorizontal className="h-3.5 w-3.5" />
+              <HugeiconsIcon icon={GitCommitHorizontalIcon} className="h-3.5 w-3.5" />
             </Toggle>
           </TooltipTrigger>
           <TooltipContent side="bottom">
@@ -129,7 +136,7 @@ export function TimelineToolbar() {
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleZoomOut}>
-              <Minus className="h-3 w-3" />
+              <HugeiconsIcon icon={MinusSignIcon} className="h-3 w-3" />
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
@@ -149,7 +156,7 @@ export function TimelineToolbar() {
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleZoomIn}>
-              <Plus className="h-3 w-3" />
+              <HugeiconsIcon icon={PlusSignIcon} className="h-3 w-3" />
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">

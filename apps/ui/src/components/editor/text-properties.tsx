@@ -1,6 +1,13 @@
 import type { Effects, TextStyle, TextBox } from "@tooscut/render-engine";
 
-import { Loader2, Italic, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
+import {
+  Loading03Icon,
+  TextAlignCenterIcon,
+  TextAlignLeftIcon,
+  TextAlignRightIcon,
+  TextItalicIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useMemo, useCallback, useEffect } from "react";
 
 import type { TextClip } from "../../state/video-editor-store";
@@ -145,7 +152,10 @@ export function TextProperties({
         <PropertyRow label="Weight">
           <div className="flex items-center gap-1">
             {isCurrentVariantLoading && (
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+              <HugeiconsIcon
+                icon={Loading03Icon}
+                className="h-3.5 w-3.5 animate-spin text-muted-foreground"
+              />
             )}
             <Select
               value={String(style.font_weight)}
@@ -173,7 +183,7 @@ export function TextProperties({
             onPressedChange={(pressed) => onUpdateStyle(clip.id, { italic: pressed })}
             disabled={!supportsItalic}
           >
-            <Italic className="h-3.5 w-3.5" />
+            <HugeiconsIcon icon={TextItalicIcon} className="h-3.5 w-3.5" />
           </Toggle>
         </PropertyRow>
       </PropertySection>
@@ -197,7 +207,7 @@ export function TextProperties({
               pressed={style.text_align === "Left"}
               onPressedChange={() => onUpdateStyle(clip.id, { text_align: "Left" })}
             >
-              <AlignLeft className="h-3.5 w-3.5" />
+              <HugeiconsIcon icon={TextAlignLeftIcon} className="h-3.5 w-3.5" />
             </Toggle>
             <Toggle
               variant="outline"
@@ -205,7 +215,7 @@ export function TextProperties({
               pressed={style.text_align === "Center"}
               onPressedChange={() => onUpdateStyle(clip.id, { text_align: "Center" })}
             >
-              <AlignCenter className="h-3.5 w-3.5" />
+              <HugeiconsIcon icon={TextAlignCenterIcon} className="h-3.5 w-3.5" />
             </Toggle>
             <Toggle
               variant="outline"
@@ -213,7 +223,7 @@ export function TextProperties({
               pressed={style.text_align === "Right"}
               onPressedChange={() => onUpdateStyle(clip.id, { text_align: "Right" })}
             >
-              <AlignRight className="h-3.5 w-3.5" />
+              <HugeiconsIcon icon={TextAlignRightIcon} className="h-3.5 w-3.5" />
             </Toggle>
           </div>
         </PropertyRow>

@@ -1,4 +1,5 @@
-import { Link, RotateCcw, Unlink } from "lucide-react";
+import { Link01Icon, RefreshIcon, Unlink01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 import { cn } from "@/lib/utils";
 
@@ -39,7 +40,11 @@ export function LinkablePropertySection({
           )}
           title={linked ? "Unlink X and Y" : "Link X and Y"}
         >
-          {linked ? <Link className="h-3 w-3" /> : <Unlink className="h-3 w-3" />}
+          {linked ? (
+            <HugeiconsIcon icon={Link01Icon} className="h-3 w-3" />
+          ) : (
+            <HugeiconsIcon icon={Unlink01Icon} className="h-3 w-3" />
+          )}
         </button>
       </div>
       <div className="space-y-2">{children}</div>
@@ -71,7 +76,7 @@ export function PropertyRow({
             className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
             title="Reset to default"
           >
-            <RotateCcw className="h-2.5 w-2.5" />
+            <HugeiconsIcon icon={RefreshIcon} className="h-2.5 w-2.5" />
           </button>
         )}
       </span>
