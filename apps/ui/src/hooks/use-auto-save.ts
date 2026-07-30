@@ -1,27 +1,40 @@
 import { EvaluatorManager } from "@tooscut/render-engine";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 import { buildLayersForTime } from "../lib/layer-builder";
 import { db } from "../state/db";
 import { useVideoEditorStore } from "../state/video-editor-store";
 import { getSharedCompositor } from "../workers/compositor-api";
 
-function saveProject(projectId: string) {
-  const { clips, tracks, crossTransitions, markers, assets, settings } =
-    useVideoEditorStore.getState();
-  const assetsToSave = assets.map((a) => ({
+/**
+ * The slice of store state a save persists. Captured at the moment a change
+ * is observed rather than read from the global store when the write finally
+ * executes — otherwise a queued/retried save could pick up a *different*
+ * project's state after navigation and write it into this project's row.
+ */
+type SaveSnapshot = {
+  clips: ReturnType<typeof useVideoEditorStore.getState>["clips"];
+  tracks: ReturnType<typeof useVideoEditorStore.getState>["tracks"];
+  crossTransitions: ReturnType<typeof useVideoEditorStore.getState>["crossTransitions"];
+  markers: ReturnType<typeof useVideoEditorStore.getState>["markers"];
+  assets: ReturnType<typeof useVideoEditorStore.getState>["assets"];
+  settings: ReturnType<typeof useVideoEditorStore.getState>["settings"];
+};
+
+function persistSnapshot(projectId: string, snapshot: SaveSnapshot) {
+  const assetsToSave = snapshot.assets.map((a) => ({
     ...a,
     url: "", // blob URLs aren't persistable; restored via file handle hydration
   }));
   return db.projects.update(projectId, {
     content: {
-      tracks,
-      clips,
-      crossTransitions,
-      markers,
+      tracks: snapshot.tracks,
+      clips: snapshot.clips,
+      crossTransitions: snapshot.crossTransitions,
+      markers: snapshot.markers,
       assets: assetsToSave,
     },
-    settings,
+    settings: snapshot.settings,
     updatedAt: Date.now(),
   });
 }
@@ -87,29 +100,29 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 export function useAutoSave(projectId: string) {
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const thumbTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Guards against overlapping db.projects.update() calls: if the debounce
-  // fires again while a save is still in flight (slow IndexedDB, big
-  // project), queue one follow-up save instead of racing a second write.
-  const savingRef = useRef(false);
-  const saveAgainRef = useRef(false);
-
   useEffect(() => {
-    const runSave = (id: string) => {
-      if (savingRef.current) {
-        saveAgainRef.current = true;
-        return;
-      }
-      savingRef.current = true;
-      void saveProject(id)
+    // All queue state is scoped to this effect (i.e. to this projectId) rather
+    // than living in refs that survive a projectId change. Combined with
+    // snapshotting state at observation time, that makes it structurally
+    // impossible for a queued save to write another project's content here.
+    let saveTimer: ReturnType<typeof setTimeout> | null = null;
+    let thumbTimer: ReturnType<typeof setTimeout> | null = null;
+    let saving = false;
+    // Latest observed state not yet written. Newer snapshots replace older
+    // ones — only the most recent matters.
+    let pending: SaveSnapshot | null = null;
+
+    const flush = () => {
+      if (saving || !pending) return;
+      const snapshot = pending;
+      pending = null;
+      saving = true;
+      void persistSnapshot(projectId, snapshot)
         .catch((err) => console.error("[useAutoSave] Save failed:", err))
         .finally(() => {
-          savingRef.current = false;
-          if (saveAgainRef.current) {
-            saveAgainRef.current = false;
-            runSave(id);
-          }
+          saving = false;
+          // A newer snapshot arrived while this write was in flight.
+          if (pending) flush();
         });
     };
 
@@ -122,22 +135,20 @@ export function useAutoSave(projectId: string) {
         assets: state.assets,
         settings: state.settings,
       }),
-      () => {
+      (snapshot) => {
+        pending = snapshot;
+
         // Debounced project save (1s)
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current);
-        }
-        timeoutRef.current = setTimeout(() => {
-          timeoutRef.current = null;
-          runSave(projectId);
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+          saveTimer = null;
+          flush();
         }, 1000);
 
         // Debounced thumbnail generation (5s)
-        if (thumbTimeoutRef.current) {
-          clearTimeout(thumbTimeoutRef.current);
-        }
-        thumbTimeoutRef.current = setTimeout(() => {
-          thumbTimeoutRef.current = null;
+        if (thumbTimer) clearTimeout(thumbTimer);
+        thumbTimer = setTimeout(() => {
+          thumbTimer = null;
           void generateThumbnail(projectId);
         }, 5000);
       },
@@ -154,16 +165,18 @@ export function useAutoSave(projectId: string) {
 
     return () => {
       unsubscribe();
-      // Flush any pending save immediately so changes aren't lost
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-        runSave(projectId);
+      if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
       }
-      if (thumbTimeoutRef.current) {
-        clearTimeout(thumbTimeoutRef.current);
-        thumbTimeoutRef.current = null;
+      if (thumbTimer) {
+        clearTimeout(thumbTimer);
+        thumbTimer = null;
       }
+      // Write any un-persisted change immediately. Safe even after navigation:
+      // `pending` holds state captured while THIS project was active, so it
+      // can only ever be written back to this projectId.
+      flush();
     };
   }, [projectId]);
 }

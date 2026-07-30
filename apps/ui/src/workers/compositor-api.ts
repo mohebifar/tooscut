@@ -88,11 +88,30 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
   let crashed = false;
   const crashCallbacks = new Set<(error: unknown) => void>();
 
+  // Retained so a handler registered *after* a crash still learns about it.
+  // There's a real window for that: worker.onerror can fire during
+  // initialize(), before the consumer gets a chance to call onCrash().
+  let crashError: unknown = null;
+
   const reportCrash = (error: unknown) => {
     if (crashed) return;
     crashed = true;
+    crashError = error;
     for (const callback of crashCallbacks) {
       callback(error);
+    }
+  };
+
+  /**
+   * Wrap a call so a rejection latches the crash and notifies onCrash
+   * handlers. `fenced` callers additionally refuse to run once crashed.
+   */
+  const reportingCall = async <T>(run: () => Promise<T>): Promise<T> => {
+    try {
+      return await run();
+    } catch (error) {
+      reportCrash(error);
+      throw error;
     }
   };
 
@@ -126,6 +145,9 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
 
     onCrash(callback) {
       crashCallbacks.add(callback);
+      // Already crashed before this handler existed — deliver it now so the
+      // consumer isn't left believing everything is fine.
+      if (crashed) callback(crashError);
       return () => crashCallbacks.delete(callback);
     },
 
@@ -164,57 +186,47 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
     },
 
     resize(newWidth: number, newHeight: number) {
-      if (!api || !isReady) return;
+      if (!api || !isReady || crashed) return;
       const remote = api;
-      void enqueue(() => remote.resize(newWidth, newHeight));
+      void enqueue(() => reportingCall(() => remote.resize(newWidth, newHeight)));
     },
 
     async loadFont(fontId: string, fontData: Uint8Array): Promise<boolean> {
-      if (!api || !isReady) return false;
+      if (!api || !isReady || crashed) return false;
       const remote = api;
       // Transfer the font data to avoid copying
       const transferred = Comlink.transfer(fontData, [fontData.buffer]);
-      return enqueue(() => remote.loadFont(fontId, transferred));
+      return enqueue(() => reportingCall(() => remote.loadFont(fontId, transferred)));
     },
 
     async isFontLoaded(fontId: string): Promise<boolean> {
-      if (!api || !isReady) return false;
+      if (!api || !isReady || crashed) return false;
       const remote = api;
-      return enqueue(() => remote.isFontLoaded(fontId));
+      return enqueue(() => reportingCall(() => remote.isFontLoaded(fontId)));
     },
 
     async uploadBitmap(bitmap: ImageBitmap, textureId: string) {
-      if (!api || !isReady) {
+      if (!api || !isReady || crashed) {
         bitmap.close();
         return;
       }
       const remote = api;
       // Transfer bitmap to worker (zero-copy)
       const transferred = Comlink.transfer(bitmap, [bitmap]);
-      await enqueue(() => remote.uploadBitmap(transferred, textureId));
+      await enqueue(() => reportingCall(() => remote.uploadBitmap(transferred, textureId)));
     },
 
     async renderFrame(frame: RenderFrame) {
       if (!api || !isReady || crashed) return;
       const remote = api;
-      try {
-        await enqueue(() => remote.renderFrame(frame));
-      } catch (error) {
-        reportCrash(error);
-        throw error;
-      }
+      await enqueue(() => reportingCall(() => remote.renderFrame(frame)));
     },
 
     async renderToPixels(frame: RenderFrame): Promise<Uint8Array> {
       if (!api || !isReady) throw new Error("Compositor not ready");
       if (crashed) throw new Error("Compositor crashed");
       const remote = api;
-      try {
-        return await enqueue(() => remote.renderToPixels(frame));
-      } catch (error) {
-        reportCrash(error);
-        throw error;
-      }
+      return enqueue(() => reportingCall(() => remote.renderToPixels(frame)));
     },
 
     async captureThumbnail(
@@ -223,48 +235,52 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
       thumbHeight: number,
     ): Promise<ArrayBuffer> {
       if (!api || !isReady) throw new Error("Compositor not ready");
+      if (crashed) throw new Error("Compositor crashed");
       const remote = api;
-      return enqueue(() => remote.captureThumbnail(frame, thumbWidth, thumbHeight));
+      return enqueue(() =>
+        reportingCall(() => remote.captureThumbnail(frame, thumbWidth, thumbHeight)),
+      );
     },
 
     async captureCurrentFramePixels() {
       if (!api || !isReady) throw new Error("Compositor not ready");
+      if (crashed) throw new Error("Compositor crashed");
       const remote = api;
       // Doesn't touch the WASM compositor, but shares the same queue so it
       // can't snapshot a canvas that's mid-draw from a concurrent renderFrame.
-      return enqueue(() => remote.captureCurrentFramePixels());
+      return enqueue(() => reportingCall(() => remote.captureCurrentFramePixels()));
     },
 
     async uploadLut(lutId: string, size: number, data: Float32Array) {
-      if (!api || !isReady) return;
+      if (!api || !isReady || crashed) return;
       const remote = api;
       // Transfer the float data to avoid copying
       const transferred = Comlink.transfer(data, [data.buffer]);
-      await enqueue(() => remote.uploadLut(lutId, size, transferred));
+      await enqueue(() => reportingCall(() => remote.uploadLut(lutId, size, transferred)));
     },
 
     async removeLut() {
-      if (!api || !isReady) return;
+      if (!api || !isReady || crashed) return;
       const remote = api;
-      await enqueue(() => remote.removeLut());
+      await enqueue(() => reportingCall(() => remote.removeLut()));
     },
 
     async clearTexture(textureId: string) {
-      if (!api || !isReady) return;
+      if (!api || !isReady || crashed) return;
       const remote = api;
-      await enqueue(() => remote.clearTexture(textureId));
+      await enqueue(() => reportingCall(() => remote.clearTexture(textureId)));
     },
 
     async clearAllTextures() {
-      if (!api || !isReady) return;
+      if (!api || !isReady || crashed) return;
       const remote = api;
-      await enqueue(() => remote.clearAllTextures());
+      await enqueue(() => reportingCall(() => remote.clearAllTextures()));
     },
 
     async flush() {
-      if (!api || !isReady) return;
+      if (!api || !isReady || crashed) return;
       const remote = api;
-      await enqueue(() => remote.flush());
+      await enqueue(() => reportingCall(() => remote.flush()));
     },
 
     async dispose() {

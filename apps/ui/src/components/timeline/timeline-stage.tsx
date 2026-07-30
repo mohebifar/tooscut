@@ -11,7 +11,7 @@ import type {
   TransitionDropPreview,
 } from "./canvas-timeline";
 
-import { useVideoEditorStore } from "../../state/video-editor-store";
+import { effectiveClipFades, useVideoEditorStore } from "../../state/video-editor-store";
 import { ClipNode, type ClipNodeProps } from "./clip-node";
 import { ClipRenderer, ClipRendererProps } from "./clip-renderer";
 import {
@@ -2435,8 +2435,10 @@ export function TimelineStage({
 
       const clipAssetId = "assetId" in clip ? clip.assetId : undefined;
       const wf = clip.type === "audio" && clipAssetId ? waveformMap.get(clipAssetId) : undefined;
-      const fadeIn = clip.type === "audio" ? (clip.fadeIn ?? 0) : 0;
-      const fadeOut = clip.type === "audio" ? (clip.fadeOut ?? 0) : 0;
+      // Clamped so the overlay matches what playback/export actually apply
+      // after a trim or speed change shortened the clip.
+      const { fadeIn, fadeOut } =
+        clip.type === "audio" ? effectiveClipFades(clip) : { fadeIn: 0, fadeOut: 0 };
 
       // transitionIn/transitionOut only exist on VisualClipBase descendants (not AudioClip)
       const clipTransitionIn = "transitionIn" in clip ? clip.transitionIn : undefined;

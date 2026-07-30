@@ -129,6 +129,11 @@ export function PreviewPanel() {
   // transferControlToOffscreen() is a one-shot operation per canvas element,
   // so we must ensure initialization only happens once.
   const initStartedRef = useRef(false);
+  // Unsubscribe for the compositor crash listener, released on unmount so a
+  // late crash (e.g. a queued call rejecting during teardown) can't setState
+  // on an unmounted component.
+  const crashUnsubscribeRef = useRef<(() => void) | null>(null);
+  const isMountedRef = useRef(true);
 
   // Initialize compositor (worker-based)
   useEffect(() => {
@@ -152,11 +157,14 @@ export function PreviewPanel() {
         compositorRef.current = compositor;
         setSharedCompositor(compositor);
 
-        compositor.onCrash((crashError) => {
+        crashUnsubscribeRef.current = compositor.onCrash((crashError) => {
           console.error("[PreviewPanel] Compositor crashed:", crashError);
+          if (!isMountedRef.current) return;
           setCrashed(true);
           setError(
-            "The GPU preview crashed and can't recover automatically. Your project is autosaved — reload to continue editing.",
+            // Don't promise the project is safe: the last edits may still be
+            // inside the autosave debounce window, or their save may have failed.
+            "The GPU preview crashed and can't recover automatically. Reload to continue editing — any changes from the last few seconds may not have been saved.",
           );
         });
 
@@ -201,6 +209,9 @@ export function PreviewPanel() {
   // dispose the compositor between mount cycles.
   useEffect(() => {
     return () => {
+      isMountedRef.current = false;
+      crashUnsubscribeRef.current?.();
+      crashUnsubscribeRef.current = null;
       useFontStore.getState().clearCompositorFunctions();
       setSharedCompositor(null);
       if (compositorRef.current) {

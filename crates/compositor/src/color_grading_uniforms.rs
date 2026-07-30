@@ -355,7 +355,9 @@ pub struct ColorGradingUniforms {
     pub curve_master: [[f32; 4]; 3], // 48 bytes
     /// Number of valid points in curve_master (< 2 disables the curve).
     pub curve_master_count: f32,
-    pub _pad_curve: [f32; 3],
+    /// Curves node mix (0 = bypass, 1 = full effect).
+    pub curves_mix: f32,
+    pub _pad_curve: [f32; 2],
 
     // Padding to 512 bytes (480 used, 32 remaining = 8 floats)
     pub _pad: [f32; 8],
@@ -406,7 +408,8 @@ impl Default for ColorGradingUniforms {
             _pad_tone: 0.0,
             curve_master: [[0.0; 4]; 3],
             curve_master_count: 0.0,
-            _pad_curve: [0.0; 3],
+            curves_mix: 1.0,
+            _pad_curve: [0.0; 2],
             _pad: [0.0; 8],
         }
     }
@@ -604,14 +607,25 @@ impl ColorGradingUniforms {
                     uniforms.gain = [gain_rgb[0], gain_rgb[1], gain_rgb[2], wheels.gain_luminance];
                     uniforms.wheels_mix = *mix;
                 }
-                ColorGradingNode::Curves { curves, .. } => {
+                ColorGradingNode::Curves { curves, mix, .. } => {
                     // Only the master curve is applied on the GPU today (see
                     // ColorGradingUniforms::curve_master docs) — R/G/B channel
                     // curves and non-linear interpolation are follow-up work.
                     let points = &curves.master.points;
                     if points.len() >= 2 && !curves.master.is_identity() {
                         uniforms.flags |= FLAG_CURVES_ENABLED;
+                        uniforms.curves_mix = *mix;
                         let capped = points.len().min(MAX_CURVE_POINTS);
+                        if points.len() > MAX_CURVE_POINTS {
+                            // Don't fail silently — the rendered curve won't
+                            // match what the user drew in the editor.
+                            log::warn!(
+                                "Curves node has {} control points but only {} fit in the uniform \
+                                 buffer; the master curve will render truncated",
+                                points.len(),
+                                MAX_CURVE_POINTS
+                            );
+                        }
                         uniforms.curve_master_count = capped as f32;
                         for (i, point) in points.iter().take(capped).enumerate() {
                             let vec_idx = i / 2;

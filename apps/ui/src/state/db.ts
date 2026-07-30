@@ -18,6 +18,15 @@ export interface LocalProject {
   thumbnailDataUrl: string | null;
   createdAt: number;
   updatedAt: number;
+  /**
+   * Explicit marker for the unit of all time fields in `content`, written by
+   * the v4 migration onward.
+   *
+   * Exists so no future migration ever has to *infer* whether a row was
+   * already converted — the v3 migration originally did that with magnitude
+   * thresholds and silently corrupted rows it misjudged.
+   */
+  contentTimeBase?: "frames";
 }
 
 interface StoredFileHandle {
@@ -118,6 +127,57 @@ class EditorDatabase extends Dexie {
                 asset.duration = Math.round(asset.duration * fpsFloat);
               }
             }
+
+            project.contentTimeBase = "frames";
+          });
+      });
+
+    // V4: Stamp the time-base marker on databases that ran the ORIGINAL v3
+    // upgrade (which predates the marker), and flag rows its magnitude
+    // heuristics may have skipped.
+    //
+    // Deliberately does NOT rewrite any durations. The old code skipped
+    // `clip.duration >= 1000` (i.e. clips longer than ~16.7 min, left in
+    // seconds). A value in [1000, 1000*fps) is genuinely ambiguous: it's either
+    // one of those skipped seconds values, or a correctly-converted frame count
+    // for a shorter clip. Nothing in the row distinguishes them, so an
+    // automatic "repair" would re-corrupt correct data — the exact failure mode
+    // being cleaned up here. Suspect rows are logged instead so they can be
+    // corrected deliberately.
+    this.version(4)
+      .stores({
+        projects: "id, updatedAt, name",
+        fileHandles: "id",
+      })
+      .upgrade((tx) => {
+        return tx
+          .table("projects")
+          .toCollection()
+          .modify((project: LocalProject) => {
+            const fpsFloat = project.settings?.fps
+              ? project.settings.fps.numerator / project.settings.fps.denominator
+              : 0;
+
+            // Only `clip.duration` was realistically affected: the other
+            // thresholds (100000s ≈ 27.8h assets, 1000s ≈ 16.7min transitions)
+            // are beyond any plausible real value.
+            const suspect = (project.content?.clips ?? []).filter(
+              (clip) =>
+                typeof clip.duration === "number" &&
+                clip.duration >= 1000 &&
+                (fpsFloat === 0 || clip.duration < 1000 * fpsFloat),
+            );
+            if (suspect.length > 0) {
+              console.warn(
+                `[db] Project "${project.name}" (${project.id}) has ${suspect.length} clip(s) ` +
+                  `whose duration may still be in seconds, skipped by the original v3 migration's ` +
+                  `magnitude heuristic. These cannot be corrected automatically without risking ` +
+                  `valid data; check clip lengths if they look wrong. Clip ids: ` +
+                  suspect.map((c) => c.id).join(", "),
+              );
+            }
+
+            project.contentTimeBase = "frames";
           });
       });
   }

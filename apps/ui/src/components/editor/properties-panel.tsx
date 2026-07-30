@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState, useCallback } from "react";
 
-import { useVideoEditorStore } from "../../state/video-editor-store";
+import { effectiveClipFades, useVideoEditorStore } from "../../state/video-editor-store";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { AudioEffectsProperties } from "./audio-effects-properties";
 import { AudioProperties } from "./audio-properties";
@@ -141,11 +141,13 @@ export function PropertiesPanel() {
       ? (selectedClip.volume ?? 1)
       : 1;
 
-  // Fade in/out, in seconds (stored on the clip in frames)
-  const fadeIn =
-    selectedClip?.type === "audio" ? framesToSeconds(selectedClip.fadeIn ?? 0, settings.fps) : 0;
-  const fadeOut =
-    selectedClip?.type === "audio" ? framesToSeconds(selectedClip.fadeOut ?? 0, settings.fps) : 0;
+  // Fade in/out, in seconds (stored on the clip in frames). Clamped for display
+  // so the shown value matches what actually gets applied — a trim can leave a
+  // stored fade longer than half the (now shorter) clip.
+  const effectiveFades =
+    selectedClip?.type === "audio" ? effectiveClipFades(selectedClip) : { fadeIn: 0, fadeOut: 0 };
+  const fadeIn = framesToSeconds(effectiveFades.fadeIn, settings.fps);
+  const fadeOut = framesToSeconds(effectiveFades.fadeOut, settings.fps);
   const maxFade =
     selectedClip?.type === "audio" ? framesToSeconds(selectedClip.duration / 2, settings.fps) : 0;
 

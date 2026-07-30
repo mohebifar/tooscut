@@ -508,6 +508,36 @@ function isClipOnLockedTrack(clip: EditorClip, tracks: EditableTrack[]): boolean
 }
 
 /**
+ * Clamp a fade to a whole number of frames within [0, half the clip duration].
+ * Rounds because fadeIn/fadeOut are frame counts — `duration / 2` is fractional
+ * for odd durations and would otherwise persist e.g. 12.5 frames.
+ */
+function clampFadeFrames(frames: number, durationFrames: number): number {
+  const max = Math.max(0, Math.floor(durationFrames / 2));
+  return Math.max(0, Math.min(max, Math.round(frames)));
+}
+
+/**
+ * The fades that should actually be applied to a clip right now.
+ *
+ * Trims and speed changes alter `duration` without touching the fades, so a
+ * stored fade can exceed half — or all — of a shortened clip. Rather than
+ * destructively re-clamping on every duration change (which would also lose
+ * the user's intent if they later lengthen the clip again), the stored value is
+ * treated as intent and clamped at every point it's read for playback, export,
+ * or display.
+ */
+export function effectiveClipFades(clip: { duration: number; fadeIn?: number; fadeOut?: number }): {
+  fadeIn: number;
+  fadeOut: number;
+} {
+  return {
+    fadeIn: clampFadeFrames(clip.fadeIn ?? 0, clip.duration),
+    fadeOut: clampFadeFrames(clip.fadeOut ?? 0, clip.duration),
+  };
+}
+
+/**
  * Shift clips on the given tracks whose startTime is >= fromTime by delta (can be negative).
  * Excludes clips whose ids are in the exclude set (e.g., the clip being trimmed/deleted).
  * Clamps startTime to >= 0.
@@ -1750,8 +1780,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
           set((state) => ({
             clips: state.clips.map((clip) => {
               if (clip.id !== clipId || clip.type !== "audio") return clip;
-              const clamped = Math.max(0, Math.min(clip.duration / 2, frames));
-              return { ...clip, fadeIn: clamped };
+              return { ...clip, fadeIn: clampFadeFrames(frames, clip.duration) };
             }),
           })),
 
@@ -1759,8 +1788,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
           set((state) => ({
             clips: state.clips.map((clip) => {
               if (clip.id !== clipId || clip.type !== "audio") return clip;
-              const clamped = Math.max(0, Math.min(clip.duration / 2, frames));
-              return { ...clip, fadeOut: clamped };
+              return { ...clip, fadeOut: clampFadeFrames(frames, clip.duration) };
             }),
           })),
 

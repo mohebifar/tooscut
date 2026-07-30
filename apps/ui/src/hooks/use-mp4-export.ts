@@ -34,7 +34,11 @@ import { downloadAllSubsets, findNearestWeight } from "../lib/font-service";
 import { FrameRendererPool } from "../lib/frame-renderer-pool";
 import { buildLayersForTime, calculateSourceTime } from "../lib/layer-builder";
 import { useFontStore } from "../state/font-store";
-import { useVideoEditorStore, type TextClip } from "../state/video-editor-store";
+import {
+  effectiveClipFades,
+  useVideoEditorStore,
+  type TextClip,
+} from "../state/video-editor-store";
 
 // ===================== TYPES =====================
 
@@ -549,16 +553,40 @@ export function useMp4Export(): Mp4ExportHandle {
       const audioClips = clips
         .filter((c) => c.type === "audio")
         .flatMap((c) => {
-          if (rangeStart === 0 && rangeEnd === contentDuration) return [c];
+          if (rangeStart === 0 && rangeEnd === contentDuration) {
+            const fades = effectiveClipFades(c);
+            return [{ ...c, fadeIn: fades.fadeIn, fadeOut: fades.fadeOut }];
+          }
           const clipEnd = c.startTime + c.duration;
           if (clipEnd <= rangeStart || c.startTime >= rangeEnd) return [];
           const headTrim = Math.max(0, rangeStart - c.startTime);
+          const tailTrim = Math.max(0, clipEnd - rangeEnd);
+          const newDuration = Math.min(clipEnd, rangeEnd) - Math.max(c.startTime, rangeStart);
+
+          // Fades are relative to the clip's edges, so a range that cuts into
+          // the clip must shorten them by however much of the fade it removed.
+          // Without this, exporting from inside a fade-in would restart the
+          // whole fade from silence.
+          //
+          // Approximation: the mixer's fade is a linear 0->1 ramp with no
+          // start-gain parameter, so a partially-consumed fade-in is exported
+          // as a (steeper) full ramp over the remaining frames rather than
+          // resuming at the gain the fade had already reached.
+          const fades = effectiveClipFades(c);
+          const adjustedFadeIn = Math.max(0, fades.fadeIn - headTrim);
+          const adjustedFadeOut = Math.max(0, fades.fadeOut - tailTrim);
+
           return [
             {
               ...c,
               startTime: Math.max(0, c.startTime - rangeStart),
               inPoint: c.inPoint + headTrim,
-              duration: Math.min(clipEnd, rangeEnd) - Math.max(c.startTime, rangeStart),
+              duration: newDuration,
+              ...effectiveClipFades({
+                duration: newDuration,
+                fadeIn: adjustedFadeIn,
+                fadeOut: adjustedFadeOut,
+              }),
             },
           ];
         });

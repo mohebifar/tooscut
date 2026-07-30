@@ -241,6 +241,10 @@ export function ColorGradingPanel({
             node.id === existingPrimary.id && node.type === "Primary"
               ? {
                   ...node,
+                  // Force the node on: a disabled node (or mix 0) never reaches
+                  // the GPU, so the match would silently appear to do nothing.
+                  enabled: true,
+                  mix: node.mix > 0 ? node.mix : 1,
                   correction: { ...node.correction, slope: matched.slope, offset: matched.offset },
                 }
               : node,
