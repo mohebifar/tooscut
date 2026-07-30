@@ -86,7 +86,7 @@ export function PlaybackControls() {
           </TooltipContent>
         </Tooltip>
 
-        {/* PlayIcon/PauseIcon */}
+        {/* Play/Pause */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

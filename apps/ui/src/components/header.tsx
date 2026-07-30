@@ -33,13 +33,13 @@ export function Header() {
           </Button>
           <Button variant="outline" asChild>
             <a href="https://discord.gg/sph88Avz" target="_blank" rel="noopener" title="Discord">
-              <HugeiconsIcon icon={DiscordIcon} className="h-4 w-4" />{" "}
+              <HugeiconsIcon icon={DiscordIcon} className="h-4 w-4" aria-hidden="true" />{" "}
               <span className="sr-only lg:not-sr-only">Discord</span>
             </a>
           </Button>
           <Button variant="outline" asChild>
             <a href="https://github.com/mohebifar/tooscut" target="_blank" rel="noopener">
-              <HugeiconsIcon icon={GithubIcon} className="h-4 w-4" />{" "}
+              <HugeiconsIcon icon={GithubIcon} className="h-4 w-4" aria-hidden="true" />{" "}
               <span className="sr-only lg:not-sr-only">GitHub</span>
             </a>
           </Button>

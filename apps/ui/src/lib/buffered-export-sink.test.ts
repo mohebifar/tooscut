@@ -72,6 +72,9 @@ describe("createBufferedExportSink", () => {
 describe("downloadBlob", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    // restoreAllMocks does not undo stubGlobal, so the mocked URL below would
+    // otherwise leak into every test that runs after this suite.
+    vi.unstubAllGlobals();
   });
 
   it("creates an object URL, clicks a download anchor, and revokes the URL", () => {

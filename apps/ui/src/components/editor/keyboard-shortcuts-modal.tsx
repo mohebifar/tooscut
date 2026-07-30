@@ -183,7 +183,7 @@ export function KeyboardShortcutsModal() {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <HugeiconsIcon icon={KeyboardIcon} className="h-5 w-5" />
-            KeyboardIcon Shortcuts
+            Keyboard Shortcuts
           </DialogTitle>
           <DialogDescription>
             Press <KeyboardKey>?</KeyboardKey> to toggle this panel

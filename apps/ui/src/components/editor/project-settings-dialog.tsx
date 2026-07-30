@@ -91,7 +91,7 @@ const RESOLUTION_PRESETS: ResolutionPreset[] = [
     value: "4",
   },
 
-  // SquareIcon
+  // Square
   { label: "1080×1080", group: "Square", width: 1080, height: 1080, icon: SquareIcon, value: "5" },
 
   // Platform presets

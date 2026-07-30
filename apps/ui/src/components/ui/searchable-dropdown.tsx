@@ -83,7 +83,7 @@ export function SearchableDropdown({
               className,
             )}
           >
-            {/* Search01Icon input inside popup */}
+            {/* Search input inside popup */}
             <div className="border-b p-2">
               <div className="relative">
                 <HugeiconsIcon

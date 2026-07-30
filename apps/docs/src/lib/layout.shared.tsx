@@ -32,14 +32,14 @@ export function baseOptions(): BaseLayoutProps {
         text: "Discord",
         url: "https://discord.gg/sph88Avz",
         external: true,
-        icon: <HugeiconsIcon icon={DiscordIcon} />,
+        icon: <HugeiconsIcon icon={DiscordIcon} aria-hidden="true" />,
       },
       {
         type: "icon",
         text: "GitHub",
         url: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
         external: true,
-        icon: <HugeiconsIcon icon={GithubIcon} />,
+        icon: <HugeiconsIcon icon={GithubIcon} aria-hidden="true" />,
       },
     ],
   };

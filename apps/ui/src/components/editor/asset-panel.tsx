@@ -86,7 +86,7 @@ function AssetCard({ asset }: { asset: MediaAsset }) {
           </div>
         )}
 
-        {/* TextIcon badge */}
+        {/* Text badge */}
         <div className="absolute top-1 left-1 rounded bg-muted/90 px-1 text-[10px] text-foreground uppercase">
           {asset.type}
         </div>
@@ -200,13 +200,13 @@ function AssetsContent() {
           All ({assets.length})
         </TabsTrigger>
         <TabsTrigger value="video" className="text-xs">
-          Video01Icon ({videoAssets.length})
+          Video ({videoAssets.length})
         </TabsTrigger>
         <TabsTrigger value="audio" className="text-xs">
           Audio ({audioAssets.length})
         </TabsTrigger>
         <TabsTrigger value="image" className="text-xs">
-          Image01Icon ({imageAssets.length})
+          Image ({imageAssets.length})
         </TabsTrigger>
       </TabsList>
 
@@ -232,7 +232,7 @@ function AssetsContent() {
           <ImportButton
             accept="video/*"
             onImport={handleImportedAssets}
-            label="Import Video01Icon"
+            label="Import Video"
             icon={Video01Icon}
           />
           <div className="grid grid-cols-1 gap-2 @[200px]:grid-cols-2 @[400px]:grid-cols-3 @[600px]:grid-cols-4">
@@ -266,7 +266,7 @@ function AssetsContent() {
           <ImportButton
             accept="image/*"
             onImport={handleImportedAssets}
-            label="Import Image01Icon"
+            label="Import Image"
             icon={Image01Icon}
           />
           <div className="grid grid-cols-1 gap-2 @[200px]:grid-cols-2 @[400px]:grid-cols-3 @[600px]:grid-cols-4">

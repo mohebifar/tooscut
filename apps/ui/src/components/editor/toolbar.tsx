@@ -289,7 +289,7 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
             <MenubarContent>
               <MenubarItem onClick={openKeyboardShortcuts}>
                 <HugeiconsIcon icon={KeyboardIcon} className="mr-2 h-4 w-4" />
-                KeyboardIcon Shortcuts
+                Keyboard Shortcuts
                 <MenubarShortcut>?</MenubarShortcut>
               </MenubarItem>
               <MenubarSeparator />
