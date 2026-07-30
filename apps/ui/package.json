@@ -60,14 +60,14 @@
     "@types/wicg-file-system-access": "^2023.10.7",
     "@vitejs/plugin-react": "^6.0.4",
     "babel-plugin-react-compiler": "^1.0.0",
-    "jsdom": "^27.4.0",
+    "jsdom": "^30.0.1",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "catalog:",
     "shadcn": "^4.16.0",
     "typescript": "^7.0.2",
     "vite": "catalog:",
-    "vitest": "^3.2.7",
+    "vitest": "^4.1.10",
     "web-vitals": "^6.0.1"
   }
 }

@@ -1,12 +1,6 @@
-// @vitest-environment node
-//
-// jsdom's Blob polyfill doesn't implement arrayBuffer(), so this file runs
-// under Node's environment (whose Blob is spec-complete) instead of the
-// project default. downloadBlob's DOM-touching test lives in a separate
-// file that keeps the default jsdom environment.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 
-import { createBufferedExportSink } from "./buffered-export-sink";
+import { createBufferedExportSink, downloadBlob } from "./buffered-export-sink";
 
 async function write(
   writable: WritableStream<{ type: "write"; data: Uint8Array; position: number }>,
@@ -72,5 +66,31 @@ describe("createBufferedExportSink", () => {
     await write(sink.writable, [{ data: new Uint8Array([1, 2, 3]), position: 100 }]);
 
     expect(sink.getBlob("video/mp4").size).toBe(103);
+  });
+});
+
+describe("downloadBlob", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("creates an object URL, clicks a download anchor, and revokes the URL", () => {
+    const createObjectURL = vi.fn<() => string>(() => "blob:mock-url");
+    const revokeObjectURL = vi.fn<(url: string) => void>();
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
+
+    const clickSpy = vi.fn<() => void>();
+    const originalCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      const el = originalCreateElement(tag);
+      if (tag === "a") el.click = clickSpy;
+      return el;
+    });
+
+    downloadBlob(new Blob(["hello"]), "export.mp4");
+
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    expect(clickSpy).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
   });
 });

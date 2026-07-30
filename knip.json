@@ -20,7 +20,8 @@
       ]
     },
     "packages/render-engine": {
-      "project": ["src/**/*.ts"]
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["playwright"]
     }
   },
   "ignoreDependencies": ["shadcn", "oxfmt", "oxlint", "oxlint-tsgolint"],
