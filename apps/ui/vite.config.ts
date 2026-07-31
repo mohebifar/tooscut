@@ -14,6 +14,23 @@ const COOP_HEADERS = {
   "Cross-Origin-Resource-Policy": "cross-origin",
 };
 
+// PostHog reverse proxy (avoids ad-blockers). Must stay in sync with the
+// `server.proxy` block below — that one only runs Vite's own dev server and
+// has no effect in production. These routeRules are what actually proxy
+// /ingest/* once the app is built and served by Nitro, dev or prod alike.
+//
+// h3-rules derives each rule's strip base from its own key (the key minus
+// the trailing `/**`), so a `/ingest/static/**` rule strips the whole
+// `/ingest/static` prefix — the `static` segment does NOT survive into the
+// target automatically. It has to be written back into the target path
+// (`.../static/**`) to reproduce what the dev-only proxy below does by only
+// stripping `/ingest`.
+const POSTHOG_ROUTE_RULES = {
+  "/ingest/static/**": { proxy: "https://us-assets.i.posthog.com/static/**" },
+  "/ingest/array/**": { proxy: "https://us-assets.i.posthog.com/array/**" },
+  "/ingest/**": { proxy: "https://us.i.posthog.com/**" },
+};
+
 const config = defineConfig({
   // Vite-level headers (belt-and-suspenders for non-Nitro assets)
   server: {
@@ -52,6 +69,7 @@ const config = defineConfig({
   nitro: {
     routeRules: {
       "/**": { headers: COOP_HEADERS },
+      ...POSTHOG_ROUTE_RULES,
     },
   },
   resolve: {
