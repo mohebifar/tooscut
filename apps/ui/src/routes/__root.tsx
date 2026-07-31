@@ -1,3 +1,4 @@
+import { PostHogProvider, usePostHog } from "@posthog/react";
 import {
   HeadContent,
   Outlet,
@@ -6,6 +7,7 @@ import {
   Link,
   type ErrorComponentProps,
 } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 import { Button } from "../components/ui/button";
 import appCss from "../styles.css?url";
@@ -59,6 +61,12 @@ function RootComponent() {
 }
 
 function RootErrorComponent({ error, reset }: ErrorComponentProps) {
+  const posthog = usePostHog();
+
+  useEffect(() => {
+    posthog.captureException(error);
+  }, [posthog, error]);
+
   console.error(error);
 
   return (
@@ -80,13 +88,33 @@ function RootErrorComponent({ error, reset }: ErrorComponentProps) {
 }
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  const phToken = import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN as string | undefined;
+  const phHost = import.meta.env.VITE_PUBLIC_POSTHOG_HOST as string | undefined;
+
+  if (import.meta.env.DEV && !phToken) {
+    console.error(
+      "VITE_PUBLIC_POSTHOG_PROJECT_TOKEN variable required by PostHog is missing or un-configured, this causes events to be silently missed. This error stops appearing once VITE_PUBLIC_POSTHOG_PROJECT_TOKEN is configured",
+    );
+  }
+
   return (
     <html lang="en" className="dark">
       <head>
         <HeadContent />
       </head>
       <body>
-        {children}
+        <PostHogProvider
+          apiKey={phToken ?? ""}
+          options={{
+            api_host: "/ingest",
+            ui_host: phHost ?? "https://us.posthog.com",
+            defaults: "2025-05-24",
+            capture_exceptions: true,
+            debug: import.meta.env.DEV,
+          }}
+        >
+          {children}
+        </PostHogProvider>
         <Scripts />
       </body>
     </html>

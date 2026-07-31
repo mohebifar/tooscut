@@ -18,6 +18,26 @@ const config = defineConfig({
   // Vite-level headers (belt-and-suspenders for non-Nitro assets)
   server: {
     headers: COOP_HEADERS,
+    proxy: {
+      "/ingest/static": {
+        target: "https://us-assets.i.posthog.com",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ingest/, ""),
+        secure: false,
+      },
+      "/ingest/array": {
+        target: "https://us-assets.i.posthog.com",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ingest/, ""),
+        secure: false,
+      },
+      "/ingest": {
+        target: "https://us.i.posthog.com",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ingest/, ""),
+        secure: false,
+      },
+    },
   },
   // Nitro-level headers — this is what actually sets headers in dev
   // since Nitro is the HTTP request handler in TanStack Start.

@@ -9,6 +9,7 @@ import {
   UndoIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { usePostHog } from "@posthog/react";
 import { useNavigate } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -41,6 +42,7 @@ interface ToolbarProps {
 }
 
 export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
+  const posthog = usePostHog();
   const { projectId } = Route.useParams();
   const exportDialogOpen = useVideoEditorStore((s) => s.exportDialogOpen);
   const setExportDialogOpen = useVideoEditorStore((s) => s.setExportDialogOpen);
@@ -201,7 +203,14 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
                 onClick={() => {
                   void (async () => {
                     const assets = await importFilesWithPicker();
-                    if (assets.length > 0) addAssetsToStores(assets);
+                    if (assets.length > 0) {
+                      addAssetsToStores(assets);
+                      const types = [...new Set(assets.map((a) => a.type))];
+                      posthog.capture("media_imported", {
+                        count: assets.length,
+                        types,
+                      });
+                    }
                   })();
                 }}
               >

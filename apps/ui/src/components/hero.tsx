@@ -7,12 +7,15 @@ import {
   PreviousIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { usePostHog } from "@posthog/react";
 import { Link } from "@tanstack/react-router";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export function HeroSection() {
+  const posthog = usePostHog();
+
   return (
     <section className="mx-auto w-full max-w-5xl overflow-hidden pt-16">
       {/* Shades */}
@@ -50,7 +53,10 @@ export function HeroSection() {
               View Source
             </a>
           </Button>
-          <Button asChild>
+          <Button
+            asChild
+            onClick={() => posthog.capture("get_started_clicked", { source: "hero" })}
+          >
             <Link to="/projects">
               Start Editing
               <HugeiconsIcon icon={ArrowRight01Icon} data-icon="inline-end" />

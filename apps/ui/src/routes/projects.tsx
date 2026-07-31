@@ -8,6 +8,7 @@ import {
   SmartPhone01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { usePostHog } from "@posthog/react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
 import { addTrackPair, type EditableTrack } from "@tooscut/render-engine";
@@ -67,6 +68,7 @@ function isChromiumBrowser(): boolean {
 
 function ProjectChooser() {
   const navigate = useNavigate();
+  const posthog = usePostHog();
   const projects = useLiveQuery(() => db.projects.orderBy("updatedAt").reverse().toArray());
   const [deleteTarget, setDeleteTarget] = useState<LocalProject | null>(null);
   const [showBrowserWarning, setShowBrowserWarning] = useState(() => !isChromiumBrowser());
@@ -100,6 +102,9 @@ function ProjectChooser() {
     };
 
     await db.projects.add(project);
+    posthog.capture("project_created", {
+      total_projects: (projects?.length ?? 0) + 1,
+    });
     void navigate({
       to: "/editor/$projectId",
       params: { projectId: id },
@@ -114,10 +119,14 @@ function ProjectChooser() {
     if (assetIds.length > 0) {
       await db.fileHandles.bulkDelete(assetIds);
     }
+    posthog.capture("project_deleted", {
+      remaining_projects: Math.max(0, (projects?.length ?? 1) - 1),
+    });
     setDeleteTarget(null);
   };
 
   const handleOpenProject = (projectId: string) => {
+    posthog.capture("project_opened");
     void navigate({
       to: "/editor/$projectId",
       params: { projectId },
