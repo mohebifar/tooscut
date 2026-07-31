@@ -33,3 +33,6 @@ todos.json
 crates/**/target
 
 /target
+
+# Vercel build output (Build Output API)
+.vercel
