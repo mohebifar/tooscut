@@ -1,4 +1,4 @@
-import { Drag01Icon } from "@hugeicons/core-free-icons";
+import { HorizontalResizeIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import * as React from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
@@ -63,11 +63,14 @@ function ResizableHandle({
             isVertical ? "h-3 w-4 rotate-90" : "h-4 w-3",
           )}
         >
-          <HugeiconsIcon icon={Drag01Icon} className="h-2.5 w-2.5 text-muted-foreground" />
+          <HugeiconsIcon
+            icon={HorizontalResizeIcon}
+            className="h-2.5 w-2.5 text-muted-foreground"
+          />
         </div>
       )}
     </Separator>
   );
 }
 
-export { ResizablePanelGroup, ResizablePanel, ResizableHandle };
+export { ResizableHandle, ResizablePanel, ResizablePanelGroup };
