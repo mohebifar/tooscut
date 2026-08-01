@@ -177,8 +177,16 @@ function buildVideoConfigLadder(
   const relaxations: Array<
     Pick<VideoEncoderConfig, "codec" | "hardwareAcceleration" | "latencyMode">
   > = [
-    { codec: AVC_PROFILE_LADDER[0], hardwareAcceleration: "prefer-hardware", latencyMode: "realtime" },
-    { codec: AVC_PROFILE_LADDER[0], hardwareAcceleration: "prefer-hardware", latencyMode: "quality" },
+    {
+      codec: AVC_PROFILE_LADDER[0],
+      hardwareAcceleration: "prefer-hardware",
+      latencyMode: "realtime",
+    },
+    {
+      codec: AVC_PROFILE_LADDER[0],
+      hardwareAcceleration: "prefer-hardware",
+      latencyMode: "quality",
+    },
     { codec: AVC_PROFILE_LADDER[0], hardwareAcceleration: "no-preference", latencyMode: "quality" },
     { codec: AVC_PROFILE_LADDER[1], hardwareAcceleration: "no-preference", latencyMode: "quality" },
     { codec: AVC_PROFILE_LADDER[2], hardwareAcceleration: "no-preference", latencyMode: "quality" },
