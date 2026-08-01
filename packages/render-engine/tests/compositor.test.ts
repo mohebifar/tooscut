@@ -535,6 +535,45 @@ describe("compositor", () => {
   });
 
   // ============================================================================
+  // Resolution changes
+  // ============================================================================
+
+  describe("resolution changes", () => {
+    afterEach(() => {
+      // The tester is shared across the whole file — restore the canvas
+      // size other describe blocks assume.
+      tester.resize(256, 256);
+    });
+
+    it("renders correctly after switching to a resolution with unaligned row bytes", async () => {
+      // Regression test: readback_buffer in compositor.rs was only ever
+      // created with `is_none()`, never checked against the current
+      // resolution, so it stayed sized for whichever resolution first
+      // triggered renderToPixels and was silently reused after every later
+      // resize(). WebGPU pads each copied row up to a 256-byte boundary, so
+      // whether a resolution needs padding depends on its width: 1920 needs
+      // none (1920 * 4 = 7680, already a multiple of 256) but 1080 does
+      // (1080 * 4 = 4320, rounds up to 4352) — going from 1920x1080 to
+      // 1080x1920 is exactly the sequence that panicked in production
+      // ("range end index ... out of range for slice of length ...").
+      tester.resize(1920, 1080);
+      tester.clearAllTextures();
+      tester.addSolidTexture("red", 1920, 1080, [255, 0, 0, 255]);
+      await tester.render(createFrame(1920, 1080, [createLayer("red")]));
+
+      tester.resize(1080, 1920);
+      tester.clearAllTextures();
+      tester.addSolidTexture("blue", 1080, 1920, [0, 0, 255, 255]);
+      const imageData = await tester.render(createFrame(1080, 1920, [createLayer("blue")]));
+
+      expect(imageData.width).toBe(1080);
+      expect(imageData.height).toBe(1920);
+      const pixels = new PixelAsserter(imageData);
+      pixels.expectPixelAtPercent(50, 50).blueGreaterThan(200);
+    });
+  });
+
+  // ============================================================================
   // Run All Visual Test Cases
   // ============================================================================
 

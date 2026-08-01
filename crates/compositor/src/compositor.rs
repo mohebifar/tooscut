@@ -885,12 +885,26 @@ impl Compositor {
         // Ensure render texture exists
         self.ensure_render_texture();
 
-        // Ensure readback buffer exists
+        // Ensure readback buffer exists and matches the current resolution.
+        //
+        // Unlike render_texture (see ensure_render_texture), this was only ever
+        // checked with is_none() — once created at some resolution it was kept
+        // forever, including across resize(). bytes_per_row depends on width
+        // (256-byte row alignment), so a stale buffer from a different
+        // resolution can be the wrong size in either direction: too small to
+        // copy into (wgpu logs a validation error and drops the copy) or, on
+        // the CPU side below, too short for the row-deinterleaving loop to
+        // slice into — which is what actually panicked.
         let bytes_per_row = (width * 4).div_ceil(256) * 256;
-        if self.readback_buffer.is_none() {
+        let required_size = (bytes_per_row * height) as u64;
+        let needs_readback_buffer = match self.readback_buffer.as_ref() {
+            Some(buffer) => buffer.size() != required_size,
+            None => true,
+        };
+        if needs_readback_buffer {
             self.readback_buffer = Some(self.device.create_buffer(&BufferDescriptor {
                 label: Some("readback_buffer"),
-                size: (bytes_per_row * height) as u64,
+                size: required_size,
                 usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
                 mapped_at_creation: false,
             }));
