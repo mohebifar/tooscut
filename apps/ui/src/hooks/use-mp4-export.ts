@@ -11,6 +11,7 @@ import { EvaluatorManager, framesToSeconds } from "@tooscut/render-engine";
 import {
   AudioSample,
   AudioSampleSource,
+  canEncodeAudio,
   EncodedPacket,
   EncodedVideoPacketSource,
   Mp4OutputFormat,
@@ -115,6 +116,107 @@ function getOptimalWorkerCount(): number {
 const PROGRESS_UPDATE_INTERVAL_MS = 200;
 const MAX_ENCODED_CHUNK_QUEUE_SIZE = 8;
 const MAX_VIDEO_ENCODER_QUEUE_SIZE = 4;
+
+/**
+ * H.264 profiles we fall back through, most-capable first. The level (0x32 =
+ * 5.0) is held constant; only the profile is stepped down, since a machine that
+ * rejects High may still accept Main or Constrained Baseline.
+ */
+const AVC_PROFILE_LADDER = [
+  "avc1.640032", // High profile, level 5.0 (best quality)
+  "avc1.4d0032", // Main profile, level 5.0
+  "avc1.42e032", // Constrained Baseline profile, level 5.0 (widest support)
+] as const;
+
+/**
+ * Error thrown when the platform video encoder fails, enriched with enough
+ * context (codec, resolution, hardware-vs-software) to be diagnosable in error
+ * tracking and in the export dialog — instead of a bare "Encoding error."
+ * DOMException with no stack, codec, or clue about which encoder failed.
+ */
+class VideoEncoderError extends Error {
+  readonly codec: string;
+  readonly width: number;
+  readonly height: number;
+  readonly hardwareAcceleration: NonNullable<VideoEncoderConfig["hardwareAcceleration"]>;
+
+  constructor(
+    cause: unknown,
+    config: {
+      codec: string;
+      width: number;
+      height: number;
+      hardwareAcceleration: NonNullable<VideoEncoderConfig["hardwareAcceleration"]>;
+    },
+  ) {
+    const causeMessage = cause instanceof Error ? cause.message : String(cause);
+    super(
+      `Video encoder failed (${config.hardwareAcceleration} H.264 ${config.codec}, ` +
+        `${config.width}x${config.height}): ${causeMessage}`,
+    );
+    this.name = "VideoEncoderError";
+    this.cause = cause;
+    this.codec = config.codec;
+    this.width = config.width;
+    this.height = config.height;
+    this.hardwareAcceleration = config.hardwareAcceleration;
+  }
+}
+
+/**
+ * Build the video-encoder config fallback ladder, ideal first. Each rung relaxes
+ * one more constraint: drop realtime latency, then allow a software encoder,
+ * then step down the AVC profile. Probing these with
+ * VideoEncoder.isConfigSupported() before configure() means a machine whose
+ * hardware AVC encoder rejects our preferred config falls through to one it
+ * accepts, instead of dying the whole export with an opaque "Encoding error.".
+ */
+function buildVideoConfigLadder(
+  base: Pick<VideoEncoderConfig, "width" | "height" | "bitrate" | "framerate">,
+): VideoEncoderConfig[] {
+  const relaxations: Array<
+    Pick<VideoEncoderConfig, "codec" | "hardwareAcceleration" | "latencyMode">
+  > = [
+    { codec: AVC_PROFILE_LADDER[0], hardwareAcceleration: "prefer-hardware", latencyMode: "realtime" },
+    { codec: AVC_PROFILE_LADDER[0], hardwareAcceleration: "prefer-hardware", latencyMode: "quality" },
+    { codec: AVC_PROFILE_LADDER[0], hardwareAcceleration: "no-preference", latencyMode: "quality" },
+    { codec: AVC_PROFILE_LADDER[1], hardwareAcceleration: "no-preference", latencyMode: "quality" },
+    { codec: AVC_PROFILE_LADDER[2], hardwareAcceleration: "no-preference", latencyMode: "quality" },
+  ];
+
+  return relaxations.map((relaxation) => ({ ...base, ...relaxation }));
+}
+
+/**
+ * Probe the platform encoder and return the first config it reports as
+ * supported, walking down the fallback ladder. Throws a diagnosable error
+ * (listing everything tried) if nothing is supported.
+ */
+async function resolveVideoEncoderConfig(
+  base: Pick<VideoEncoderConfig, "width" | "height" | "bitrate" | "framerate">,
+): Promise<VideoEncoderConfig> {
+  const ladder = buildVideoConfigLadder(base);
+  const tried: string[] = [];
+
+  for (const config of ladder) {
+    tried.push(`${config.codec}/${config.hardwareAcceleration}/${config.latencyMode}`);
+    try {
+      const support = await VideoEncoder.isConfigSupported(config);
+      if (support.supported) {
+        // isConfigSupported may normalize the config; prefer what it hands back.
+        return support.config ?? config;
+      }
+    } catch {
+      // A malformed/unsupported codec string makes isConfigSupported itself
+      // reject — treat that like "not supported" and keep walking the ladder.
+    }
+  }
+
+  throw new Error(
+    `No supported H.264 encoder configuration for ${base.width}x${base.height} ` +
+      `(tried: ${tried.join(", ")})`,
+  );
+}
 
 /**
  * Render audio using WASM engine and stream chunks to AudioSampleSource.
@@ -637,6 +739,18 @@ export function useMp4Export(): Mp4ExportHandle {
       let encodedDrainPromise: Promise<void> | null = null;
       let resolveQueueBelowLimit: (() => void) | null = null;
 
+      // Probe the platform encoder and pick a supported config before touching a
+      // real VideoEncoder. Without this, a machine whose hardware AVC encoder
+      // rejects our preferred config (High profile, prefer-hardware, realtime)
+      // fails the whole export with an opaque "Encoding error." and no fallback.
+      const videoConfig = await resolveVideoEncoderConfig({
+        width,
+        height,
+        bitrate: typeof resolvedBitrate === "number" ? resolvedBitrate : 20_000_000,
+        framerate: frameRate,
+      });
+      const videoAccel = videoConfig.hardwareAcceleration ?? "no-preference";
+
       const mainEncoder = new VideoEncoder({
         output: (chunk, meta) => {
           const data = new Uint8Array(chunk.byteLength);
@@ -654,23 +768,38 @@ export function useMp4Export(): Mp4ExportHandle {
           void pumpEncodedChunks();
         },
         error: (e) => {
-          console.error("[MP4Export] Encoder error:", e);
-          muxError = e instanceof Error ? e : new Error(String(e));
+          // Wrap the bare DOMException in a diagnosable error carrying the codec,
+          // resolution, and which encoder blew up, so error tracking gets
+          // something actionable and the dialog can tell the user why.
+          const wrapped = new VideoEncoderError(e, {
+            codec: videoConfig.codec,
+            width,
+            height,
+            hardwareAcceleration: videoAccel,
+          });
+          console.error("[MP4Export] Encoder error:", wrapped);
+          muxError = wrapped;
         },
       });
 
-      mainEncoder.configure({
-        codec: "avc1.640032",
-        width,
-        height,
-        bitrate: typeof resolvedBitrate === "number" ? resolvedBitrate : 20_000_000,
-        framerate: frameRate,
-        hardwareAcceleration: "prefer-hardware",
-        latencyMode: "realtime",
-      });
+      mainEncoder.configure(videoConfig);
 
       let audioSource: AudioSampleSource | null = null;
       if (hasAudio) {
+        // Probe AAC too — an unprobed AudioSampleSource on a platform without an
+        // AAC encoder would otherwise fail deep in muxing with no useful context.
+        const canEncodeAac = await canEncodeAudio("aac", {
+          numberOfChannels: 2,
+          sampleRate,
+          bitrate: audioBitrate,
+        });
+        if (!canEncodeAac) {
+          throw new Error(
+            `No supported AAC audio encoder on this platform ` +
+              `(2ch, ${sampleRate}Hz, ${audioBitrate}bps)`,
+          );
+        }
+
         audioSource = new AudioSampleSource({
           codec: "aac",
           bitrate: audioBitrate,
@@ -709,6 +838,11 @@ export function useMp4Export(): Mp4ExportHandle {
         ).then(() => {
           audioSource!.close();
         });
+        // audioPromise isn't awaited until the video loop finishes, so if the
+        // video path throws first an audio rejection would escape as an
+        // unhandled "Audio render worker failed". Attach a handler now to mark
+        // it handled; the awaited path below still surfaces the real error.
+        audioPromise.catch(() => {});
       }
 
       setProgress({
