@@ -382,6 +382,35 @@ compositor.clearTexture(id); // Release texture
 - Use `Comlink.transfer()` for zero-copy transfer to workers
 - Textures are cached by ID until explicitly cleared
 
+### Panic Diagnostics and Crash Handling
+
+A Rust panic in the compositor compiles down to a WASM `unreachable` trap that
+reaches JS as a stackless `RuntimeError: unreachable` — no message, no source
+location — which is useless for triage in error tracking.
+
+To keep panics attributable:
+
+- **Rust panic hook** (`crates/compositor/src/lib.rs`): a custom
+  `std::panic::set_hook` records each panic's formatted message (payload + Rust
+  `file:line:col`) into a thread-local before the trap fires, and still logs it
+  to the console (matching the old `console_error_panic_hook` behavior). The
+  worker recovers it via the `take_last_panic()` WASM export
+  (`takeLastCompositorPanic()` in the render engine), which reads and clears the
+  slot — safe even after a trap, since it only touches a thread-local, not GPU
+  state.
+- **Worker rethrow** (`apps/ui/src/workers/compositor.worker.ts`): the first
+  call into the compositor that throws latches `crashed = true` (permanently
+  disabling the instance) and **rethrows** an enriched `CompositorCrashedError`
+  carrying the recovered panic message. Every entry point rethrows on its first
+  failure rather than swallowing it — otherwise a panic in a void-returning path
+  (`resize`, `loadFont`, `uploadBitmap`, `uploadLut`, `flush`, …) would never be
+  reported. Later calls short-circuit on the crash latch, so at most one error
+  is surfaced per crash.
+
+Because a panic is unrecoverable and corrupts the instance, the compositor
+itself should avoid panicking in the first place: prefer returning
+`CompositorError` over `unwrap()`/`expect()` on any state that could be absent.
+
 ---
 
 ## Text Rendering

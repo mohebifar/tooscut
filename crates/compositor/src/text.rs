@@ -448,16 +448,18 @@ impl TextRenderer {
             // may not have italic variants. Italic is only applied when the user
             // explicitly loads an italic font variant.
 
-            // Check for word highlighting
-            let has_highlighting = layer.highlight_style.is_some()
-                && layer
-                    .highlighted_word_indices
-                    .as_ref()
-                    .is_some_and(|indices| !indices.is_empty());
+            // Check for word highlighting. Bind the style and the (non-empty)
+            // indices together up front so the highlight path never unwraps a
+            // `None` — a mismatch here previously panicked the whole compositor.
+            let highlighting = match (
+                layer.highlight_style.as_ref(),
+                layer.highlighted_word_indices.as_ref(),
+            ) {
+                (Some(style), Some(indices)) if !indices.is_empty() => Some((style, indices)),
+                _ => None,
+            };
 
-            if has_highlighting {
-                let highlight_style = layer.highlight_style.as_ref().unwrap();
-                let highlighted_indices = layer.highlighted_word_indices.as_ref().unwrap();
+            if let Some((highlight_style, highlighted_indices)) = highlighting {
                 let highlighted_set: HashSet<usize> = highlighted_indices.iter().copied().collect();
 
                 // Create highlight color

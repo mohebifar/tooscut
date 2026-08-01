@@ -619,9 +619,12 @@ impl Compositor {
 
     /// Ensure the render texture exists and matches the current size.
     fn ensure_render_texture(&mut self) {
-        let needs_create = self.render_texture.is_none()
-            || self.render_texture.as_ref().unwrap().size().width != self.width
-            || self.render_texture.as_ref().unwrap().size().height != self.height;
+        let needs_create = match self.render_texture.as_ref() {
+            Some(texture) => {
+                texture.size().width != self.width || texture.size().height != self.height
+            }
+            None => true,
+        };
 
         if needs_create {
             self.render_texture = Some(self.device.create_texture(&wgpu::TextureDescriptor {
@@ -931,14 +934,20 @@ impl Compositor {
 
         // Render to view in a separate scope to release borrows
         {
-            let render_texture = self.render_texture.as_ref().unwrap();
+            let render_texture = self.render_texture.as_ref().ok_or_else(|| {
+                CompositorError::RenderStateNotInitialized("render_texture".to_string())
+            })?;
             let view = render_texture.create_view(&TextureViewDescriptor::default());
             self.render_to_view(&mut encoder, &view, frame, clear_color);
         }
 
         // Re-borrow for copy operation
-        let render_texture = self.render_texture.as_ref().unwrap();
-        let readback_buffer = self.readback_buffer.as_ref().unwrap();
+        let render_texture = self.render_texture.as_ref().ok_or_else(|| {
+            CompositorError::RenderStateNotInitialized("render_texture".to_string())
+        })?;
+        let readback_buffer = self.readback_buffer.as_ref().ok_or_else(|| {
+            CompositorError::RenderStateNotInitialized("readback_buffer".to_string())
+        })?;
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
                 texture: render_texture,

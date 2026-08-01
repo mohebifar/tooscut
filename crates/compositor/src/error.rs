@@ -21,6 +21,9 @@ pub enum CompositorError {
     #[error("Texture not found: {0}")]
     TextureNotFound(String),
 
+    #[error("Render state not initialized: {0}")]
+    RenderStateNotInitialized(String),
+
     #[error("Invalid texture dimensions: {width}x{height}")]
     InvalidTextureDimensions { width: u32, height: u32 },
 

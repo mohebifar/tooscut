@@ -22,7 +22,6 @@ bytemuck.workspace = true
 log.workspace = true
 console_log.workspace = true
 thiserror.workspace = true
-console_error_panic_hook.workspace = true
 futures.workspace = true
 
 # Text rendering
