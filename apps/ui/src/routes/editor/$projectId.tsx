@@ -54,6 +54,26 @@ function EditorPage() {
   // Auto-save project changes
   useAutoSave(projectId);
 
+  // The editor is a fixed h-screen layout — every scrollable region is an
+  // internal overflow-auto container, and <html>/<body> never need to scroll.
+  // Without this, opening a base-ui Dialog/Popover (e.g. Project Settings,
+  // Keyboard Shortcuts) still runs its scroll-lock compensation logic, which
+  // on platforms with reserved-space scrollbars (Windows/Linux, or macOS with
+  // "Always show scrollbars") shrinks <body> by the scrollbar width to avoid
+  // a layout shift that, here, was never going to happen — visible as an
+  // unwanted gap on the right edge of the app for as long as the dialog is
+  // open. base-ui's own scroll-lock bails out immediately if <html> already
+  // computes overflow-y: hidden, so setting it here for the lifetime of the
+  // editor route skips that compensation entirely.
+  useEffect(() => {
+    const html = document.documentElement;
+    const previous = html.style.overflow;
+    html.style.overflow = "hidden";
+    return () => {
+      html.style.overflow = previous;
+    };
+  }, []);
+
   // Load project on mount
   useEffect(() => {
     let cancelled = false;
