@@ -25,4 +25,4 @@ jobs:
           path-to-signatures: signatures/cla.json
           path-to-document: https://github.com/mohebifar/tooscut/blob/main/CLA.md
           branch: main
-          allowlist: dependabot[bot],renovate[bot],github-actions[bot]
+          allowlist: dependabot[bot],renovate[bot],github-actions[bot],posthog[bot]
