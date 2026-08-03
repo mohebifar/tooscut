@@ -60,7 +60,7 @@ export {
 } from "./color-matching.js";
 
 // Compositor (WASM)
-export { Compositor, initCompositorWasm } from "./compositor.js";
+export { Compositor, initCompositorWasm, takeLastCompositorPanic } from "./compositor.js";
 
 // Frame building
 export {

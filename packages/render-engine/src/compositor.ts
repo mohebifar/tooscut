@@ -38,6 +38,28 @@ export async function initCompositorWasm(wasmUrl?: string | URL): Promise<void> 
 }
 
 /**
+ * Recover the message from the most recent Rust panic in the WASM compositor,
+ * clearing it in the process.
+ *
+ * A Rust panic compiles to a WASM `unreachable` trap that reaches JS as a
+ * stackless `RuntimeError: unreachable` with no usable message. The compositor's
+ * panic hook records the real panic message (payload + Rust `file:line:col`)
+ * before the trap fires; call this right after a compositor call throws to
+ * attach that context to the error before it reaches error tracking.
+ *
+ * Returns `null` if the WASM module isn't loaded or no panic was recorded.
+ */
+export function takeLastCompositorPanic(): string | null {
+  if (!wasmModule) return null;
+  try {
+    return wasmModule.take_last_panic() ?? null;
+  } catch {
+    // Reading the panic slot must never mask the original error.
+    return null;
+  }
+}
+
+/**
  * GPU compositor for rendering video frames.
  *
  * Each instance wraps a WebGPU context and can render frames independently.

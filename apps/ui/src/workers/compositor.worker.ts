@@ -12,7 +12,12 @@
  * - No data returned to main thread (canvas updates visible automatically)
  */
 
-import { Compositor, initCompositorWasm, type RenderFrame } from "@tooscut/render-engine";
+import {
+  Compositor,
+  initCompositorWasm,
+  type RenderFrame,
+  takeLastCompositorPanic,
+} from "@tooscut/render-engine";
 import * as Comlink from "comlink";
 
 // ===================== TYPES =====================
@@ -43,8 +48,15 @@ const uploadedTextures = new Set<string>();
 let crashed = false;
 
 class CompositorCrashedError extends Error {
-  constructor(cause?: unknown) {
-    super("Compositor crashed and cannot continue rendering");
+  constructor(cause?: unknown, panicMessage?: string) {
+    // When a Rust panic is the cause, surface its message (payload + Rust
+    // file:line) so error tracking gets something better than a stackless
+    // "RuntimeError: unreachable".
+    super(
+      panicMessage
+        ? `Compositor panic: ${panicMessage}`
+        : "Compositor crashed and cannot continue rendering",
+    );
     this.name = "CompositorCrashedError";
     this.cause = cause;
   }
@@ -60,16 +72,26 @@ function isUsable(): boolean {
 }
 
 /**
- * Latch the crash so no further calls reach the (possibly corrupted) instance.
- * Returns the error to throw, for entry points whose contract is to throw;
- * callers that return a fallback value instead can ignore the return.
+ * Latch the crash so no further calls reach the (possibly corrupted) instance,
+ * and return an error to throw so the crash crosses the comlink boundary and
+ * reaches error tracking. EVERY entry point must throw this on its first
+ * failure rather than swallowing it — a swallowed panic is invisible to us.
+ * (Subsequent calls short-circuit on `isUsable()` and never reach here, so at
+ * most one error is thrown per crash.)
  */
 function markCrashed(label: string, error: unknown): CompositorCrashedError {
+  // The Rust panic message is only available right after the trap and is
+  // cleared on read, so recover it only for the first (real) crash.
+  const panicMessage = crashed ? undefined : (takeLastCompositorPanic() ?? undefined);
   if (!crashed) {
     crashed = true;
-    console.error(`[CompositorWorker] ${label} failed; compositor is now unusable:`, error);
+    console.error(
+      `[CompositorWorker] ${label} failed; compositor is now unusable:`,
+      panicMessage ?? "(no Rust panic message captured)",
+      error,
+    );
   }
-  return new CompositorCrashedError(error);
+  return new CompositorCrashedError(error, panicMessage && `${label}: ${panicMessage}`);
 }
 
 // ===================== WORKER API =====================
@@ -119,7 +141,7 @@ function resize(width: number, height: number): void {
     canvas.height = height;
     compositor.resize(width, height);
   } catch (error) {
-    markCrashed("resize", error);
+    throw markCrashed("resize", error);
   }
 }
 
@@ -134,8 +156,7 @@ function loadFont(fontId: string, fontData: Uint8Array): boolean {
   try {
     return compositor!.loadFont(fontId, fontData);
   } catch (error) {
-    markCrashed(`loadFont(${fontId})`, error);
-    return false;
+    throw markCrashed(`loadFont(${fontId})`, error);
   }
 }
 
@@ -148,8 +169,7 @@ function isFontLoaded(fontId: string): boolean {
   try {
     return compositor!.isFontLoaded(fontId);
   } catch (error) {
-    markCrashed(`isFontLoaded(${fontId})`, error);
-    return false;
+    throw markCrashed(`isFontLoaded(${fontId})`, error);
   }
 }
 
@@ -167,10 +187,11 @@ function uploadBitmap(bitmap: ImageBitmap, textureId: string): void {
     compositor!.uploadBitmap(bitmap, textureId);
     uploadedTextures.add(textureId);
   } catch (error) {
-    markCrashed(`uploadBitmap(${textureId})`, error);
+    throw markCrashed(`uploadBitmap(${textureId})`, error);
+  } finally {
+    // Close bitmap after GPU upload (or on failure) to free memory
+    bitmap.close();
   }
-  // Close bitmap after GPU upload to free memory
-  bitmap.close();
 }
 
 /**
@@ -307,7 +328,7 @@ function clearTexture(textureId: string): void {
     compositor!.clearTexture(textureId);
     uploadedTextures.delete(textureId);
   } catch (error) {
-    markCrashed(`clearTexture(${textureId})`, error);
+    throw markCrashed(`clearTexture(${textureId})`, error);
   }
 }
 
@@ -321,7 +342,7 @@ function clearAllTextures(): void {
     compositor!.clearAllTextures();
     uploadedTextures.clear();
   } catch (error) {
-    markCrashed("clearAllTextures", error);
+    throw markCrashed("clearAllTextures", error);
   }
 }
 
@@ -334,7 +355,7 @@ function uploadLut(lutId: string, size: number, data: Float32Array): void {
   try {
     compositor!.uploadLut(lutId, size, data);
   } catch (error) {
-    markCrashed(`uploadLut(${lutId})`, error);
+    throw markCrashed(`uploadLut(${lutId})`, error);
   }
 }
 
@@ -347,7 +368,7 @@ function removeLut(): void {
   try {
     compositor!.removeLut();
   } catch (error) {
-    markCrashed("removeLut", error);
+    throw markCrashed("removeLut", error);
   }
 }
 
@@ -360,7 +381,7 @@ function flush(): void {
   try {
     compositor!.flush();
   } catch (error) {
-    markCrashed("flush", error);
+    throw markCrashed("flush", error);
   }
 }
 

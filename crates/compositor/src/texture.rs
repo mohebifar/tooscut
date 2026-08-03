@@ -203,7 +203,10 @@ impl TextureManager {
             self.textures.insert(texture_id.to_string(), info);
         }
 
-        let texture_info = self.textures.get(texture_id).unwrap();
+        let texture_info = self
+            .textures
+            .get(texture_id)
+            .ok_or_else(|| CompositorError::TextureNotFound(texture_id.to_string()))?;
 
         // Copy ImageBitmap directly to GPU texture (zero-copy)
         queue.copy_external_image_to_texture(

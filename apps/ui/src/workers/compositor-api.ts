@@ -213,7 +213,12 @@ export function createCompositorApi(config: CompositorApiConfig): CompositorApi 
     resize(newWidth: number, newHeight: number) {
       if (!api || !isReady || crashed) return;
       const remote = api;
-      void enqueue(() => reportingCall(() => remote.resize(newWidth, newHeight)));
+      // Fire-and-forget by design (callers don't await a resize). The worker
+      // now rethrows on a crash instead of swallowing it, so this needs its
+      // own .catch() — reportingCall() already reports the crash via
+      // reportCrash()/onCrash(); this just keeps the rejection from
+      // surfacing as an unhandled promise rejection.
+      void enqueue(() => reportingCall(() => remote.resize(newWidth, newHeight))).catch(() => {});
     },
 
     async loadFont(fontId: string, fontData: Uint8Array): Promise<boolean> {
