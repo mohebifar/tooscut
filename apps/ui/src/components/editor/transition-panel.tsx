@@ -138,14 +138,17 @@ function useVideoHover() {
     const video = videoRef.current;
     if (video) {
       video.currentTime = 0;
-      void video.play();
+      // Ignore AbortError when the pointer leaves before playback starts.
+      video.play().catch(() => {});
     }
   };
 
   const onMouseLeave = () => {
     const video = videoRef.current;
     if (video) {
-      video.pause();
+      if (!video.paused) {
+        video.pause();
+      }
       video.currentTime = 0;
     }
   };
