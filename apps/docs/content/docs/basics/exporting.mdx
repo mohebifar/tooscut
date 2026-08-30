@@ -34,3 +34,7 @@ The file streams directly to disk via the File System Access API.
 ## Cancelling
 
 **Cancel** aborts at any time. The partial file may remain on disk.
+
+## Leaving during an export
+
+An export runs in the editor. If you try to open another project, return to the dashboard, reload the page, or close the tab while a render is in progress, Tooscut asks you to confirm first. Choose **Keep exporting** to stay, or **Leave anyway** to stop and discard the render. This prevents an accidental click or reload from throwing away the render and the local file access you granted for the project.

@@ -102,6 +102,14 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   const [exportFileName, setExportFileName] = useState<string | null>(null);
   const { startExport, cancelExport, progress, isExporting } = useMp4Export();
 
+  // Mirror the render status into the store so the route can guard navigation
+  // while a render is in flight (see the editor route's useBlocker).
+  const setIsExporting = useVideoEditorStore((s) => s.setIsExporting);
+  useEffect(() => {
+    setIsExporting(isExporting);
+    return () => setIsExporting(false);
+  }, [isExporting, setIsExporting]);
+
   // Reset state when dialog opens
   useEffect(() => {
     if (open) {
