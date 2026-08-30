@@ -15,6 +15,7 @@ import { EvaluatorManager, VideoFrameLoaderManager, secondsToFrames } from "@too
  */
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 
+import { useCanvasReplaySnapshot } from "../../hooks/use-canvas-replay-snapshot";
 import { buildLayersForTime, calculateSourceTime } from "../../lib/layer-builder";
 import { useFontStore } from "../../state/font-store";
 import { useVideoEditorStore, type VideoClip } from "../../state/video-editor-store";
@@ -37,6 +38,9 @@ interface ImageEntry {
 
 export function PreviewPanel() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Replay mirror image — the live canvas is transferred offscreen, so session
+  // replay records it blank. See useCanvasReplaySnapshot below.
+  const snapshotRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const compositorRef = useRef<CompositorApi | null>(null);
   const evaluatorManagerRef = useRef(new EvaluatorManager());
@@ -249,6 +253,12 @@ export function PreviewPanel() {
 
     img.onload = () => {
       entry.isReady = true;
+      // The decode finished after the frame that needed it was already drawn,
+      // so ask for a fresh render — otherwise the image only appears on the
+      // next unrelated edit. During playback the tick loop already re-renders.
+      if (!isPlayingRef.current) {
+        void renderFrameRef.current?.(useVideoEditorStore.getState().currentFrame);
+      }
     };
 
     imageElementsRef.current.set(asset.id, entry);
@@ -440,10 +450,14 @@ export function PreviewPanel() {
           if (entry?.isReady) {
             try {
               const bitmap = await createImageBitmap(entry.element);
-              void compositor.uploadBitmap(bitmap, textureId);
+              // Await the upload before flagging the texture as present. Marking
+              // it up front left a failed upload permanently flagged — the image
+              // never retried and never appeared. Awaiting also keeps the upload
+              // ordered ahead of the renderFrame below.
+              await compositor.uploadBitmap(bitmap, textureId);
               uploadedTexturesRef.current.add(textureId);
             } catch {
-              // Ignore
+              // Ignore — retried on the next render.
             }
           }
         }
@@ -485,6 +499,10 @@ export function PreviewPanel() {
   useEffect(() => {
     renderFrameRef.current = renderFrame;
   }, [renderFrame]);
+
+  // Keep a DOM image mirror of the offscreen canvas so session replay records
+  // the real stage instead of a blank one.
+  useCanvasReplaySnapshot(snapshotRef, isInitialized);
 
   /**
    * Animation loop for playback.
@@ -1043,18 +1061,31 @@ export function PreviewPanel() {
             }}
           >
             <div
-              className="relative overflow-visible p-3"
+              className="relative overflow-visible bg-background p-3"
               onMouseDown={(e) => {
                 if (e.target === e.currentTarget) {
                   useVideoEditorStore.getState().clearSelection();
                 }
               }}
             >
-              <canvas
-                ref={canvasRef}
-                className="size-full bg-background"
-                style={{ imageRendering: "auto" }}
-              />
+              <div className="relative size-full">
+                {/* Replay mirror. The live canvas below is transferred
+                    offscreen, so replay reconstructs it without pixels; kept
+                    transparent (no opaque background), it lets this snapshot
+                    show through in replay while the opaque live canvas hides
+                    it for the user. */}
+                <img
+                  ref={snapshotRef}
+                  alt=""
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 size-full object-contain"
+                />
+                <canvas
+                  ref={canvasRef}
+                  className="relative size-full"
+                  style={{ imageRendering: "auto" }}
+                />
+              </div>
 
               {previewMode === "transform" && isInitialized && canvasSize.width > 0 && (
                 <div className="absolute inset-3">
