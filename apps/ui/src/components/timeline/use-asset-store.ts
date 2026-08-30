@@ -344,6 +344,9 @@ const ACCEPT_MAP: Record<string, string[]> = {
   "image/*": [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"],
 };
 
+/** True while the native file picker is open, to reject re-entrant calls. */
+let pickerOpen = false;
+
 /**
  * Import files using the File System Access API (showOpenFilePicker).
  * This provides FileSystemFileHandles that persist across sessions.
@@ -376,6 +379,10 @@ export async function importFilesWithPicker(
     });
   }
 
+  // A picker is already open (e.g. from key auto-repeat on the import shortcut).
+  // A second showOpenFilePicker call would throw, so return early instead.
+  if (pickerOpen) return [];
+
   // Build accept entries from the accept string
   const acceptEntries: Record<string, string[]> = {};
   for (const part of accept.split(",")) {
@@ -385,6 +392,7 @@ export async function importFilesWithPicker(
     }
   }
 
+  pickerOpen = true;
   try {
     const handles = await picker({
       multiple: true,
@@ -399,11 +407,18 @@ export async function importFilesWithPicker(
     const files = await Promise.all(handles.map((h: FileSystemFileHandle) => h.getFile()));
     return importFiles(files, handles);
   } catch (err) {
-    // User cancelled picker
-    if (err instanceof DOMException && err.name === "AbortError") {
+    // Cancelled picker (AbortError), or a picker already active / spent user
+    // gesture from rapid re-entry (NotAllowedError, SecurityError). None are
+    // real failures, so treat them all as "nothing imported".
+    if (
+      err instanceof DOMException &&
+      (err.name === "AbortError" || err.name === "NotAllowedError" || err.name === "SecurityError")
+    ) {
       return [];
     }
     throw err;
+  } finally {
+    pickerOpen = false;
   }
 }
 
