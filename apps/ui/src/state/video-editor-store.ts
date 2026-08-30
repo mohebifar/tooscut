@@ -241,6 +241,8 @@ interface VideoEditorState {
   /** Preview canvas zoom: "fit" auto-fills container, or a percentage (e.g. 50, 100) */
   previewZoom: "fit" | number;
   exportDialogOpen: boolean;
+  /** True while an MP4 export renders. Guards navigation so a running render is not discarded. */
+  isExporting: boolean;
 
   // Assets
   assets: MediaAsset[];
@@ -278,6 +280,7 @@ interface VideoEditorState {
   setPreviewMode: (mode: "view" | "transform") => void;
   setPreviewZoom: (zoom: "fit" | number) => void;
   setExportDialogOpen: (open: boolean) => void;
+  setIsExporting: (exporting: boolean) => void;
 
   // Actions - Markers
   /** Add a marker at the given frame (defaults to the playhead). Returns the marker id. */
@@ -811,6 +814,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
         previewMode: "transform" as const,
         previewZoom: "fit",
         exportDialogOpen: false,
+        isExporting: false,
 
         assets: [],
 
@@ -899,6 +903,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
         setPreviewMode: (previewMode) => set({ previewMode }),
         setPreviewZoom: (previewZoom) => set({ previewZoom }),
         setExportDialogOpen: (exportDialogOpen) => set({ exportDialogOpen }),
+        setIsExporting: (isExporting) => set({ isExporting }),
 
         // Marker actions
         addMarker: (time) => {

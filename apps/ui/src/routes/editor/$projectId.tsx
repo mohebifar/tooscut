@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useBlocker, useNavigate } from "@tanstack/react-router";
 import { framesToSeconds } from "@tooscut/render-engine";
 import { useEffect, useState } from "react";
 
@@ -47,6 +47,21 @@ function EditorPage() {
   // understands they said no rather than the file being missing.
   const [deniedPermissionIds, setDeniedPermissionIds] = useState<string[]>([]);
   const [savedAssets, setSavedAssets] = useState<MediaAsset[]>([]);
+
+  // Block navigation while a render is in flight. Leaving the editor unmounts
+  // this route, which tears the store down (see the cleanup below) and kills
+  // the running export. The blocker also arms the native beforeunload prompt,
+  // so a reload or tab close asks before discarding the render and the file
+  // permissions that a reload would force the user to re-grant.
+  const {
+    status: blockStatus,
+    proceed: leaveAnyway,
+    reset: keepExporting,
+  } = useBlocker({
+    shouldBlockFn: () => useVideoEditorStore.getState().isExporting,
+    enableBeforeUnload: () => useVideoEditorStore.getState().isExporting,
+    withResolver: true,
+  });
 
   // Initialize audio engine for playback
   useAudioEngine();
@@ -183,6 +198,27 @@ function EditorPage() {
 
       {/* Keyboard shortcuts modal (press ? to open) */}
       <KeyboardShortcutsModal />
+
+      {/* Confirm before leaving mid-export — navigation discards the render */}
+      {blockStatus === "blocked" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="max-w-md rounded-lg border border-border bg-card p-6 text-center shadow-lg">
+            <p className="mb-2 font-medium text-foreground">Export in progress</p>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Leaving now stops the render and discards it. Wait for the export to finish, or leave
+              and lose it.
+            </p>
+            <div className="flex justify-center gap-2">
+              <Button variant="outline" onClick={keepExporting}>
+                Keep exporting
+              </Button>
+              <Button variant="destructive" onClick={leaveAnyway}>
+                Leave anyway
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Permission prompt — must be triggered by user gesture */}
       {(pendingPermissionIds.length > 0 || deniedPermissionIds.length > 0) && (
