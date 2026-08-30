@@ -20,7 +20,7 @@ afterEach(() => {
 describe("importFilesWithPicker", () => {
   it("returns [] for a re-entrant call while a picker is already open", async () => {
     let rejectFirst: (err: unknown) => void = () => {};
-    const picker = vi.fn(
+    const picker = vi.fn<PickerFn>(
       () =>
         new Promise<FileSystemFileHandle[]>((_, reject) => {
           rejectFirst = reject;
@@ -41,13 +41,13 @@ describe("importFilesWithPicker", () => {
 
   it("swallows cancel, already-active, and spent-gesture picker errors", async () => {
     for (const name of ["AbortError", "NotAllowedError", "SecurityError"]) {
-      setPicker(vi.fn(() => Promise.reject(new DOMException(name, name))));
+      setPicker(vi.fn<PickerFn>(() => Promise.reject(new DOMException(name, name))));
       await expect(importFilesWithPicker()).resolves.toEqual([]);
     }
   });
 
   it("rethrows unexpected picker errors", async () => {
-    setPicker(vi.fn(() => Promise.reject(new DOMException("boom", "NotFoundError"))));
+    setPicker(vi.fn<PickerFn>(() => Promise.reject(new DOMException("boom", "NotFoundError"))));
     await expect(importFilesWithPicker()).rejects.toThrow("boom");
   });
 });
