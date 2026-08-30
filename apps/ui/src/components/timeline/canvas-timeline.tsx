@@ -260,6 +260,8 @@ export function CanvasTimeline() {
       // Cmd/Ctrl+I: Import media
       if ((e.metaKey || e.ctrlKey) && e.key === "i") {
         e.preventDefault();
+        // Ignore key auto-repeat: it reopens the picker while one is still open.
+        if (e.repeat) return;
         void (async () => {
           const imported = await importFilesWithPicker();
           if (imported.length > 0) addAssetsToStores(imported);
