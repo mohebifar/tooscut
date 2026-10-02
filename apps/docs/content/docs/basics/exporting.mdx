@@ -21,6 +21,13 @@ Resolution and frame rate come from [project settings](/docs/basics/project-sett
 
 If you've set [in/out points](/docs/basics/markers-and-in-out-points), the dialog shows an **Export in/out range only** checkbox. Leave it unchecked to export the full timeline.
 
+## When export is unavailable
+
+The **Export** button is disabled when there is nothing to render. The dialog tells you why:
+
+- The timeline has no clips. Add clips to export a video.
+- **Export in/out range only** is on, and the in point is at or after the end of the last clip. Move the in point earlier, or clear the checkbox.
+
 ## Export stages
 
 1. **Preparing** — Building the render pipeline.

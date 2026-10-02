@@ -92,10 +92,14 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   const inPoint = useVideoEditorStore((s) => s.inPoint);
   const outPoint = useVideoEditorStore((s) => s.outPoint);
   const hasInOutRange = inPoint !== null && outPoint !== null && outPoint > inPoint;
+  const contentEnd = useVideoEditorStore((s) =>
+    s.clips.reduce((end, c) => Math.max(end, c.startTime + c.duration), 0),
+  );
 
   // Export settings — resolution and frame rate come from project settings
   const [quality, setQuality] = useState<string | null>("High");
   const [exportRangeOnly, setExportRangeOnly] = useState(false);
+  const rangeOnly = hasInOutRange && exportRangeOnly;
 
   // Export state
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
@@ -146,9 +150,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
       frameRate: settings.fps.numerator / settings.fps.denominator,
       videoBitrate: qualityPreset?.value,
       target: fileHandle ?? bufferedSink!.writable,
-      ...(hasInOutRange && exportRangeOnly
-        ? { range: { startFrame: inPoint, endFrame: outPoint } }
-        : {}),
+      ...(rangeOnly ? { range: { startFrame: inPoint, endFrame: outPoint } } : {}),
     };
 
     setExportFileName(fileHandle?.name ?? suggestedName);
@@ -159,7 +161,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
       height: settings.height,
       frame_rate: Math.round(frameRate * 100) / 100,
       quality: quality,
-      export_range_only: hasInOutRange && exportRangeOnly,
+      export_range_only: rangeOnly,
     });
 
     try {
@@ -194,8 +196,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
     settings.fps,
     quality,
     startExport,
-    hasInOutRange,
-    exportRangeOnly,
+    rangeOnly,
     inPoint,
     outPoint,
     posthog,
@@ -214,6 +215,13 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
     setExportResult(null);
     onOpenChange(false);
   }, [isExporting, cancelExport, onOpenChange]);
+
+  const exportBlockedReason =
+    contentEnd <= 0
+      ? "The timeline is empty. Add clips to export a video."
+      : rangeOnly && Math.round(inPoint) >= Math.min(Math.round(outPoint), contentEnd)
+        ? "The in/out range has no content. Move the in point earlier, or clear the checkbox."
+        : null;
 
   const isComplete = progress?.stage === "complete";
   const hasError = progress?.stage === "error";
@@ -271,6 +279,10 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
                   />
                   Export in/out range only
                 </label>
+              )}
+
+              {exportBlockedReason && (
+                <p className="text-sm text-muted-foreground">{exportBlockedReason}</p>
               )}
             </div>
           ) : (
@@ -341,7 +353,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
               <Button variant="outline" onClick={handleClose}>
                 Cancel
               </Button>
-              <Button onClick={() => void handleExport()}>
+              <Button onClick={() => void handleExport()} disabled={exportBlockedReason !== null}>
                 <HugeiconsIcon icon={Download01Icon} className="mr-2 size-4" />
                 Export
               </Button>
