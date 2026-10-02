@@ -353,9 +353,6 @@ export function useMp4Export(): Mp4ExportHandle {
   const startExport = useCallback(async (options: ExportOptions): Promise<ExportResult> => {
     const { width, height, frameRate, videoBitrate, audioBitrate = 128000, target } = options;
 
-    cancelledRef.current = false;
-    setIsExporting(true);
-
     // Get current state
     const state = useVideoEditorStore.getState();
     const assetStore = useAssetStore.getState();
@@ -381,6 +378,11 @@ export function useMp4Export(): Mp4ExportHandle {
     if (rangeEnd <= rangeStart) {
       throw new Error("Export range is empty");
     }
+
+    // Validate before flipping the exporting flag: these throws happen outside
+    // the try block, so the finally that resets the flag would never run.
+    cancelledRef.current = false;
+    setIsExporting(true);
 
     // Durations are in frames (project frame rate)
     const exportDuration = rangeEnd - rangeStart;
