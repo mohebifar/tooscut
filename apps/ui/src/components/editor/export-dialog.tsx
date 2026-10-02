@@ -99,6 +99,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   // Export settings — resolution and frame rate come from project settings
   const [quality, setQuality] = useState<string | null>("High");
   const [exportRangeOnly, setExportRangeOnly] = useState(false);
+  const rangeOnly = hasInOutRange && exportRangeOnly;
 
   // Export state
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
@@ -149,9 +150,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
       frameRate: settings.fps.numerator / settings.fps.denominator,
       videoBitrate: qualityPreset?.value,
       target: fileHandle ?? bufferedSink!.writable,
-      ...(hasInOutRange && exportRangeOnly
-        ? { range: { startFrame: inPoint, endFrame: outPoint } }
-        : {}),
+      ...(rangeOnly ? { range: { startFrame: inPoint, endFrame: outPoint } } : {}),
     };
 
     setExportFileName(fileHandle?.name ?? suggestedName);
@@ -162,7 +161,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
       height: settings.height,
       frame_rate: Math.round(frameRate * 100) / 100,
       quality: quality,
-      export_range_only: hasInOutRange && exportRangeOnly,
+      export_range_only: rangeOnly,
     });
 
     try {
@@ -197,8 +196,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
     settings.fps,
     quality,
     startExport,
-    hasInOutRange,
-    exportRangeOnly,
+    rangeOnly,
     inPoint,
     outPoint,
     posthog,
@@ -218,7 +216,6 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
     onOpenChange(false);
   }, [isExporting, cancelExport, onOpenChange]);
 
-  const rangeOnly = hasInOutRange && exportRangeOnly;
   const exportBlockedReason =
     contentEnd <= 0
       ? "The timeline is empty. Add clips to export a video."

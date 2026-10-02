@@ -379,8 +379,7 @@ export function useMp4Export(): Mp4ExportHandle {
       throw new Error("Export range is empty");
     }
 
-    // Validate before flipping the exporting flag: these throws happen outside
-    // the try block, so the finally that resets the flag would never run.
+    // Set only after the guards above: their throws skip the finally that resets it.
     cancelledRef.current = false;
     setIsExporting(true);
 
