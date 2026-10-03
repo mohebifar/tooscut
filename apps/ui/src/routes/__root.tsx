@@ -10,6 +10,11 @@ import {
 import { useEffect } from "react";
 
 import { Button } from "../components/ui/button";
+import {
+  isChunkLoadError,
+  reloadAfterChunkError,
+  takePendingChunkReload,
+} from "../lib/chunk-reload";
 import appCss from "../styles.css?url";
 
 export const Route = createRootRoute({
@@ -57,7 +62,22 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
+  useChunkReloadOutcome();
   return <Outlet />;
+}
+
+function useChunkReloadOutcome() {
+  const posthog = usePostHog();
+
+  useEffect(() => {
+    const url = takePendingChunkReload();
+    if (!url || new URL(url).origin !== window.location.origin) return;
+    // Import the chunk again to check if it loads after the reload.
+    import(/* @vite-ignore */ url).then(
+      () => posthog.capture("chunk_load_reload_completed", { recovered: true }),
+      () => posthog.capture("chunk_load_reload_completed", { recovered: false }),
+    );
+  }, [posthog]);
 }
 
 function RootErrorComponent({ error, reset }: ErrorComponentProps) {
@@ -76,11 +96,14 @@ function RootErrorComponent({ error, reset }: ErrorComponentProps) {
         The editor hit an unexpected error. Your project is autosaved, so it's safe to reload.
       </p>
       <div className="flex gap-2">
-        <Button variant="secondary" onClick={() => reset()}>
+        <Button
+          variant="secondary"
+          onClick={() => (isChunkLoadError(error) ? reloadAfterChunkError(error) : reset())}
+        >
           Try again
         </Button>
         <Button asChild>
-          <Link to="/">Go to projects</Link>
+          <Link to="/projects">Go to projects</Link>
         </Button>
       </div>
     </div>
