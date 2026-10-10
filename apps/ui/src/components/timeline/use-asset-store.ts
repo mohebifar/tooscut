@@ -486,12 +486,12 @@ export async function requestPermissionAndHydrate(
   hydrated: HydratedAsset[];
   deniedIds: string[];
   retryIds: string[];
-  errors: { assetId: string; name: string }[];
+  errorNames: string[];
 }> {
   const hydrated: HydratedAsset[] = [];
   const deniedIds: string[] = [];
   const retryIds: string[] = [];
-  const errors: { assetId: string; name: string }[] = [];
+  const errorNames: string[] = [];
 
   const requests = assetIds.map(async (assetId) => {
     const asset = allAssets.find((a) => a.id === assetId);
@@ -507,8 +507,7 @@ export async function requestPermissionAndHydrate(
     try {
       result = await handle.requestPermission({ mode: "read" });
     } catch (err) {
-      const name = err instanceof DOMException ? err.name : "UnknownError";
-      errors.push({ assetId, name });
+      errorNames.push(err instanceof DOMException ? err.name : "UnknownError");
       // The user did not refuse. If the state is still "prompt", another
       // click can grant access. Another prompt in this batch can also grant it.
       result = await handle.queryPermission({ mode: "read" }).catch(() => "prompt");
@@ -529,13 +528,13 @@ export async function requestPermissionAndHydrate(
       hydrated.push({ ...asset, url, file, size: file.size });
     } catch (err) {
       console.error(`[permission] asset ${assetId}: error`, err);
-      errors.push({ assetId, name: err instanceof DOMException ? err.name : "UnknownError" });
+      errorNames.push(err instanceof DOMException ? err.name : "UnknownError");
       deniedIds.push(assetId);
     }
   });
 
   await Promise.all(requests);
-  return { hydrated, deniedIds, retryIds, errors };
+  return { hydrated, deniedIds, retryIds, errorNames };
 }
 
 /**

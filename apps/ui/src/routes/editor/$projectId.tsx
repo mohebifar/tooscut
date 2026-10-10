@@ -154,10 +154,9 @@ function EditorPage() {
   }, [projectId]);
 
   const handleGrantPermission = async () => {
-    if (isGranting) return;
     setIsGranting(true);
     const allIds = [...retryPermissionIds, ...pendingPermissionIds, ...deniedPermissionIds];
-    const { hydrated, deniedIds, retryIds, errors } = await requestPermissionAndHydrate(
+    const { hydrated, deniedIds, retryIds, errorNames } = await requestPermissionAndHydrate(
       allIds,
       savedAssets,
       fileHandles,
@@ -168,8 +167,8 @@ function EditorPage() {
       granted_count: hydrated.length,
       denied_count: deniedIds.length,
       retry_count: retryIds.length,
-      failed: errors.length > 0,
-      error_names: [...new Set(errors.map((e) => e.name))],
+      failed: errorNames.length > 0,
+      error_names: [...new Set(errorNames)],
     });
 
     // Update both stores with the newly-granted assets

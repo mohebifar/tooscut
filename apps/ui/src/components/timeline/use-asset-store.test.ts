@@ -58,7 +58,7 @@ describe("requestPermissionAndHydrate", () => {
     expect(result.hydrated.map((a) => a.id)).toEqual(["a"]);
     expect(result.retryIds.sort()).toEqual(["b", "c"]);
     expect(result.deniedIds).toEqual([]);
-    expect(result.errors.map((e) => e.name)).toEqual(["SecurityError", "SecurityError"]);
+    expect(result.errorNames).toEqual(["SecurityError", "SecurityError"]);
   });
 
   it("puts a refused request in deniedIds", async () => {
