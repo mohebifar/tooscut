@@ -472,42 +472,86 @@ export async function hydrateAssets(assets: StoreMediaAsset[]): Promise<{
 
 /**
  * Request file permission for pending assets. MUST be called from a user gesture (click).
- * For each asset ID, looks up the stored handle, requests permission, and restores the file.
+ *
+ * All requests start before the first await so they run while the click's
+ * user activation is still valid. A request that throws while the permission
+ * is still "prompt" (for example, no user activation) lands in `retryIds`:
+ * another click can still grant it.
  */
 export async function requestPermissionAndHydrate(
   assetIds: string[],
   allAssets: StoreMediaAsset[],
-): Promise<{ hydrated: HydratedAsset[]; deniedIds: string[] }> {
+  handles: Map<string, FileSystemFileHandle>,
+): Promise<{
+  hydrated: HydratedAsset[];
+  deniedIds: string[];
+  retryIds: string[];
+  errors: { assetId: string; name: string }[];
+}> {
   const hydrated: HydratedAsset[] = [];
   const deniedIds: string[] = [];
+  const retryIds: string[] = [];
+  const errors: { assetId: string; name: string }[] = [];
 
-  for (const assetId of assetIds) {
+  const requests = assetIds.map(async (assetId) => {
     const asset = allAssets.find((a) => a.id === assetId);
-    if (!asset) continue;
+    const handle = handles.get(assetId) as
+      | (FileSystemFileHandle & {
+          queryPermission: (opts: { mode: string }) => Promise<string>;
+          requestPermission: (opts: { mode: string }) => Promise<string>;
+        })
+      | undefined;
+    if (!asset || !handle) return;
+
+    let result: string;
+    try {
+      result = await handle.requestPermission({ mode: "read" });
+    } catch (err) {
+      const name = err instanceof DOMException ? err.name : "UnknownError";
+      errors.push({ assetId, name });
+      // The user did not refuse. If the state is still "prompt", another
+      // click can grant access. Another prompt in this batch can also grant it.
+      result = await handle.queryPermission({ mode: "read" }).catch(() => "prompt");
+      if (result === "prompt") {
+        retryIds.push(assetId);
+        return;
+      }
+    }
+
+    if (result !== "granted") {
+      deniedIds.push(assetId);
+      return;
+    }
 
     try {
-      const stored = await db.fileHandles.get(assetId);
-      if (!stored) continue;
-
-      const handle = stored.handle as FileSystemFileHandle & {
-        requestPermission: (opts: { mode: string }) => Promise<string>;
-      };
-      const result: string = await handle.requestPermission({ mode: "read" });
-
-      if (result === "granted") {
-        const file = await stored.handle.getFile();
-        const url = URL.createObjectURL(file);
-        hydrated.push({ ...asset, url, file, size: file.size });
-      } else {
-        deniedIds.push(assetId);
-      }
+      const file = await handle.getFile();
+      const url = URL.createObjectURL(file);
+      hydrated.push({ ...asset, url, file, size: file.size });
     } catch (err) {
       console.error(`[permission] asset ${assetId}: error`, err);
+      errors.push({ assetId, name: err instanceof DOMException ? err.name : "UnknownError" });
       deniedIds.push(assetId);
     }
-  }
+  });
 
-  return { hydrated, deniedIds };
+  await Promise.all(requests);
+  return { hydrated, deniedIds, retryIds, errors };
+}
+
+/**
+ * Load the stored file handles for the given assets. Call this before the
+ * user clicks, so the click handler does not await IndexedDB before it
+ * requests permission.
+ */
+export async function loadFileHandles(
+  assetIds: string[],
+): Promise<Map<string, FileSystemFileHandle>> {
+  const stored = await db.fileHandles.bulkGet(assetIds);
+  const handles = new Map<string, FileSystemFileHandle>();
+  stored.forEach((entry, i) => {
+    if (entry) handles.set(assetIds[i], entry.handle);
+  });
+  return handles;
 }
 
 /**
