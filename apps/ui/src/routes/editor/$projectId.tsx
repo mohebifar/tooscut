@@ -1,3 +1,4 @@
+import { usePostHog } from "@posthog/react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { framesToSeconds } from "@tooscut/render-engine";
 import { useEffect, useState } from "react";
@@ -17,6 +18,7 @@ import { VideoEditorLayout } from "../../components/editor/video-editor-layout";
 import {
   useAssetStore,
   hydrateAssets,
+  loadFileHandles,
   requestPermissionAndHydrate,
 } from "../../components/timeline/use-asset-store";
 import { Button } from "../../components/ui/button";
@@ -46,7 +48,13 @@ function EditorPage() {
   // distinct from "prompt" — surfaced with different copy so the user
   // understands they said no rather than the file being missing.
   const [deniedPermissionIds, setDeniedPermissionIds] = useState<string[]>([]);
+  // Requests the browser rejected without an answer from the user (for
+  // example, the click's user activation ran out). Another click can grant them.
+  const [retryPermissionIds, setRetryPermissionIds] = useState<string[]>([]);
   const [savedAssets, setSavedAssets] = useState<MediaAsset[]>([]);
+  const [fileHandles, setFileHandles] = useState<Map<string, FileSystemFileHandle>>(new Map());
+  const [isGranting, setIsGranting] = useState(false);
+  const posthog = usePostHog();
 
   // Initialize audio engine for playback
   useAudioEngine();
@@ -108,6 +116,9 @@ function EditorPage() {
           // If some assets need user permission (prompt) or were previously
           // denied, show the appropriate prompt
           if (pendingIds.length > 0 || deniedIds.length > 0) {
+            const handles = await loadFileHandles([...pendingIds, ...deniedIds]);
+            if (cancelled) return;
+            setFileHandles(handles);
             setPendingPermissionIds(pendingIds);
             setDeniedPermissionIds(deniedIds);
             setSavedAssets(project.content.assets);
@@ -143,8 +154,22 @@ function EditorPage() {
   }, [projectId]);
 
   const handleGrantPermission = async () => {
-    const allIds = [...pendingPermissionIds, ...deniedPermissionIds];
-    const { hydrated, deniedIds } = await requestPermissionAndHydrate(allIds, savedAssets);
+    setIsGranting(true);
+    const allIds = [...retryPermissionIds, ...pendingPermissionIds, ...deniedPermissionIds];
+    const { hydrated, deniedIds, retryIds, errorNames } = await requestPermissionAndHydrate(
+      allIds,
+      savedAssets,
+      fileHandles,
+    ).finally(() => setIsGranting(false));
+
+    posthog.capture("file_permission_grant_attempted", {
+      requested_count: allIds.length,
+      granted_count: hydrated.length,
+      denied_count: deniedIds.length,
+      retry_count: retryIds.length,
+      failed: errorNames.length > 0,
+      error_names: [...new Set(errorNames)],
+    });
 
     // Update both stores with the newly-granted assets
     const store = useVideoEditorStore.getState();
@@ -162,13 +187,30 @@ function EditorPage() {
     }
 
     setPendingPermissionIds([]);
+    setRetryPermissionIds(retryIds);
     // Assets still denied after the retry stay in the "denied" bucket so the
     // prompt reappears with the same messaging rather than silently vanishing.
     setDeniedPermissionIds(deniedIds);
-    if (deniedIds.length === 0) {
+    if (deniedIds.length === 0 && retryIds.length === 0) {
       setSavedAssets([]);
+      setFileHandles(new Map());
     }
   };
+
+  const handleSkipPermission = () => {
+    posthog.capture("file_permission_restore_skipped", {
+      skipped_count:
+        retryPermissionIds.length + pendingPermissionIds.length + deniedPermissionIds.length,
+    });
+    setPendingPermissionIds([]);
+    setDeniedPermissionIds([]);
+    setRetryPermissionIds([]);
+    setSavedAssets([]);
+    setFileHandles(new Map());
+  };
+
+  const permissionTotal =
+    retryPermissionIds.length + pendingPermissionIds.length + deniedPermissionIds.length;
 
   return (
     <>
@@ -185,23 +227,39 @@ function EditorPage() {
       <KeyboardShortcutsModal />
 
       {/* Permission prompt — must be triggered by user gesture */}
-      {(pendingPermissionIds.length > 0 || deniedPermissionIds.length > 0) && (
+      {permissionTotal > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="max-w-md rounded-lg border border-border bg-card p-6 text-center shadow-lg">
-            {(() => {
-              const total = pendingPermissionIds.length + deniedPermissionIds.length;
-              return (
-                <p className="mb-2 font-medium text-foreground">
-                  {total} file{total > 1 ? "s" : ""} need access permission
-                </p>
-              );
-            })()}
-            <p className="mb-4 text-sm text-muted-foreground">
-              {deniedPermissionIds.length > 0
-                ? "Access was previously denied for some files. Grant access again to restore them, or they'll stay unavailable in this project."
-                : "Your browser requires you to re-grant access to local files after a reload."}
+            <p className="mb-2 font-medium text-foreground">
+              {permissionTotal} file{permissionTotal > 1 ? "s" : ""} need access permission
             </p>
-            <Button onClick={() => void handleGrantPermission()}>Grant Access</Button>
+            <p className="mb-4 text-sm text-muted-foreground">
+              {retryPermissionIds.length > 0
+                ? "Your browser needs one more click to grant access to the remaining files."
+                : deniedPermissionIds.length > 0
+                  ? "Access was previously denied for some files. Grant access again to restore them, or they'll stay unavailable in this project."
+                  : "Your browser requires you to re-grant access to local files after a reload."}
+            </p>
+            <div className="flex flex-col items-center gap-2">
+              <Button disabled={isGranting} onClick={() => void handleGrantPermission()}>
+                {isGranting && (
+                  <div className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                )}
+                {isGranting
+                  ? "Requesting access…"
+                  : retryPermissionIds.length > 0
+                    ? "Continue"
+                    : "Grant Access"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={isGranting}
+                onClick={handleSkipPermission}
+              >
+                Continue without these files
+              </Button>
+            </div>
           </div>
         </div>
       )}
