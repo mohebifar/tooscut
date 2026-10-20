@@ -366,16 +366,19 @@ export function PreviewPanel() {
               if (videoElement.paused && !alreadyStarted) {
                 // Video element is paused but playback is active — this clip
                 // just became visible (e.g. incoming clip of a cross-fade).
-                // Start it playing so frames advance naturally.
                 playingVideoAssetsRef.current.add(loaderKey);
-                videoElement.currentTime = sourceTime;
-                // Set playback rate to match global speed (for 2x, 4x, etc.)
                 videoElement.playbackRate = speed;
-                videoElement.play().catch(() => {});
-                // Use seek-based extraction for the first frame to ensure
-                // the compositor has a valid texture while play() resolves.
+                // Capture the first frame while still paused, THEN start
+                // playback — the video is reliably seek-and-settled here, so
+                // this is a clean read. Doing it the other way around
+                // (currentTime + play() first, capture after) races the seek
+                // against playback resuming and can return a black frame; see
+                // the `drifted` branch below for the fuller explanation of
+                // the same underlying issue.
                 const bitmap = await loader.getImageBitmap(sourceTime);
                 void compositor.uploadBitmap(bitmap, textureId);
+                videoElement.currentTime = sourceTime;
+                videoElement.play().catch(() => {});
               } else {
                 // Update playback rate if it changed
                 if (videoElement.playbackRate !== speed) {
@@ -395,8 +398,18 @@ export function PreviewPanel() {
                 }
 
                 if (drifted) {
-                  // Video drifted — use seek-based extraction to avoid
-                  // uploading a stale frame from the old position.
+                  // Video drifted — most commonly the user seeking the
+                  // timeline while playback is running. Pause before
+                  // seek-based extraction: setting currentTime on a video
+                  // that's actively playing races the seek against playback
+                  // resuming, and some browsers report the seek "done"
+                  // (readyState >= HAVE_CURRENT_DATA, `seeked` fired) before
+                  // the target frame is actually decoded/painted — which
+                  // showed up as the clip rendering black until something
+                  // else (e.g. pausing) forced a clean re-seek. Seeking a
+                  // genuinely paused video, like the scrub/reverse-playback
+                  // path below already does, is reliable.
+                  videoElement.pause();
                   const bitmap = await loader.getImageBitmap(sourceTime);
                   void compositor.uploadBitmap(bitmap, textureId);
                   // Resume playing from the corrected position
