@@ -47,7 +47,7 @@ import {
   DialogFooter,
   DialogClose,
 } from "../ui/dialog";
-import { TRACK_HEADER_WIDTH, RULER_HEIGHT } from "./constants";
+import { TRACK_HEADER_WIDTH, RULER_HEIGHT, DEFAULT_TRACK_HEIGHT } from "./constants";
 import { TimelineStage } from "./timeline-stage";
 import { computeSplitLayout, yToSectionTrackIndex } from "./track-layout";
 import {
@@ -120,6 +120,7 @@ export function CanvasTimeline() {
   const zoom = useVideoEditorStore((s) => s.zoom);
   const scrollX = useVideoEditorStore((s) => s.scrollX);
   const scrollY = useVideoEditorStore((s) => s.scrollY);
+  const setScrollY = useVideoEditorStore((s) => s.setScrollY);
   const tracks = useVideoEditorStore((s) => s.tracks);
   const settings = useVideoEditorStore((s) => s.settings);
   const seekTo = useVideoEditorStore((s) => s.seekTo);
@@ -700,6 +701,16 @@ export function CanvasTimeline() {
     },
     [_splitLayout, _videoBaseY, _audioBaseY],
   );
+
+  // The new pair lands at the outer edge of each half (video top, audio bottom),
+  // so scroll to the end of the sections to bring both tracks into view.
+  const handleAddTrack = useCallback(() => {
+    addTrack();
+    const contentHeight =
+      Math.max(_splitLayout.video.totalContentHeight, _splitLayout.audio.totalContentHeight) +
+      DEFAULT_TRACK_HEIGHT;
+    setScrollY(Math.max(0, contentHeight - _sectionHeight));
+  }, [addTrack, setScrollY, _splitLayout, _sectionHeight]);
 
   const _getTrackHeight = useCallback(
     (index: number) => {
@@ -1481,7 +1492,7 @@ export function CanvasTimeline() {
           {/* Add track button (top-left corner) */}
           <Button
             size="sm"
-            onClick={() => addTrack()}
+            onClick={handleAddTrack}
             className="absolute top-2 left-2 z-10 h-6 px-2 py-0"
             title="Add track pair"
           >
