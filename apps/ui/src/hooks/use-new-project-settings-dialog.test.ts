@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useNewProjectSettingsDialog } from "./use-new-project-settings-dialog";
 
+const navigate = vi.fn<(options: object) => Promise<void>>();
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
+
 const projects = new Map<string, { id: string; settingsConfirmed?: boolean }>();
 
 vi.mock("../state/db", () => ({
@@ -20,6 +23,7 @@ vi.mock("../state/db", () => ({
 
 describe("useNewProjectSettingsDialog", () => {
   beforeEach(() => {
+    navigate.mockClear();
     projects.clear();
     projects.set("p1", { id: "p1" });
   });
@@ -34,6 +38,7 @@ describe("useNewProjectSettingsDialog", () => {
     await waitFor(() => expect(first.result.current[0]).toBe(true));
     act(() => first.result.current[1](false));
     await waitFor(() => expect(projects.get("p1")?.settingsConfirmed).toBe(true));
+    expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ replace: true }));
     first.unmount();
 
     const reloaded = renderHook(() => useNewProjectSettingsDialog("p1", true));
@@ -51,5 +56,6 @@ describe("useNewProjectSettingsDialog", () => {
     act(() => result.current[1](false));
     await act(async () => {});
     expect(projects.get("p1")?.settingsConfirmed).toBeUndefined();
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

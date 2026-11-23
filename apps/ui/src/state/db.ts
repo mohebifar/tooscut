@@ -27,11 +27,7 @@ export interface LocalProject {
    * thresholds and silently corrupted rows it misjudged.
    */
   contentTimeBase?: "frames";
-  /**
-   * Set when the user closes the new-project settings dialog. The editor
-   * opens that dialog only for `?new=true` URLs without this flag, so a
-   * reload of the original URL does not show the dialog again.
-   */
+  /** Set once the user closes the new-project settings dialog. */
   settingsConfirmed?: boolean;
 }
 

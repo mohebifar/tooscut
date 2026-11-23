@@ -49,26 +49,11 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
   const setExportDialogOpen = useVideoEditorStore((s) => s.setExportDialogOpen);
   const [settingsDialogOpen, setSettingsDialogOpen] = useNewProjectSettingsDialog(
     projectId,
-    showSettingsOnMount ?? false,
+    showSettingsOnMount,
   );
 
   const navigate = useNavigate();
 
-  const handleSettingsDialogChange = useCallback(
-    (open: boolean) => {
-      setSettingsDialogOpen(open);
-      // Clear the "new" search param when closing
-      if (!open && showSettingsOnMount) {
-        void navigate({
-          to: "/editor/$projectId",
-          params: { projectId },
-          search: {} as any, // eslint-disable-line @typescript-eslint/no-unsafe-assignment
-          replace: true,
-        });
-      }
-    },
-    [showSettingsOnMount, navigate, projectId, setSettingsDialogOpen],
-  );
   const activeTool = useVideoEditorStore((s) => s.activeTool);
   const setActiveTool = useVideoEditorStore((s) => s.setActiveTool);
   const clips = useVideoEditorStore((s) => s.clips);
@@ -411,7 +396,7 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
         <ExportDialog open={exportDialogOpen} onOpenChange={setExportDialogOpen} />
         <ProjectSettingsDialog
           open={settingsDialogOpen}
-          onOpenChange={handleSettingsDialogChange}
+          onOpenChange={setSettingsDialogOpen}
           projectId={projectId}
         />
       </div>
