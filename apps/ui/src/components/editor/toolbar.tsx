@@ -15,6 +15,7 @@ import { Link } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useState, useCallback, useRef, useEffect } from "react";
 
+import { useNewProjectSettingsDialog } from "../../hooks/use-new-project-settings-dialog";
 import { Route } from "../../routes/editor/$projectId";
 import { db } from "../../state/db";
 import { useVideoEditorStore, useTemporalStore } from "../../state/video-editor-store";
@@ -46,32 +47,13 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
   const { projectId } = Route.useParams();
   const exportDialogOpen = useVideoEditorStore((s) => s.exportDialogOpen);
   const setExportDialogOpen = useVideoEditorStore((s) => s.setExportDialogOpen);
-  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useNewProjectSettingsDialog(
+    projectId,
+    showSettingsOnMount,
+  );
 
   const navigate = useNavigate();
 
-  // Auto-open settings dialog for new projects
-  useEffect(() => {
-    if (showSettingsOnMount) {
-      setSettingsDialogOpen(true);
-    }
-  }, [showSettingsOnMount]);
-
-  const handleSettingsDialogChange = useCallback(
-    (open: boolean) => {
-      setSettingsDialogOpen(open);
-      // Clear the "new" search param when closing
-      if (!open && showSettingsOnMount) {
-        void navigate({
-          to: "/editor/$projectId",
-          params: { projectId },
-          search: {} as any, // eslint-disable-line @typescript-eslint/no-unsafe-assignment
-          replace: true,
-        });
-      }
-    },
-    [showSettingsOnMount, navigate, projectId],
-  );
   const activeTool = useVideoEditorStore((s) => s.activeTool);
   const setActiveTool = useVideoEditorStore((s) => s.setActiveTool);
   const clips = useVideoEditorStore((s) => s.clips);
@@ -414,7 +396,7 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
         <ExportDialog open={exportDialogOpen} onOpenChange={setExportDialogOpen} />
         <ProjectSettingsDialog
           open={settingsDialogOpen}
-          onOpenChange={handleSettingsDialogChange}
+          onOpenChange={setSettingsDialogOpen}
           projectId={projectId}
         />
       </div>

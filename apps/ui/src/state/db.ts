@@ -27,6 +27,8 @@ export interface LocalProject {
    * thresholds and silently corrupted rows it misjudged.
    */
   contentTimeBase?: "frames";
+  /** Set once the user closes the new-project settings dialog. */
+  settingsConfirmed?: boolean;
 }
 
 interface StoredFileHandle {
