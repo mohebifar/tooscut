@@ -15,6 +15,7 @@ import { Link } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useState, useCallback, useRef, useEffect } from "react";
 
+import { useNewProjectSettingsDialog } from "../../hooks/use-new-project-settings-dialog";
 import { Route } from "../../routes/editor/$projectId";
 import { db } from "../../state/db";
 import { useVideoEditorStore, useTemporalStore } from "../../state/video-editor-store";
@@ -46,16 +47,12 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
   const { projectId } = Route.useParams();
   const exportDialogOpen = useVideoEditorStore((s) => s.exportDialogOpen);
   const setExportDialogOpen = useVideoEditorStore((s) => s.setExportDialogOpen);
-  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useNewProjectSettingsDialog(
+    projectId,
+    showSettingsOnMount ?? false,
+  );
 
   const navigate = useNavigate();
-
-  // Auto-open settings dialog for new projects
-  useEffect(() => {
-    if (showSettingsOnMount) {
-      setSettingsDialogOpen(true);
-    }
-  }, [showSettingsOnMount]);
 
   const handleSettingsDialogChange = useCallback(
     (open: boolean) => {
@@ -70,7 +67,7 @@ export function Toolbar({ showSettingsOnMount }: ToolbarProps) {
         });
       }
     },
-    [showSettingsOnMount, navigate, projectId],
+    [showSettingsOnMount, navigate, projectId, setSettingsDialogOpen],
   );
   const activeTool = useVideoEditorStore((s) => s.activeTool);
   const setActiveTool = useVideoEditorStore((s) => s.setActiveTool);
